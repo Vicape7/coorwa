@@ -53,8 +53,13 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - A pair that has not traded in 24h shows `—`, never a phantom return from a flat price against a
   moving stock.
 - Both Cookie Chain routers (Cookiebox and Candy Shop) quoted on every trade; the better fill wins.
-- **Cross-chain settle**: `TOKEN → COOK → [Hyperlane] → COOK (Solana) → xStock`, three signatures,
-  with per-leg progress and measured slippage.
+- **Cross-chain settle, both ways**: `TOKEN → COOK → [Hyperlane] → COOK (Solana) → xStock`, and the
+  same route run backwards to leave the position. Three signatures each, with per-leg progress and
+  measured slippage. A pair you can only enter is a price; a pair you can leave is a market.
+- **A stopped route can be resumed from the middle.** The bridge leg is asynchronous, so a failure
+  after it dispatches is not a failed trade - it is a half-finished one, with your COOK on the other
+  chain. Corwa writes each leg to storage as it confirms and picks up where it stopped, after a
+  rejected signature, a closed tab or a browser restart.
 
 ### Launchpad
 - Launch on a COOK bonding curve through [MomoSwap](https://momoswap.fun): sign a login message,
@@ -126,7 +131,10 @@ src/
     cookiescan.ts   Token registry and markets feed
     jupiter.ts      RWA prices and the Solana leg of a cross-chain route
     swap.ts         Both Cookie Chain aggregators, quoted head to head
-    crosschain.ts   The three-leg route planner, with measured per-leg slippage
+    crosschain.ts   The three-leg route planner, both directions, with measured per-leg slippage
+    crosschain-exec.ts  The executor: signs the legs, and resumes a route from the middle
+    journey.ts      A route in progress, written to storage leg by leg so it survives a failure
+    rwa-holding.ts  An xStock position in raw units and in shares, which are not the same number
     bridge.ts       Hyperlane warp route, hand-encoded, with two preflight checks
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client

@@ -8,15 +8,31 @@ import { CorwaError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-const Body = z.object({
-  ticker: z.string().min(1).max(10),
-  /** UI amount of bridged COOK to spend on Solana. */
-  amount: z.number().positive(),
-  owner: z.string().min(32).max(44),
-  slippageBps: z.number().int().min(1).max(5000).default(DEFAULT_SLIPPAGE_BPS),
-  /** "sell" swaps the xStock back into COOK for the return trip. */
-  direction: z.enum(["buy", "sell"]).default("buy"),
-});
+const Body = z
+  .object({
+    ticker: z.string().min(1).max(10),
+    /** UI amount of the input token. Fine for COOK, wrong for an xStock - see `amountRaw`. */
+    amount: z.number().positive().optional(),
+    /**
+     * Raw input units, as a decimal string. This is the only correct way to spend an xStock:
+     * they carry `scaledUiAmountConfig`, so the balance a holder sees is the raw amount times a
+     * multiplier that moves on dividends and splits. Converting a share count with the mint's
+     * decimals would be wrong by exactly that multiplier, so the caller reads its own token
+     * account and passes the raw figure straight through. Takes precedence over `amount`.
+     */
+    amountRaw: z
+      .string()
+      .regex(/^[0-9]+$/, "amountRaw must be raw integer units")
+      .optional(),
+    owner: z.string().min(32).max(44),
+    slippageBps: z.number().int().min(1).max(5000).default(DEFAULT_SLIPPAGE_BPS),
+    /** "sell" swaps the xStock back into COOK for the return trip. */
+    direction: z.enum(["buy", "sell"]).default("buy"),
+  })
+  .refine((b) => b.amount !== undefined || b.amountRaw !== undefined, {
+    message: "pass either amount or amountRaw",
+    path: ["amount"],
+  });
 
 /**
  * Leg 3 of a cross-chain route: swap bridged COOK into the xStock on Solana mainnet (or back).
@@ -39,7 +55,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { ticker, amount, owner, slippageBps, direction } = parsed.data;
+  const { ticker, amount, amountRaw, owner, slippageBps, direction } = parsed.data;
 
   const asset = rwaByTicker(ticker);
   if (!asset) return NextResponse.json({ error: `unknown RWA: ${ticker}` }, { status: 404 });
@@ -48,11 +64,12 @@ export async function POST(req: Request) {
     const inputMint = direction === "buy" ? COOK_SOLANA_MINT : asset.mint;
     const outputMint = direction === "buy" ? asset.mint : COOK_SOLANA_MINT;
     const decimals = direction === "buy" ? COOK_SOLANA_DECIMALS : asset.decimals;
+    const inAmount = amountRaw ?? uiToRaw(amount!, decimals);
 
     const quote = await jupQuote({
       inputMint,
       outputMint,
-      amount: uiToRaw(amount, decimals),
+      amount: inAmount,
       slippageBps,
     });
 

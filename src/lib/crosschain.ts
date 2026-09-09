@@ -65,6 +65,26 @@ const BRIDGE_ETA_SECONDS = 180;
 const IMPACT_WARN_PCT = 2;
 const IMPACT_BLOCK_PCT = 10;
 
+/**
+ * Name the leg actually carrying the most slippage.
+ *
+ * Which one it is depends on the size and on the day. The Solana leg is usually the thin one, but a
+ * large trade against a shallow Cookie Chain pool flips it, and a warning that names the wrong leg
+ * sends the user to shrink the wrong side of the trade.
+ */
+function worstLeg(legs: RouteLeg[]): RouteLeg | null {
+  return legs.reduce<RouteLeg | null>(
+    (worst, leg) => ((leg.priceImpactPct ?? 0) > (worst?.priceImpactPct ?? 0) ? leg : worst),
+    null,
+  );
+}
+
+/** Reads as "the COOK/NVDAx leg", or "one leg" when no leg reports an impact at all. */
+function worstLegLabel(legs: RouteLeg[]): string {
+  const worst = worstLeg(legs);
+  return worst ? `the ${worst.inSymbol}/${worst.outSymbol} leg` : "one leg";
+}
+
 export async function planCrossChainBuy(args: {
   /** Cookie Chain mint being sold. Pass COOK_MINT to start from COOK directly. */
   inputMint: string;
@@ -168,7 +188,8 @@ export async function planCrossChainBuy(args: {
     );
   } else if (totalImpact >= IMPACT_WARN_PCT) {
     warnings.push(
-      `Total slippage across the route is about ${totalImpact.toFixed(1)}%, most of it on the COOK/${asset.symbol} leg.`,
+      `Total slippage across the route is about ${totalImpact.toFixed(1)}%, most of it on ` +
+        `${worstLegLabel(legs)}.`,
     );
   }
   warnings.push(
@@ -341,8 +362,8 @@ export async function planCrossChainSell(args: {
     );
   } else if (totalImpact >= IMPACT_WARN_PCT) {
     warnings.push(
-      `Total slippage across the route is about ${totalImpact.toFixed(1)}%, most of it on the ` +
-        `${asset.symbol}/COOK leg.`,
+      `Total slippage across the route is about ${totalImpact.toFixed(1)}%, most of it on ` +
+        `${worstLegLabel(legs)}.`,
     );
   }
 

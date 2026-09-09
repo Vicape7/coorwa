@@ -45,6 +45,17 @@ export const PROGRAM_IDS = {
 export const SOLANA_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || "https://api.mainnet-beta.solana.com";
 
+/**
+ * True when no dedicated Solana RPC is configured.
+ *
+ * The fallback is not merely throttled. api.mainnet-beta.solana.com answers a server happily but
+ * returns 403 to any request carrying a browser origin, so the Solana legs of a cross-chain route
+ * cannot run from the user's browser at all. Reads that Corwa can do on their behalf go through
+ * its own API routes; signing and sending cannot, so the panel says so up front rather than
+ * failing at the first signature.
+ */
+export const SOLANA_RPC_IS_PUBLIC = !process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim();
+
 export const SOLANA_EXPLORER = "https://solscan.io";
 
 /** Bridged COOK on Solana mainnet - a Token-2022 mint with 6 decimals (Cookie Chain's is 9). */

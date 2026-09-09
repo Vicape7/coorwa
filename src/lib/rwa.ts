@@ -13,6 +13,9 @@
  *     which would break any pool holding these as a quote asset.
  */
 
+/** Every xStock is an 8-decimal Token-2022 mint. Raw units, not shares - these tokens rebase. */
+export const RWA_DECIMALS = 8;
+
 export interface RwaAsset {
   /** xStock ticker, e.g. "NVDAx". */
   symbol: string;
@@ -33,7 +36,7 @@ const x = (
   ticker,
   name,
   mint,
-  decimals: 8,
+  decimals: RWA_DECIMALS,
   logo: `https://xstocks-metadata.backed.fi/logos/tokens/${ticker}x.png`,
 });
 

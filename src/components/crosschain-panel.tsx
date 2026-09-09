@@ -1,54 +1,63 @@
 "use client";
 
 /**
- * Cross-chain settlement: turn a Cookie Chain token into a real xStock position on Solana.
+ * Cross-chain settlement, both directions.
  *
- * Three legs, executed as three separate signatures, because they genuinely are three transactions
- * on two chains. The stepper is not decoration - the bridge leg is asynchronous, so the user needs
- * to see exactly where their funds are while a relayer works.
+ *   Buy   TOKEN on Cookie Chain  ->  a real xStock in the user's own Solana wallet
+ *   Sell  that xStock            ->  back into TOKEN on Cookie Chain
  *
- * Corwa deliberately never wraps an xStock onto Cookie Chain. Those mints carry a permanent
- * delegate, a pause authority and a live rebase multiplier, so a wrapped representation could be
- * seized, frozen or drift off its backing. Routing into the user's own Solana wallet avoids that.
+ * The return trip is what makes this a market rather than a quote. A pair you can only enter is a
+ * price; a pair you can leave is a position. Corwa still never wraps an xStock onto Cookie Chain -
+ * those mints carry a permanent delegate, a pause authority and a live rebase multiplier, so a
+ * wrapped representation could be seized, frozen or drift off its backing. Both directions route
+ * through the user's own wallet on both chains instead.
+ *
+ * Each direction is three legs and three signatures, with an asynchronous relayer in the middle,
+ * which is the whole reason this panel is built around a journey rather than a promise. Once the
+ * bridge has dispatched, a failure on the last leg is not a failed trade - it is a half-finished
+ * one, with the user's COOK sitting on the other chain. So the run is written to storage leg by
+ * leg and can be picked up from the middle: see `lib/journey.ts` for the state and
+ * `lib/crosschain-exec.ts` for the legs themselves.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
+import { DEFAULT_SLIPPAGE_BPS, SOLANA_RPC_IS_PUBLIC, SOLANA_RPC_URL } from "@/lib/config";
+import { RWA_DECIMALS } from "@/lib/rwa";
+import { amount as fmtAmount, shortAddr, timeAgo, usd } from "@/lib/format";
+import { sharesToRaw, type RwaHolding } from "@/lib/rwa-holding";
 import {
-  COOK_MINT,
-  COOK_DECIMALS,
-  COOK_SOLANA_DECIMALS,
-  SOLANA_RPC_URL,
-  cookieTxUrl,
-  solanaTxUrl,
-} from "@/lib/config";
-import { amount as fmtAmount, usd, uiToRaw, rawToUi, shortAddr } from "@/lib/format";
-import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
-import { buildBridgeTransfer, messageIdFromLogs } from "@/lib/bridge";
+  clearJourney,
+  fundsLocation,
+  hasTouchedChain,
+  isResumable,
+  loadJourney,
+  newJourney,
+  saveJourney,
+  type Journey,
+  type JourneyDirection,
+} from "@/lib/journey";
+import { runJourney } from "@/lib/crosschain-exec";
+import { RouteSteps } from "./route-steps";
 import { Notice } from "./notice";
 import type { CorwaPair } from "@/lib/pairs";
 import type { RouteLeg } from "@/lib/crosschain";
 
-interface Plan {
+/** Whatever the two planners return, reduced to the handful of things this panel draws. */
+interface PlanView {
   legs: RouteLeg[];
-  outputShares: number;
-  outputUsd: number;
+  outAmount: number;
+  outSymbol: string;
+  /**
+   * Null for the sell direction, where the value is the token's own live price and is worked out at
+   * render time. Freezing it into the plan would leave a dollar figure that stops moving while the
+   * price beside it keeps going.
+   */
+  outUsd: number | null;
+  outWhere: string;
   totalPriceImpactPct: number;
-  etaSeconds: number;
   warnings: string[];
-  error?: string;
-  hint?: string;
-}
-
-type StepState = "idle" | "running" | "done" | "failed";
-
-interface StepResult {
-  state: StepState;
-  signature?: string;
-  chain?: "cookie" | "solana";
-  detail?: string;
-  error?: string;
 }
 
 export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
@@ -56,317 +65,450 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
 
+  // The Solana leg needs its own connection: the wallet's provider points at Cookie Chain.
+  const solanaConn = useMemo(() => new Connection(SOLANA_RPC_URL, "confirmed"), []);
+
+  const [direction, setDirection] = useState<JourneyDirection>("buy");
   const [input, setInput] = useState("");
+  /** Set by the Max button, cleared by any edit. It means "spend the account, not the number". */
+  const [maxed, setMaxed] = useState(false);
+  const [journey, setJourney] = useState<Journey | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const [holding, setHolding] = useState<RwaHolding | null>(null);
+  const [multiplier, setMultiplier] = useState(1);
+  /** The ticker the two figures above belong to, so a size is never priced against a stale one. */
+  const [rwaLoadedFor, setRwaLoadedFor] = useState<string | null>(null);
+
+  const amountNum = Number(input);
+  const valid = Number.isFinite(amountNum) && amountNum > 0;
+
+  // Pulled out because SWR hands back a new `pair` object every 15 seconds. Depending on the object
+  // would re-price the route on every refresh, for a request whose inputs have not changed.
+  const { mint: baseMint, symbol: baseSymbol, decimals: baseDecimals } = pair.base;
+  const ticker = pair.quote.ticker;
+
+  // --- A route left over from a previous visit --------------------------------------------------
+
+  /**
+   * Restored during render rather than from an effect.
+   *
+   * The wallet address is not known on the first render, so this is the "adjust state when the
+   * input changes" case: comparing the key React already has against the one being rendered now.
+   * Doing it in an effect would paint the panel once without the stuck route and once with it.
+   */
+  const owner = publicKey?.toBase58() ?? null;
+  const restoreKey = owner ? `${owner}|${pair.slug}` : null;
+  const [restoredFor, setRestoredFor] = useState<string | null>(null);
+
+  if (restoredFor !== restoreKey) {
+    setRestoredFor(restoreKey);
+    const stored = owner ? loadJourney(owner, pair.slug) : null;
+    if (isResumable(stored)) {
+      // A route stored as "running" was running in a tab that is now gone. Nothing is driving it,
+      // so it is interrupted whatever the last write said.
+      setJourney({ ...stored, status: "interrupted" });
+      setDirection(stored.direction);
+    } else {
+      setJourney(null);
+    }
+  }
+
+  // --- The Solana-side position, which the sell direction is priced from ------------------------
+
+  /**
+   * Read through Corwa's own route, not straight from the browser.
+   *
+   * Solana's public RPC returns 403 to anything with a browser origin, and a failed multiplier read
+   * falls back to 1 - which would size every sale wrong by exactly the rebase, quietly.
+   */
+  useEffect(() => {
+    if (direction !== "sell") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const params = new URLSearchParams({ ticker });
+        if (owner) params.set("owner", owner);
+        const json = await fetch(`/api/rwa/holding?${params}`).then((r) => r.json());
+        if (cancelled || json.error) return;
+        setMultiplier(json.multiplier ?? 1);
+        setHolding(json.holding ?? null);
+      } catch {
+        // Keep whatever is already known. A multiplier of 1 is the honest fallback, and the panel
+        // is still usable - only Max needs the account itself.
+      } finally {
+        if (!cancelled) setRwaLoadedFor(ticker);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [direction, owner, ticker]);
+
+  /**
+   * Raw units for the sell leg.
+   *
+   * Max spends the token account verbatim, because that is the only figure guaranteed to match it
+   * exactly. Anything else is converted through the mint's live multiplier and rounded down, so a
+   * typed size can never ask for units the account does not have.
+   */
+  const sellRaw = useMemo(() => {
+    if (direction !== "sell" || !valid) return null;
+    // Until the mint has answered, any conversion would silently assume a multiplier of 1 and size
+    // the sale wrong by exactly the rebase. Better to price nothing for a moment.
+    if (rwaLoadedFor !== ticker) return null;
+    if (maxed && holding) return holding.raw;
+    return sharesToRaw(amountNum, RWA_DECIMALS, multiplier);
+  }, [direction, valid, maxed, holding, amountNum, multiplier, rwaLoadedFor, ticker]);
+
+  // --- Pricing ----------------------------------------------------------------------------------
+
+  const planKey =
+    direction === "buy"
+      ? valid
+        ? `buy|${baseMint}|${ticker}|${amountNum}`
+        : null
+      : sellRaw
+        ? `sell|${ticker}|${sellRaw}|${baseMint}`
+        : null;
+
   /**
    * The plan and the request it answers, stored together.
    *
-   * Keeping the key alongside the result means "still planning" is derived by comparing it to what
+   * Keeping the key alongside the result means "still pricing" is derived by comparing it to what
    * is being asked for now, rather than flipping a loading flag from inside an effect - which is
    * both simpler and avoids a cascading render on every keystroke.
    */
   const [settled, setSettled] = useState<{
     key: string;
-    plan: Plan | null;
+    plan: PlanView | null;
     error: string | null;
   } | null>(null);
-  const [steps, setSteps] = useState<StepResult[]>([]);
-  const [running, setRunning] = useState(false);
-  /** COOK that actually arrived on Solana, carried from leg 2 into leg 3. */
-  const [bridgedCook, setBridgedCook] = useState<number | null>(null);
-
-  const amountNum = Number(input);
-  const valid = Number.isFinite(amountNum) && amountNum > 0;
-
-  // The Solana leg needs its own connection: the wallet's provider points at Cookie Chain.
-  const solanaConn = useMemo(() => new Connection(SOLANA_RPC_URL, "confirmed"), []);
-
-  const key = valid ? `${pair.base.mint}|${pair.quote.ticker}|${amountNum}` : null;
 
   const seq = useRef(0);
   useEffect(() => {
-    if (!valid || !key) return;
+    if (!planKey) return;
     const mine = ++seq.current;
-    const t = setTimeout(async () => {
+
+    const timer = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({
-          inputMint: pair.base.mint,
-          inputSymbol: pair.base.symbol,
-          inputDecimals: String(pair.base.decimals),
-          amount: String(amountNum),
-          ticker: pair.quote.ticker,
-        });
-        if (publicKey) params.set("owner", publicKey.toBase58());
-        const res = await fetch(`/api/crosschain/plan?${params}`);
-        const json: Plan = await res.json();
+        const token = { mint: baseMint, symbol: baseSymbol, decimals: baseDecimals };
+        const url =
+          direction === "buy"
+            ? `/api/crosschain/plan?${buyParams(token, ticker, amountNum, owner ?? undefined)}`
+            : `/api/crosschain/sell?${sellParams(token, ticker, sellRaw!, amountNum, owner ?? undefined)}`;
+
+        const json = await fetch(url).then((r) => r.json());
         if (seq.current !== mine) return;
+
         setSettled(
           json.error
-            ? { key, plan: null, error: json.hint ? `${json.error} - ${json.hint}` : json.error }
-            : { key, plan: json, error: null },
+            ? {
+                key: planKey,
+                plan: null,
+                error: json.hint ? `${json.error} - ${json.hint}` : json.error,
+              }
+            : { key: planKey, plan: toView(direction, json, ticker, baseSymbol), error: null },
         );
       } catch (e) {
         if (seq.current === mine) {
           setSettled({
-            key,
+            key: planKey,
             plan: null,
             error: e instanceof Error ? e.message : "could not plan the route",
           });
         }
       }
     }, 450);
-    return () => clearTimeout(t);
-  }, [amountNum, valid, key, pair, publicKey]);
 
-  const current = key && settled?.key === key ? settled : null;
-  const activePlan = current?.plan ?? null;
-  const activePlanError = current?.error ?? null;
-  const planning = key !== null && current === null;
+    return () => clearTimeout(timer);
+  }, [planKey, direction, baseMint, baseSymbol, baseDecimals, ticker, amountNum, sellRaw, owner]);
 
-  const setStep = useCallback((i: number, patch: Partial<StepResult>) => {
-    setSteps((prev) => {
-      const next = [...prev];
-      next[i] = { ...(next[i] ?? { state: "idle" }), ...patch };
-      return next;
-    });
+  const current = planKey && settled?.key === planKey ? settled : null;
+  const plan = current?.plan ?? null;
+  const planError = current?.error ?? null;
+  const pricing =
+    (planKey !== null && current === null) ||
+    (direction === "sell" && valid && rwaLoadedFor !== ticker);
+
+  // --- Running ----------------------------------------------------------------------------------
+
+  /** Every state change from the executor lands here: persisted, then rendered. */
+  const persist = useCallback((j: Journey): Journey => {
+    // A finished route is history, not state. It stays on screen for this visit and is gone on the
+    // next one, so a reload never offers to resume something that already settled.
+    if (j.status === "done") clearJourney(j.owner, j.pairSlug);
+    const stored = j.status === "done" ? j : saveJourney(j);
+    setJourney(stored);
+    return stored;
   }, []);
 
-  const run = useCallback(async () => {
-    if (!publicKey || !signTransaction || !activePlan) return;
-    setRunning(true);
-    setSteps([{ state: "running" }, { state: "idle" }, { state: "idle" }]);
-
-    try {
-      // --- Leg 1: sell the token for COOK on Cookie Chain ---
-      const built = await fetch("/api/swap/build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          aggregator: "cookiebox",
-          owner: publicKey.toBase58(),
-          inputMint: pair.base.mint,
-          outputMint: COOK_MINT,
-          amount: uiToRaw(amountNum, pair.base.decimals),
-          slippageBps: 500,
-        }),
-      }).then((r) => r.json());
-      if (built.error) throw new Error(built.error);
-
-      const before = await connection.getBalance(publicKey);
-      const swapRes = await signSendConfirm(
-        connection,
-        decodeTx(built.transactionBase64),
-        signTransaction,
-      );
-      setStep(0, { state: "done", signature: swapRes.signature, chain: "cookie" });
-
-      // Measure what actually landed rather than trusting the quote.
-      const after = await connection.getBalance(publicKey);
-      const gained = Math.max(0, (after - before) / 10 ** COOK_DECIMALS);
-      const toBridge = Math.max(0, gained - 0.01); // headroom for the bridge tx fee
-
-      if (toBridge <= 0) throw new Error("The swap produced no spendable COOK to bridge.");
-
-      // --- Leg 2: bridge COOK to Solana over Hyperlane ---
-      setStep(1, { state: "running", detail: `Bridging ${fmtAmount(toBridge)} COOK` });
-
-      const bridge = await buildBridgeTransfer({
-        direction: "cookie-to-solana",
-        cookieConn: connection,
-        solanaConn: solanaConn,
-        sender: publicKey,
-        recipient: publicKey,
-        amountRaw: BigInt(uiToRaw(toBridge, COOK_DECIMALS)),
-      });
-
-      // The route's ata_payer PDA is a shared, silently-drainable dependency. If the recipient has
-      // no COOK account yet, create it ourselves on Solana FIRST, so a failure here costs nothing.
-      if (bridge.recipientAtaIx) {
-        setStep(1, { state: "running", detail: "Creating your COOK account on Solana first" });
-        const ataTx = new Transaction().add(bridge.recipientAtaIx);
-        const { blockhash } = await solanaConn.getLatestBlockhash("confirmed");
-        ataTx.recentBlockhash = blockhash;
-        ataTx.feePayer = publicKey;
-        await signSendConfirm(solanaConn, ataTx, signTransaction);
+  const drive = useCallback(
+    async (j: Journey) => {
+      if (!publicKey || !signTransaction) return;
+      setRunning(true);
+      try {
+        await runJourney(j, {
+          cookieConn: connection,
+          solanaConn,
+          owner: publicKey,
+          signTransaction,
+          slippageBps: DEFAULT_SLIPPAGE_BPS,
+          onChange: persist,
+        });
+      } finally {
+        setRunning(false);
       }
+    },
+    [publicKey, signTransaction, connection, solanaConn, persist],
+  );
 
-      setStep(1, { state: "running", detail: "Dispatching over Hyperlane" });
-      const signedBridge = await signTransaction(bridge.transaction);
-      const bridgeSig = await connection.sendRawTransaction(signedBridge.serialize(), {
-        maxRetries: 3,
-      });
-      const bh = await connection.getLatestBlockhash("confirmed");
-      await connection.confirmTransaction(
-        {
-          signature: bridgeSig,
-          blockhash: bh.blockhash,
-          lastValidBlockHeight: bh.lastValidBlockHeight,
+  const start = useCallback(() => {
+    if (!owner || !plan) return;
+    void drive(
+      newJourney({
+        direction,
+        owner,
+        pairSlug: pair.slug,
+        ticker: pair.quote.ticker,
+        rwaMint: pair.quote.mint,
+        rwaDecimals: RWA_DECIMALS,
+        token: {
+          mint: pair.base.mint,
+          symbol: pair.base.symbol,
+          decimals: pair.base.decimals,
         },
-        "confirmed",
-      );
+        input:
+          direction === "buy"
+            ? { amount: amountNum, symbol: pair.base.symbol }
+            : { amount: amountNum, symbol: pair.quote.symbol, amountRaw: sellRaw ?? undefined },
+        legs: plan.legs,
+      }),
+    );
+  }, [owner, plan, direction, pair, amountNum, sellRaw, drive]);
 
-      const parsed = await connection.getTransaction(bridgeSig, {
-        maxSupportedTransactionVersion: 0,
-        commitment: "confirmed",
-      });
-      const msgId = messageIdFromLogs(parsed?.meta?.logMessages);
+  const reset = useCallback(() => {
+    if (owner) clearJourney(owner, pair.slug);
+    setJourney(null);
+    setInput("");
+    setMaxed(false);
+  }, [owner, pair.slug]);
 
-      setStep(1, {
-        state: "done",
-        signature: bridgeSig,
-        chain: "cookie",
-        detail: msgId ? `Hyperlane message ${shortAddr(msgId, 8)}` : "Dispatched",
-      });
+  // --- Render -----------------------------------------------------------------------------------
 
-      // --- Leg 3: wait for delivery, then buy the xStock on Solana ---
-      setStep(2, { state: "running", detail: "Waiting for the relayer to deliver on Solana" });
+  const buy = direction === "buy";
+  const sellSymbol = buy ? pair.base.symbol : pair.quote.symbol;
+  const legs = journey ? journey.legs : (plan?.legs ?? []);
 
-      const delivered = await waitForCookOnSolana(
-        solanaConn,
-        publicKey,
-        toBridge,
-        (elapsed) =>
-          setStep(2, { state: "running", detail: `Waiting for delivery on Solana (${elapsed}s)` }),
-      );
-
-      setBridgedCook(delivered);
-      setStep(2, {
-        state: "running",
-        detail: `Buying ${pair.quote.symbol} with ${fmtAmount(delivered)} COOK`,
-      });
-
-      const solLeg = await fetch("/api/crosschain/solana-swap", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ticker: pair.quote.ticker,
-          amount: delivered,
-          owner: publicKey.toBase58(),
-          slippageBps: 500,
-          direction: "buy",
-        }),
-      }).then((r) => r.json());
-      if (solLeg.error) throw new Error(solLeg.error);
-
-      const solRes = await signSendConfirm(
-        solanaConn,
-        decodeTx(solLeg.transactionBase64),
-        signTransaction,
-      );
-
-      setStep(2, {
-        state: "done",
-        signature: solRes.signature,
-        chain: "solana",
-        detail: `${fmtAmount(rawToUi(solLeg.outAmount, solLeg.outDecimals), 8)} ${pair.quote.symbol} in your wallet`,
-      });
-    } catch (e) {
-      const msg = explainError(e);
-      setSteps((prev) => {
-        const next = [...prev];
-        const i = next.findIndex((s) => s?.state === "running");
-        if (i >= 0) next[i] = { ...next[i], state: "failed", error: msg };
-        return next;
-      });
-    } finally {
-      setRunning(false);
-    }
-  }, [publicKey, signTransaction, activePlan, pair, amountNum, connection, setStep, solanaConn]);
+  /**
+   * A route that failed before anything was signed is a failed attempt, not a stuck one. The
+   * usual case is a rejected wallet prompt, and telling that user where their funds are would be
+   * answering a question they did not ask. The leg's own error is already on screen.
+   */
+  const stuck = journey?.status === "interrupted" && hasTouchedChain(journey);
+  const failedToStart = journey?.status === "interrupted" && !stuck;
 
   return (
     <div className="card overflow-hidden">
       <div className="px-5 pb-3 pt-5">
         <div className="text-[15px] font-medium text-primary">
-          Settle into {pair.quote.symbol}
+          {buy ? `Settle into ${pair.quote.symbol}` : `Settle back into ${pair.base.symbol}`}
         </div>
         <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-          Exit {pair.base.symbol} into real {pair.quote.symbol} on Solana. Three legs, three
-          signatures, your wallet throughout.
+          {buy
+            ? `Exit ${pair.base.symbol} into real ${pair.quote.symbol} on Solana. Three legs, three signatures, your wallet throughout.`
+            : `Sell your ${pair.quote.symbol} on Solana and land back in ${pair.base.symbol}. The same route, run backwards.`}
         </p>
       </div>
 
       <div className="space-y-3 p-4 pt-1">
+        {SOLANA_RPC_IS_PUBLIC && (
+          <Notice tone="note">
+            No dedicated Solana RPC is configured, so the Solana legs cannot be signed from this
+            browser. Corwa reads what it can through its own server, and pricing below is live, but
+            settling needs <span className="num">NEXT_PUBLIC_SOLANA_RPC_URL</span> set.
+          </Notice>
+        )}
+
+        <div className="segmented w-full">
+          <button
+            onClick={() => setDirection("buy")}
+            data-active={buy}
+            disabled={running}
+            className="flex-1"
+          >
+            Buy {pair.quote.symbol}
+          </button>
+          <button
+            onClick={() => setDirection("sell")}
+            data-active={!buy}
+            disabled={running}
+            className="flex-1"
+          >
+            Sell {pair.quote.symbol}
+          </button>
+        </div>
+
         <div className="panel p-4">
           <div className="label mb-2 text-[12px]">Sell</div>
           <div className="flex items-center gap-3">
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value.replace(/[^0-9.]/g, ""))}
+              onChange={(e) => {
+                setInput(e.target.value.replace(/[^0-9.]/g, ""));
+                setMaxed(false);
+              }}
               inputMode="decimal"
               placeholder="0"
               disabled={running}
               className="num w-full bg-transparent text-[26px] text-primary outline-none placeholder:text-[color:var(--text-subtle)] disabled:opacity-50"
             />
-            <span className="pill shrink-0 bg-[var(--surface)] text-primary">
-              {pair.base.symbol}
-            </span>
+            <span className="pill shrink-0 bg-[var(--surface)] text-primary">{sellSymbol}</span>
           </div>
+
+          {!buy && (
+            <div className="mt-2.5 flex items-center justify-between gap-3 text-[12px]">
+              <span className="num truncate text-muted">
+                {holding
+                  ? `${fmtAmount(holding.shares, 8)} ${pair.quote.symbol} on Solana`
+                  : publicKey
+                    ? `No ${pair.quote.symbol} in this wallet`
+                    : "Connect a wallet to see your balance"}
+              </span>
+              {holding && !running && (
+                <div className="flex shrink-0 gap-1">
+                  {([0.25, 0.5, 1] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => {
+                        setInput(trimShares(holding.shares * f));
+                        setMaxed(f === 1);
+                      }}
+                      className="rounded-full px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-[var(--surface)] hover:text-[color:var(--text-primary)]"
+                    >
+                      {f === 1 ? "Max" : `${f * 100}%`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {planning && !activePlan && <div className="skeleton h-24 w-full" />}
+        {pricing && !plan && !journey && <div className="skeleton h-24 w-full" />}
 
-        {activePlan && (
-          <>
-            <div className="panel p-4">
-              <div className="label text-[12px]">You end up holding</div>
-              <div className="num mt-1.5 flex items-baseline gap-2">
-                <span className="text-[26px] text-primary">
-                  {activePlan.outputShares < 0.0001
-                    ? activePlan.outputShares.toExponential(4)
-                    : activePlan.outputShares.toFixed(6)}
-                </span>
-                <span className="text-[14px] text-muted">{pair.quote.symbol}</span>
-              </div>
-              <div className="mt-1 text-[12px] text-muted">
-                {usd(activePlan.outputUsd)} · on Solana mainnet
-              </div>
-            </div>
-
-            <ol className="space-y-2">
-              {activePlan.legs.map((leg, i) => (
-                <LegRow key={i} index={i} leg={leg} result={steps[i]} />
-              ))}
-            </ol>
-
-            <div className="flex items-center justify-between px-1 text-[13px]">
-              <span className="text-muted">Total slippage</span>
-              <span
-                className="num"
-                style={{
-                  color:
-                    activePlan.totalPriceImpactPct > 3 ? "var(--color-down)" : "var(--text-primary)",
-                }}
-              >
-                {activePlan.totalPriceImpactPct.toFixed(2)}%
+        {plan && !journey && (
+          <div className="panel p-4">
+            <div className="label text-[12px]">You end up holding</div>
+            <div className="num mt-1.5 flex items-baseline gap-2">
+              <span className="text-[26px] text-primary">
+                {plan.outAmount < 0.0001 ? plan.outAmount.toExponential(4) : plan.outAmount.toFixed(6)}
               </span>
+              <span className="text-[14px] text-muted">{plan.outSymbol}</span>
             </div>
-
-            {activePlan.warnings.map((w, i) => (
-              <Notice key={i} tone="note">
-                {w}
-              </Notice>
-            ))}
-          </>
+            <div className="mt-1 text-[12px] text-muted">
+              {usd(plan.outUsd ?? plan.outAmount * pair.base.priceUsd)} · {plan.outWhere}
+            </div>
+          </div>
         )}
 
-        {activePlanError && <Notice tone="down">{activePlanError}</Notice>}
+        {legs.length > 0 && <RouteSteps legs={legs} steps={journey?.steps} />}
+
+        {plan && !journey && (
+          <div className="flex items-center justify-between px-1 text-[13px]">
+            <span className="text-muted">Total slippage</span>
+            <span
+              className="num"
+              style={{
+                color: plan.totalPriceImpactPct > 3 ? "var(--color-down)" : "var(--text-primary)",
+              }}
+            >
+              {plan.totalPriceImpactPct.toFixed(2)}%
+            </span>
+          </div>
+        )}
+
+        {stuck && journey && (
+          <Notice tone="down">
+            <div className="font-medium">
+              This route stopped {timeAgo(journey.updatedAt)} ago, at leg {journey.cursor + 1} of{" "}
+              {journey.legs.length}.
+            </div>
+            <p className="mt-1">{fundsLocation(journey)}</p>
+            {journey.messageId && (
+              <p className="num mt-1">Hyperlane message {shortAddr(journey.messageId, 8)}</p>
+            )}
+            <p className="mt-1">
+              Resuming re-checks every signature it already has before sending anything, so a leg
+              that landed is never paid for twice.
+            </p>
+          </Notice>
+        )}
+
+        {journey?.status === "done" && (
+          <Notice tone="up">
+            The route settled in full. Every leg above links to its transaction.
+          </Notice>
+        )}
+
+        {!journey && plan?.warnings.map((w, i) => <Notice key={i} tone="note">{w}</Notice>)}
+
+        {planError && !journey && <Notice tone="down">{planError}</Notice>}
 
         {!publicKey ? (
           <button className="btn btn-primary w-full" onClick={() => setVisible(true)}>
             Connect wallet
           </button>
+        ) : stuck && journey ? (
+          <div className="flex gap-2">
+            <button
+              className="btn btn-primary flex-1"
+              disabled={running}
+              onClick={() => void drive(journey)}
+            >
+              {running ? "Resuming" : `Resume from leg ${journey.cursor + 1}`}
+            </button>
+            <button className="btn shrink-0" disabled={running} onClick={reset}>
+              Discard
+            </button>
+          </div>
+        ) : failedToStart && journey ? (
+          <div className="flex gap-2">
+            <button
+              className="btn btn-primary flex-1"
+              disabled={running}
+              onClick={() => void drive(journey)}
+            >
+              {running ? "Routing" : "Try again"}
+            </button>
+            <button className="btn shrink-0" disabled={running} onClick={reset}>
+              Start over
+            </button>
+          </div>
+        ) : journey?.status === "done" ? (
+          <button className="btn btn-primary w-full" onClick={reset}>
+            Start another
+          </button>
         ) : (
           <button
             className="btn btn-primary w-full"
-            disabled={!activePlan || running || planning}
-            onClick={run}
+            disabled={!plan || running || pricing}
+            onClick={start}
           >
-            {running ? "Routing" : `Settle into ${pair.quote.symbol}`}
+            {running
+              ? "Routing"
+              : buy
+                ? `Settle into ${pair.quote.symbol}`
+                : `Sell ${pair.quote.symbol} for ${pair.base.symbol}`}
           </button>
         )}
 
-        {bridgedCook != null && (
-          <p className="px-1 text-[12px] text-muted">
-            {fmtAmount(bridgedCook)} COOK arrived on Solana.
+        {stuck && (
+          <p className="px-1 text-[12px] leading-relaxed text-muted">
+            Discard only forgets this route. It does not move anything - if the bridge has already
+            dispatched, that COOK is still yours and still on its way.
           </p>
         )}
       </div>
@@ -374,108 +516,92 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
   );
 }
 
-function LegRow({ index, leg, result }: { index: number; leg: RouteLeg; result?: StepResult }) {
-  const state = result?.state ?? "idle";
-  const mark =
-    state === "done" ? "✓" : state === "failed" ? "✕" : state === "running" ? "•" : String(index + 1);
+// --- Request and response shapes ------------------------------------------------------------------
 
-  const markStyle: React.CSSProperties =
-    state === "done"
-      ? { background: "color-mix(in srgb, var(--color-up) 16%, transparent)", color: "var(--color-up)" }
-      : state === "failed"
-        ? {
-            background: "color-mix(in srgb, var(--color-down) 16%, transparent)",
-            color: "var(--color-down)",
-          }
-        : state === "running"
-          ? { background: "var(--accent-tint)", color: "var(--color-cookie-deep)" }
-          : { background: "var(--surface)", color: "var(--text-subtle)" };
+interface TokenSide {
+  mint: string;
+  symbol: string;
+  decimals: number;
+}
 
-  return (
-    <li className="panel flex gap-3 p-3.5">
-      <span
-        style={markStyle}
-        className={`num grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] ${
-          state === "running" ? "live-dot" : ""
-        }`}
-      >
-        {mark}
-      </span>
-      <div className="min-w-0 flex-1 text-[13px]">
-        <div className="text-primary">{leg.label}</div>
-        <div className="truncate text-[12px] text-muted">{leg.venue}</div>
-        <div className="num mt-1 text-[12px] text-muted">
-          {fmtAmount(leg.inAmount)} {leg.inSymbol} → {fmtAmount(leg.outAmount, 8)} {leg.outSymbol}
-          {leg.priceImpactPct ? ` · ${leg.priceImpactPct.toFixed(2)}%` : ""}
-        </div>
-        {result?.detail && (
-          <div className="mt-1 text-[12px] text-[color:var(--color-cookie-deep)]">
-            {result.detail}
-          </div>
-        )}
-        {result?.error && (
-          <div className="mt-1 text-[12px] text-[color:var(--color-down)]">{result.error}</div>
-        )}
-        {result?.signature && (
-          <a
-            href={
-              result.chain === "solana"
-                ? solanaTxUrl(result.signature)
-                : cookieTxUrl(result.signature)
-            }
-            target="_blank"
-            rel="noreferrer"
-            className="num mt-1 inline-block text-[12px] text-muted underline underline-offset-4 transition-colors hover:text-[color:var(--text-primary)]"
-          >
-            {shortAddr(result.signature, 6)}
-          </a>
-        )}
-      </div>
-    </li>
-  );
+function buyParams(token: TokenSide, ticker: string, amount: number, owner?: string): string {
+  const params = new URLSearchParams({
+    inputMint: token.mint,
+    inputSymbol: token.symbol,
+    inputDecimals: String(token.decimals),
+    amount: String(amount),
+    ticker,
+  });
+  if (owner) params.set("owner", owner);
+  return params.toString();
+}
+
+function sellParams(
+  token: TokenSide,
+  ticker: string,
+  amountRaw: string,
+  shares: number,
+  owner?: string,
+): string {
+  const params = new URLSearchParams({
+    ticker,
+    amountRaw,
+    shares: String(shares),
+    outputMint: token.mint,
+    outputSymbol: token.symbol,
+    outputDecimals: String(token.decimals),
+  });
+  if (owner) params.set("owner", owner);
+  return params.toString();
 }
 
 /**
- * Poll Solana until the bridged COOK shows up.
- *
- * Delivery is a relayer's job, so there is no receipt to await - the only reliable signal is the
- * recipient's balance rising. Returns what actually arrived, which is what leg 3 must spend.
+ * The two planners answer with different shapes because they mean different things: one ends in
+ * RWA shares on Solana, the other in tokens on Cookie Chain. This is the only place that difference
+ * has to be known.
  */
-async function waitForCookOnSolana(
-  conn: Connection,
-  owner: PublicKey,
-  expected: number,
-  onTick: (elapsedSeconds: number) => void,
-  timeoutMs = 15 * 60_000,
-): Promise<number> {
-  const { COOK_SOLANA_MINT } = await import("@/lib/config");
-  const mint = new PublicKey(COOK_SOLANA_MINT);
-  const started = Date.now();
-  let baseline: number | null = null;
+function toView(
+  direction: JourneyDirection,
+  json: unknown,
+  ticker: string,
+  baseSymbol: string,
+): PlanView {
+  const raw = json as {
+    legs: RouteLeg[];
+    totalPriceImpactPct: number;
+    warnings: string[];
+    outputShares?: number;
+    outputUsd?: number;
+    output?: { amount: number; symbol: string };
+  };
 
-  while (Date.now() - started < timeoutMs) {
-    let balance = 0;
-    try {
-      const accounts = await conn.getParsedTokenAccountsByOwner(owner, { mint });
-      balance = accounts.value.reduce(
-        (sum, a) => sum + (a.account.data.parsed?.info?.tokenAmount?.uiAmount ?? 0),
-        0,
-      );
-    } catch {
-      // A throttled public RPC is expected here; keep waiting rather than failing the transfer.
-    }
-
-    if (baseline === null) baseline = balance;
-    const gained = balance - baseline;
-    // Accept once most of the expected amount has landed; the bridge takes interchain gas out.
-    if (gained >= expected * 0.9) return Number(gained.toFixed(COOK_SOLANA_DECIMALS));
-
-    onTick(Math.round((Date.now() - started) / 1000));
-    await new Promise((r) => setTimeout(r, 6_000));
+  if (direction === "buy") {
+    return {
+      legs: raw.legs,
+      outAmount: raw.outputShares ?? 0,
+      outSymbol: `${ticker}x`,
+      // Already valued server-side, against the same RWA price the rest of the page is quoting.
+      outUsd: raw.outputUsd ?? 0,
+      outWhere: "on Solana mainnet",
+      totalPriceImpactPct: raw.totalPriceImpactPct,
+      warnings: raw.warnings,
+    };
   }
 
-  throw new Error(
-    "The bridge has not delivered within 15 minutes. Your COOK is not lost - it is locked in the " +
-      "warp route and will arrive when a relayer picks it up. Reopen this panel then to finish leg 3.",
-  );
+  return {
+    legs: raw.legs,
+    outAmount: raw.output?.amount ?? 0,
+    outSymbol: raw.output?.symbol ?? baseSymbol,
+    // Valued at the token's own spot price rather than at what was sold: what the user ends up
+    // holding is the honest number, and the two differ by exactly the route's slippage.
+    outUsd: null,
+    outWhere: "on Cookie Chain",
+    totalPriceImpactPct: raw.totalPriceImpactPct,
+    warnings: raw.warnings,
+  };
+}
+
+/** A percentage of a rebased balance is a long float. Show it at the mint's own precision. */
+function trimShares(n: number): string {
+  return n.toFixed(RWA_DECIMALS).replace(/\.?0+$/, "");
 }
