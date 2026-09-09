@@ -1,0 +1,467 @@
+@import "tailwindcss";
+
+/*
+ * Corwa design system.
+ *
+ * Two references, deliberately split. The PALETTE is Cookie Chain's, measured off its own site: the
+ * navy #0B1F3A it draws everything with, and its cookie/sky accents. The CRAFT is Pons', measured
+ * off theirs:
+ *
+ *   - One typeface. Inter for everything — headings, 56px stat numbers, even addresses. No serif,
+ *     no monospace, no uppercase tracking. Numbers just get tabular figures.
+ *   - Fills, not borders. Panels are a flat tint on the page colour; borders appear only where two
+ *     dense regions genuinely need separating, and then at a tenth of an opacity.
+ *   - Soft, layered shadows (1px / 8px / 24px) instead of any hard edge.
+ *   - Pills for every control, large radii for every container, generous padding throughout.
+ *   - One easing curve, cubic-bezier(.22, 1, .36, 1), at .18s.
+ *
+ * What makes it read as premium is restraint: weight comes from spacing and hierarchy, never from
+ * heavy type or strong lines. Nothing in this system uses a font weight above 500.
+ */
+
+@theme {
+  --color-ink: #0b1f3a;
+  --color-ink-deep: #061527;
+
+  --color-cookie: #ffc65d;
+  --color-cookie-deep: #f0ad35;
+  --color-cookie-tint: #fff6e4;
+  --color-sky: #66c3ff;
+  --color-sky-tint: #eaf6ff;
+
+  /* Apple's system pair — the calmest legible up/down */
+  --color-up: #34c759;
+  --color-down: #ff3b30;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-panel: 16px;
+  --radius-card: 20px;
+  --radius-float: 24px;
+}
+
+:root {
+  color-scheme: light;
+
+  --text-primary: #111a26;
+  --text-muted: rgba(17, 26, 38, 0.56);
+  --text-subtle: rgba(17, 26, 38, 0.38);
+  --divider: rgba(17, 26, 38, 0.08);
+  --divider-strong: rgba(17, 26, 38, 0.13);
+
+  --page: #f4f3f1;
+  --surface: #ffffff;
+  --surface-raised: #f0eeeb;
+  --surface-sunken: #e9e7e3;
+
+  --shadow-card: 0 2px 12px rgba(17, 26, 38, 0.04);
+  --shadow-soft: 0 4px 24px rgba(17, 26, 38, 0.06);
+  --shadow-float:
+    0 1px 2px rgba(17, 26, 38, 0.04), 0 8px 24px rgba(17, 26, 38, 0.06),
+    0 24px 48px rgba(17, 26, 38, 0.04);
+
+  --glass-fill: rgba(255, 255, 255, 0.78);
+
+  --field-focus-border: rgba(255, 198, 93, 0.9);
+  --field-focus-glow: 0 0 0 3px rgba(255, 198, 93, 0.22);
+
+  --accent: #ffc65d;
+  --accent-contrast: #0b1f3a;
+  --accent-tint: #fff6e4;
+
+  --duration-fast: 0.18s;
+  --duration-normal: 0.28s;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --max-width: 1160px;
+}
+
+.terminal {
+  color-scheme: dark;
+
+  --text-primary: #f1f5f9;
+  --text-muted: rgba(241, 245, 249, 0.56);
+  --text-subtle: rgba(241, 245, 249, 0.36);
+  --divider: rgba(241, 245, 249, 0.08);
+  --divider-strong: rgba(241, 245, 249, 0.13);
+
+  --page: #0b1017;
+  --surface: #141b24;
+  --surface-raised: #1b232e;
+  --surface-sunken: #0f151d;
+
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.28);
+  --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.34);
+  --shadow-float:
+    0 1px 2px rgba(0, 0, 0, 0.34), 0 8px 24px rgba(0, 0, 0, 0.34),
+    0 24px 48px rgba(0, 0, 0, 0.28);
+
+  --glass-fill: rgba(20, 27, 36, 0.82);
+  --accent-tint: rgba(255, 198, 93, 0.12);
+
+  background: var(--page);
+  color: var(--text-primary);
+}
+
+html {
+  background: var(--page);
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Typography ------------------------------------------------------------------------------ */
+
+/*
+ * One face, one voice. Display sizes get slightly tighter tracking, which is all the emphasis a
+ * heading needs.
+ */
+.display {
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.label {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/*
+ * Numbers stay in Inter — only the figures change. Tabular means columns line up without the
+ * texture shift a monospace face would introduce.
+ */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+.text-subtle {
+  color: var(--text-subtle);
+}
+.text-primary {
+  color: var(--text-primary);
+}
+
+/* --- Surfaces --------------------------------------------------------------------------------- */
+
+/* The default container: a white card floating on the page tint, no border. */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-float);
+  box-shadow: var(--shadow-card);
+}
+
+.card-float {
+  background: var(--surface);
+  border-radius: var(--radius-float);
+  box-shadow: var(--shadow-float);
+}
+
+/* A flat block inside a card — grouping without adding another edge. */
+.panel {
+  background: var(--surface-raised);
+  border-radius: var(--radius-card);
+}
+
+.panel-flat {
+  background: var(--surface-raised);
+  border-radius: var(--radius-panel);
+}
+
+.glass {
+  background: var(--glass-fill);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.border-hair {
+  border-color: var(--divider);
+}
+.border-hair-strong {
+  border-color: var(--divider-strong);
+}
+.bg-surface {
+  background: var(--surface);
+}
+.bg-raised {
+  background: var(--surface-raised);
+}
+.bg-sunken {
+  background: var(--surface-sunken);
+}
+.bg-page {
+  background: var(--page);
+}
+
+/* --- Controls ---------------------------------------------------------------------------------- */
+
+.btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 12px 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-cookie-deep);
+}
+
+.btn-ink {
+  background: var(--text-primary);
+  color: var(--page);
+}
+.btn-ink:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-ghost {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+.btn-ghost:hover:not(:disabled) {
+  box-shadow: var(--shadow-soft);
+}
+
+.btn-quiet {
+  background: transparent;
+  color: var(--text-muted);
+}
+.btn-quiet:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  font-size: 13px;
+  padding: 9px 15px;
+}
+
+.pill {
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 6px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.pill-quiet {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.pill-outline {
+  border: 1px solid var(--divider-strong);
+  color: var(--text-muted);
+}
+
+.pill-active {
+  background: var(--text-primary);
+  color: var(--page);
+}
+
+/* The big pill input, the way Pons treats search. */
+.field {
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-family: inherit;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  outline: none;
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.field::placeholder {
+  color: var(--text-subtle);
+}
+.field:focus {
+  border-color: var(--field-focus-border);
+  box-shadow: var(--field-focus-glow);
+}
+
+/* Segmented control — the Pons/Apple pattern for switching views. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+.segmented > button {
+  border-radius: 999px;
+  padding: 8px 15px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  cursor: pointer;
+}
+.segmented > button:hover {
+  color: var(--text-primary);
+}
+.segmented > button[data-active="true"] {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.row-hover {
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.row-hover:hover {
+  background: var(--surface-raised);
+}
+
+/* --- Motion ------------------------------------------------------------------------------------ */
+
+@keyframes corwa-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.live-dot {
+  animation: corwa-pulse 2s var(--ease-out) infinite;
+}
+
+@keyframes corwa-shimmer {
+  0% {
+    background-position: -320px 0;
+  }
+  100% {
+    background-position: 320px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-raised),
+    rgba(127, 143, 163, 0.16),
+    var(--surface-raised)
+  );
+  background-size: 320px 100%;
+  animation: corwa-shimmer 1.5s linear infinite;
+  border-radius: 8px;
+}
+
+@keyframes corwa-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: corwa-rise 0.55s var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .skeleton,
+  .rise {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- Scrollbars -------------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--divider-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+}
+
+/* --- Wallet adapter overrides ------------------------------------------------------------------ */
+
+.wallet-adapter-modal-wrapper {
+  border-radius: var(--radius-float) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-float) !important;
+  font-family: var(--font-sans) !important;
+}
+.wallet-adapter-modal-title {
+  font-weight: 500 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--text-primary) !important;
+}
+.wallet-adapter-modal-list li button {
+  border-radius: 14px !important;
+  font-family: var(--font-sans) !important;
+}
