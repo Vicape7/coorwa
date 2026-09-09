@@ -3,7 +3,7 @@
  *
  * This is leg 2 of a Corwa cross-chain trade. The Cookie side is a `native` warp (it locks native
  * COOK in a PDA); the Solana side is a `collateral` warp (it locks SPL COOK in an escrow token
- * account). Neither side mints — a transfer is RELEASED from the destination's collateral — which
+ * account). Neither side mints - a transfer is RELEASED from the destination's collateral - which
  * drives the two preflight checks below.
  *
  * Instruction data has a fixed layout, so it is hand-encoded rather than pulling in a borsh dep:
@@ -13,7 +13,7 @@
  *
  *  1. Destination collateral. simulateTransaction runs on the SOURCE chain, so a transfer larger
  *     than the far side can release still simulates fine, still locks the user's funds, and only
- *     fails inside the relayer — leaving an undeliverable message. So the destination balance is
+ *     fails inside the relayer - leaving an undeliverable message. So the destination balance is
  *     read explicitly first.
  *
  *  2. Recipient token account (cookie -> solana). Delivery credits the recipient's COOK ATA, and
@@ -187,7 +187,7 @@ export function resolveRoute(
 
 /**
  * Rescale a raw amount between the two sides' decimals (Cookie 9, Solana 6).
- * Scaling down truncates, which can only understate the requirement by sub-dust — never overstate
+ * Scaling down truncates, which can only understate the requirement by sub-dust - never overstate
  * it into a false failure.
  */
 export function scaleRaw(raw: bigint, fromDecimals: number, toDecimals: number): bigint {
@@ -298,7 +298,7 @@ async function buildTransferRemoteIx(
     ];
   } else {
     const mint = route.splMint!;
-    // Read the token program off the mint owner — Solana COOK is Token-2022, so hardcoding the
+    // Read the token program off the mint owner - Solana COOK is Token-2022, so hardcoding the
     // classic program id would make the warp reject the transaction.
     const mintInfo = await sourceConn.getAccountInfo(mint, "confirmed");
     if (!mintInfo) throw new CorwaError(`SPL COOK mint not found: ${mint.toBase58()}`);

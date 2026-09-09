@@ -48,7 +48,7 @@ export function LaunchView() {
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
           Corwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades on
-          the curve until it hits the graduation target, then moves to a real DEX pool — where it
+          the curve until it hits the graduation target, then moves to a real DEX pool - where it
           becomes a Corwa pair you can price against any stock.
         </p>
       </div>
@@ -154,7 +154,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           devBuyCook: Number(devBuy) || 0,
         }),
       }).then((r) => r.json());
-      if (built.error) throw new Error(built.hint ? `${built.error} — ${built.hint}` : built.error);
+      if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
 
       // 3. Sign and send.
       setStep("Confirm the launch in your wallet");
@@ -197,7 +197,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     <div className="card p-7">
       <h2 className="title text-primary">Create</h2>
       <p className="mt-1.5 text-[13px] text-muted">
-        Metadata is immutable once minted — the logo and name cannot be changed later.
+        Metadata is immutable once minted - the logo and name cannot be changed later.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -264,7 +264,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           <Notice tone="note">
             {config?.paused
               ? "The launchpad is paused right now."
-              : "The launchpad has run out of pre-ground mint addresses. It grinds more continuously — try again shortly."}
+              : "The launchpad has run out of pre-ground mint addresses. It grinds more continuously - try again shortly."}
           </Notice>
         )}
 
@@ -375,7 +375,7 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
       <h2 className="title text-primary">Where the {fees.totalPct.toFixed(0)}% trade fee goes</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         Percentages are of the trade, not of the fee. The referral slice is paid out of the same fee
-        whether or not anyone is named — with no referrer, MomoSwap keeps it — so routing through
+        whether or not anyone is named - with no referrer, MomoSwap keeps it - so routing through
         Corwa costs a trader nothing and funds the rebate.
       </p>
 
@@ -423,7 +423,7 @@ function LivePools({ pools }: { pools: (LaunchpadPool & { progress: number })[] 
 
       {pools.length === 0 ? (
         <div className="panel mt-5 p-6 text-[13px] leading-relaxed text-muted">
-          No pools are open right now. Cookie Chain&apos;s launchpad is early — the reserve of
+          No pools are open right now. Cookie Chain&apos;s launchpad is early - the reserve of
           pre-ground mints is stocked and launching is free, so this is a page waiting for its first
           token rather than a broken feed.
         </div>

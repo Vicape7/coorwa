@@ -1,5 +1,5 @@
 /**
- * The pair engine — Corwa's core idea.
+ * The pair engine - Corwa's core idea.
  *
  * A Corwa pair is TOKEN/RWA: a Cookie Chain token quoted in shares of a real-world asset. There is
  * no TOKEN/NVDA pool anywhere, and Corwa never pretends there is. The pair is a *denomination*
@@ -9,10 +9,10 @@
  *
  * where usd(TOKEN) comes from real Cookie Chain pool reserves (via Cookiescan) and usd(NVDAx) comes
  * from real Solana liquidity (via Jupiter). Both sides are live market prices, so the ratio is
- * exact — it is a change of units, not a synthetic instrument.
+ * exact - it is a change of units, not a synthetic instrument.
  *
  * What that buys the trader is the number that actually matters and that no COOK-denominated
- * terminal can show: whether a token is beating NVIDIA. Settlement stays honest too — liquidity is
+ * terminal can show: whether a token is beating NVIDIA. Settlement stays honest too - liquidity is
  * the real TOKEN/wCOOK pool, and anyone wanting true RWA exposure exits through the cross-chain
  * route in `crosschain.ts`.
  */
@@ -60,7 +60,7 @@ export interface CorwaPair {
     priceUsd: number;
     change24h: number | null;
   };
-  /** How many RWA shares one base token is worth. Always tiny — render with `rwaRatio`. */
+  /** How many RWA shares one base token is worth. Always tiny - render with `rwaRatio`. */
   price: number;
   /** How many base tokens buy one whole RWA share. The human-readable direction. */
   inverse: number;

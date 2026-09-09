@@ -1,5 +1,5 @@
 /**
- * MomoSwap launchpad client — Cookie Chain's bonding-curve launchpad.
+ * MomoSwap launchpad client - Cookie Chain's bonding-curve launchpad.
  *
  * Its API serves the pool reads and BUILDS every launchpad transaction: it leases a pre-ground
  * `momo`-suffixed mint (the program enforces that suffix on-chain), pins metadata to IPFS, and
@@ -7,7 +7,7 @@
  * so the flow stays non-custodial.
  *
  * Why Corwa cares: the launchpad splits its 1% trade fee, and 20% of that goes to whoever is named
- * as referrer. With no referrer the programme keeps that share itself — so naming Corwa costs the
+ * as referrer. With no referrer the programme keeps that share itself - so naming Corwa costs the
  * trader nothing and is the honest source of the launchpad half of cashback.
  */
 import { MOMOSWAP_API, CORWA_REFERRER } from "./config";
@@ -122,7 +122,7 @@ export async function fetchPendingCreatorFees(pool: string): Promise<number> {
 
 /**
  * The login message the launchpad verifies. Line order and the domain string are part of the
- * contract — the server re-derives this exact string, so any drift reads as a forged signature.
+ * contract - the server re-derives this exact string, so any drift reads as a forged signature.
  */
 export function loginMessage(wallet: string, ts: number, nonce: string): string {
   return `MOMO Login\ndomain: momoswap.fun\nnonce: ${nonce}\nwallet: ${wallet}\nts: ${ts}`;

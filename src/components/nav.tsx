@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WalletButton } from "./wallet-button";
@@ -12,40 +13,25 @@ const LINKS = [
 ];
 
 /**
- * Header. The nav group is centred and the wallet sits at the right edge, which keeps the bar calm
- * at any width — the same arrangement Pons uses.
+ * A floating island rather than a full-width bar - the arrangement Pons uses, and the one that
+ * lets the page tint run behind the header instead of stopping at it.
+ *
+ * Deliberately `.glass` and not `.glass-pane`: this element is sticky, and an SVG displacement
+ * filter on something that repaints every scroll frame is the one place this material gets
+ * expensive. Blur and the specular edge alone are indistinguishable at nav size.
  */
 export function Nav() {
   const pathname = usePathname();
 
   return (
-    <header className="glass sticky top-0 z-40">
-      <div className="relative mx-auto flex h-16 max-w-[1400px] items-center px-5">
-        <Link href="/" className="flex shrink-0 items-center gap-2.5">
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--color-cookie)] text-[13px]">
-            🍪
-          </span>
-          <span className="title text-primary">corwa</span>
-        </Link>
+    <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
+      <div className="glass mx-auto flex max-w-[1240px] items-center gap-3 rounded-full py-2 pl-3 pr-2 shadow-[var(--shadow-soft)] sm:pl-4">
+        <Brand />
 
-        {/* Centred on wide screens, so the bar reads as a single balanced object. */}
-        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full bg-[var(--surface-raised)] p-1 lg:flex">
-          {LINKS.map((l) => {
-            const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
-            return (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={
-                  active
-                    ? "rounded-full bg-[var(--surface)] px-4 py-2 text-[13px] font-medium text-primary shadow-[var(--shadow-card)]"
-                    : "rounded-full px-4 py-2 text-[13px] text-muted transition-colors hover:text-[color:var(--text-primary)]"
-                }
-              >
-                {l.label}
-              </Link>
-            );
-          })}
+        <nav className="ml-1 hidden items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_72%,transparent)] p-1 lg:flex">
+          {LINKS.map((l) => (
+            <NavLink key={l.href} {...l} pathname={pathname} />
+          ))}
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
@@ -54,14 +40,16 @@ export function Nav() {
         </div>
       </div>
 
-      <nav className="flex items-center gap-1.5 overflow-x-auto px-5 pb-3 lg:hidden">
+      {/* Below lg the links move to their own scrollable row so the island never wraps. */}
+      <nav className="mx-auto mt-2 flex max-w-[1240px] items-center gap-1.5 overflow-x-auto pb-1 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {LINKS.map((l) => {
-          const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
+          const active = isActive(pathname, l.href);
           return (
             <Link
               key={l.href}
               href={l.href}
-              className={active ? "pill pill-active shrink-0" : "pill pill-quiet shrink-0"}
+              aria-current={active ? "page" : undefined}
+              className={active ? "pill pill-active shrink-0" : "pill glass shrink-0"}
             >
               {l.label}
             </Link>
@@ -69,6 +57,39 @@ export function Nav() {
         })}
       </nav>
     </header>
+  );
+}
+
+function Brand() {
+  return (
+    <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Corwa home">
+      <Image
+        src="/corwa.png"
+        alt=""
+        width={512}
+        height={512}
+        priority
+        className="h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(120,64,24,0.28)]"
+      />
+      <span className="title text-primary">corwa</span>
+    </Link>
+  );
+}
+
+function NavLink({ href, label, pathname }: { href: string; label: string; pathname: string }) {
+  const active = isActive(pathname, href);
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={
+        active
+          ? "rounded-full bg-[var(--surface)] px-4 py-2 text-[13px] font-medium text-primary shadow-[var(--shadow-card)]"
+          : "rounded-full px-4 py-2 text-[13px] text-muted transition-colors hover:text-[color:var(--text-primary)]"
+      }
+    >
+      {label}
+    </Link>
   );
 }
 
@@ -83,4 +104,8 @@ function ChainDot() {
       Cookie Chain
     </Link>
   );
+}
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
 }

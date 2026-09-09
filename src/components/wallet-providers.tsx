@@ -3,7 +3,7 @@
 /**
  * Wallet wiring.
  *
- * Cookie Chain is an SVM fork, so any Solana wallet signs for it — the only thing that differs is
+ * Cookie Chain is an SVM fork, so any Solana wallet signs for it - the only thing that differs is
  * the RPC the connection points at. Wallets that implement the Solana Wallet Standard (Nightly,
  * Backpack, Solflare, Phantom) register themselves, so no adapter list is needed here.
  *

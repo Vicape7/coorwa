@@ -4,12 +4,12 @@
  * Every mint below was read from its own account on mainnet, not from a token list. They are all
  * Token-2022 with 8 decimals and share a set of extensions that matter to us:
  *
- *   - `scaledUiAmountConfig` — these tokens REBASE. The real balance is raw x multiplier, and the
+ *   - `scaledUiAmountConfig` - these tokens REBASE. The real balance is raw x multiplier, and the
  *     multiplier changes on a schedule (dividends, splits). Never treat raw units as a price basis.
- *   - `permanentDelegate` / `pausableConfig` / `freezeAuthority` — Backed can claw back, pause or
+ *   - `permanentDelegate` / `pausableConfig` / `freezeAuthority` - Backed can claw back, pause or
  *     freeze. This is precisely why Corwa never escrows an xStock: we route through Jupiter into
  *     the user's own wallet instead of wrapping a bridged representation.
- *   - `transferHook` — authority set, program currently null. It can be switched on at any time,
+ *   - `transferHook` - authority set, program currently null. It can be switched on at any time,
  *     which would break any pool holding these as a quote asset.
  */
 
@@ -37,7 +37,7 @@ const x = (
   logo: `https://xstocks-metadata.backed.fi/logos/tokens/${ticker}x.png`,
 });
 
-/** Ordered by on-chain liquidity at the time of writing — deepest first. */
+/** Ordered by on-chain liquidity at the time of writing - deepest first. */
 export const RWA_ASSETS: RwaAsset[] = [
   x("SPY", "S&P 500", "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W"),
   x("CRCL", "Circle", "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1"),

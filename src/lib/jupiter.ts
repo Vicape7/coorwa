@@ -1,5 +1,5 @@
 /**
- * Jupiter client — the Solana-mainnet half of Corwa.
+ * Jupiter client - the Solana-mainnet half of Corwa.
  *
  * Two jobs: price the RWA assets that Corwa denominates pairs in, and quote/build the final leg of
  * a cross-chain route (bridged COOK -> xStock). The keyless tier allows 0.5 req/s, so every call
@@ -40,7 +40,7 @@ export interface RwaQuote {
  * Live USD price for every RWA in the registry, plus bridged COOK.
  *
  * Jupiter's search endpoint takes one query at a time, so this walks the registry sequentially
- * with a small delay — well inside the keyless rate limit, and the result is cached for 30s.
+ * with a small delay - well inside the keyless rate limit, and the result is cached for 30s.
  */
 async function loadRwaPrices(): Promise<Record<string, RwaQuote>> {
   const out: Record<string, RwaQuote> = {};
@@ -72,7 +72,7 @@ export async function fetchRwaPrices(): Promise<Record<string, RwaQuote>> {
   return cachedStale("jupiter:rwa", 30_000, loadRwaPrices);
 }
 
-/** COOK's price and depth on Solana mainnet — the capacity ceiling for cross-chain routing. */
+/** COOK's price and depth on Solana mainnet - the capacity ceiling for cross-chain routing. */
 export async function fetchCookOnSolana(): Promise<JupToken | null> {
   return cachedStale("jupiter:cook", 30_000, async () => {
     const res = await fetchJson<JupToken[]>(

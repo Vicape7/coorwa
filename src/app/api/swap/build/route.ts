@@ -20,7 +20,7 @@ const Body = z.object({
  * Build an unsigned swap transaction.
  *
  * Both aggregators re-quote server-side and return a transaction the user's wallet signs. Corwa
- * never sees a private key and never co-signs — this route is a proxy that keeps the upstream
+ * never sees a private key and never co-signs - this route is a proxy that keeps the upstream
  * call server-side, where rate limits and CORS are not the browser's problem.
  */
 export async function POST(req: Request) {

@@ -3,8 +3,8 @@
 /**
  * LP maker.
  *
- * Reads every pool on Cookie Chain and manages Cookiebox DAMM v2 positions natively — add, claim
- * fees, withdraw — with instructions built against the fork's own program. The wallet signs; Corwa
+ * Reads every pool on Cookie Chain and manages Cookiebox DAMM v2 positions natively - add, claim
+ * fees, withdraw - with instructions built against the fork's own program. The wallet signs; Corwa
  * only builds.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,6 +28,7 @@ import { cookieTxUrl, COOKIE_EXPLORER } from "@/lib/config";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { TokenMark } from "./token-mark";
 import { Notice } from "./notice";
+import { PillSelect } from "./ui/pill-select";
 import type { PoolRow } from "@/app/api/pools/route";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -61,7 +62,7 @@ export function PoolsView() {
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
           Every share-denominated pair in the terminal is backed by a real Cookie Chain pool. Corwa
-          manages Cookiebox DAMM v2 positions directly — deposit, claim fees, withdraw — and shows
+          manages Cookiebox DAMM v2 positions directly - deposit, claim fees, withdraw - and shows
           your position sized in shares, not just dollars.
         </p>
       </div>
@@ -70,18 +71,19 @@ export function PoolsView() {
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
         <h2 className="title text-primary">All pools</h2>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="label mr-1 text-[12px]">Depth in</span>
-          {RWA_ASSETS.slice(0, 6).map((a) => (
-            <button
-              key={a.ticker}
-              onClick={() => setTicker(a.ticker)}
-              className={a.ticker === ticker ? "pill pill-active" : "pill pill-quiet"}
-            >
-              {a.ticker}
-            </button>
-          ))}
-        </div>
+        {/* Six of the sixteen assets used to sit here as buttons. Same control, all sixteen, no row. */}
+        <PillSelect
+          id="pools-depth"
+          label="Depth in"
+          prefix="Depth"
+          value={ticker}
+          onChange={setTicker}
+          options={RWA_ASSETS.map((a) => ({
+            value: a.ticker,
+            label: a.ticker,
+          }))}
+          className="ml-auto"
+        />
       </div>
 
       <div className="card mt-4 overflow-hidden">
@@ -162,7 +164,13 @@ export function PoolsView() {
   );
 }
 
-function Th({ children, align = "left" }: { children?: React.ReactNode; align?: "left" | "right" }) {
+function Th({
+  children,
+  align = "left",
+}: {
+  children?: React.ReactNode;
+  align?: "left" | "right";
+}) {
   return (
     <th
       className={`label whitespace-nowrap px-5 py-3 text-[12px] font-normal ${
@@ -252,7 +260,11 @@ function MyPositions() {
       try {
         const tx =
           action === "claim"
-            ? await buildClaimFees({ ctx: p.ctx, owner: publicKey, position: p.position })
+            ? await buildClaimFees({
+                ctx: p.ctx,
+                owner: publicKey,
+                position: p.position,
+              })
             : await buildRemoveLiquidity({
                 ctx: p.ctx,
                 owner: publicKey,
@@ -524,7 +536,7 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
 
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
               A deposit takes both sides at the pool&apos;s current ratio; the other side is derived
-              from what you enter here. The position is minted as a Token-2022 NFT you hold — Corwa
+              from what you enter here. The position is minted as a Token-2022 NFT you hold - Corwa
               keeps no record of it.
             </p>
           </>

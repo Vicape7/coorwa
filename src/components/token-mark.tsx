@@ -4,7 +4,7 @@ import { useState } from "react";
 
 /**
  * Token avatar. Logos come from arbitrary IPFS gateways, so next/image's remote-pattern allowlist
- * is the wrong tool — and any of them can 404, hence the initials fallback.
+ * is the wrong tool - and any of them can 404, hence the initials fallback.
  */
 export function TokenMark({
   logo,

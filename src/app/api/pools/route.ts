@@ -21,7 +21,7 @@ export interface PoolRow {
 }
 
 /**
- * Every pool on Cookie Chain, with depth also expressed in shares of a real-world asset — the same
+ * Every pool on Cookie Chain, with depth also expressed in shares of a real-world asset - the same
  * change of units the terminal applies to prices, so an LP can size a position the way they think
  * about it.
  */

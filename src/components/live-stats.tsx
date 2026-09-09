@@ -22,18 +22,28 @@ interface ChainStatus {
 }
 
 export function LiveStats() {
-  const { data } = useSWR<ChainStatus>("/api/chain", fetcher, { refreshInterval: 5_000 });
+  const { data } = useSWR<ChainStatus>("/api/chain", fetcher, {
+    refreshInterval: 5_000,
+  });
 
   const cells = [
     { label: "Slot", value: data ? data.slot.toLocaleString("en-US") : null },
     { label: "Epoch", value: data ? String(data.epoch) : null },
-    { label: "Transactions", value: data ? amount(data.transactionCount, 0) : null },
+    {
+      label: "Transactions",
+      value: data ? amount(data.transactionCount, 0) : null,
+    },
     { label: "COOK", value: data ? usd(data.cookPriceUsd) : null },
-    { label: "Bridge depth", value: data ? usd(data.bridge.cookLiquidityOnSolanaUsd) : null },
+    {
+      label: "Bridge depth",
+      value: data ? usd(data.bridge.cookLiquidityOnSolanaUsd) : null,
+    },
   ];
 
   return (
-    <div className="card p-2">
+    // A pane rather than a card: this one sits directly on the hero's shader, where the denser
+    // card film would read as the one opaque rectangle in an otherwise glass composition.
+    <div className="glass-pane rounded-[var(--radius-float)] p-2">
       <div className="grid grid-cols-2 sm:grid-cols-5">
         {cells.map((c) => (
           <div key={c.label} className="px-5 py-4">
@@ -49,7 +59,9 @@ export function LiveStats() {
 }
 
 export function ChainBadge() {
-  const { data } = useSWR<ChainStatus>("/api/chain", fetcher, { refreshInterval: 10_000 });
+  const { data } = useSWR<ChainStatus>("/api/chain", fetcher, {
+    refreshInterval: 10_000,
+  });
 
   return (
     <span className="pill pill-quiet">

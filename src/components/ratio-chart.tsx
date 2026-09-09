@@ -4,7 +4,7 @@
  * The pair chart: a Cookie Chain token priced in shares of a real-world asset.
  *
  * The values are tiny by nature (a memecoin costs ~1e-8 of an NVDA share), so the price scale gets
- * a custom formatter — the default would render every level as 0.00.
+ * a custom formatter - the default would render every level as 0.00.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -213,7 +213,7 @@ export function RatioChart({
             <div className="max-w-sm">
               <div className="text-[15px] text-primary">No fills in this window</div>
               <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-                This pool has not traded at the {interval} resolution. Try a wider interval — the
+                This pool has not traded at the {interval} resolution. Try a wider interval - the
                 chart is built from executed trades, so it shows nothing rather than inventing a
                 line.
               </p>

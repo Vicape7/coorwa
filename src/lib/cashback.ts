@@ -2,8 +2,8 @@
  * Cashback accounting.
  *
  * The money is real and already exists: MomoSwap pays a referrer 20% of its 1% curve fee, and the
- * aggregator path carries Corwa's own router margin. Neither is invented — with no referrer named,
- * MomoSwap simply keeps that slice — so naming Corwa costs a trader nothing and is what funds the
+ * aggregator path carries Corwa's own router margin. Neither is invented - with no referrer named,
+ * MomoSwap simply keeps that slice - so naming Corwa costs a trader nothing and is what funds the
  * rebate.
  *
  * Accrual is split per `CASHBACK_SPLIT`: half back to the trader who generated the fee, a share to
@@ -155,8 +155,8 @@ export interface RecordFill {
 }
 
 /**
- * Record a confirmed fill. Idempotent on the signature, so a client that reports twice — a retry,
- * a refresh — cannot inflate its own balance.
+ * Record a confirmed fill. Idempotent on the signature, so a client that reports twice - a retry,
+ * a refresh - cannot inflate its own balance.
  */
 export async function recordFill(fill: RecordFill): Promise<{ recorded: boolean }> {
   if (!dbEnabled || !db) return { recorded: false };

@@ -18,7 +18,7 @@ const Body = z.discriminatedUnion("action", [
     action: z.literal("sell"),
     wallet: z.string().min(32).max(44),
     pool: z.string().min(32).max(44),
-    /** Raw curve shares — these are program-tracked, not SPL tokens. */
+    /** Raw curve shares - these are program-tracked, not SPL tokens. */
     shares: z.string().regex(/^\d+$/),
   }),
   z.object({
@@ -32,8 +32,8 @@ const Body = z.discriminatedUnion("action", [
  * Bonding-curve actions.
  *
  * Buys name Corwa as referrer, which routes 20% of the launchpad's 1% trade fee into the cashback
- * pot. That share comes out of the same fee either way — with nobody named, the programme keeps it
- * — so this costs the buyer nothing. The programme rejects self-referral, so a wallet buying its
+ * pot. That share comes out of the same fee either way - with nobody named, the programme keeps it
+ * - so this costs the buyer nothing. The programme rejects self-referral, so a wallet buying its
  * own curve is sent without one.
  */
 export async function POST(req: Request) {

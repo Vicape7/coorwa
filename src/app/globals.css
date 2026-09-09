@@ -3,33 +3,43 @@
 /*
  * Corwa design system.
  *
- * Two references, deliberately split. The PALETTE is Cookie Chain's, measured off its own site: the
- * navy #0B1F3A it draws everything with, and its cookie/sky accents. The CRAFT is Pons', measured
- * off theirs:
+ * It comes from two sources, kept separate on purpose.
  *
- *   - One typeface. Inter for everything — headings, 56px stat numbers, even addresses. No serif,
- *     no monospace, no uppercase tracking. Numbers just get tabular figures.
- *   - Fills, not borders. Panels are a flat tint on the page colour; borders appear only where two
- *     dense regions genuinely need separating, and then at a tenth of an opacity.
- *   - Soft, layered shadows (1px / 8px / 24px) instead of any hard edge.
- *   - Pills for every control, large radii for every container, generous padding throughout.
+ * COLOUR comes from the logo, measured out of the file instead of picked by eye. The cookie C in
+ * public/corwa.png is 12% #f0b860 by pixel count, runs #e8a850 to #f8d080 through its highlights,
+ * and has chocolate chips at #784018. So the product uses one hue, amber at 37°, with cocoa as its
+ * only dark. There is no navy and no second accent.
+ *
+ * LAYOUT AND TYPE come from ponsfamily.com/launchpad, checked with the browser inspector:
+ *
+ *   - One typeface. Inter for headings, stat numbers and addresses alike. Weights 400 and 500 only.
+ *     Their site uses no third weight, and neither does this one.
+ *   - Pills. They use border-radius 999px 209 times against 62 for the next most common value.
+ *   - Fills instead of borders. A border appears only between two dense regions, at 0.08 opacity.
  *   - One easing curve, cubic-bezier(.22, 1, .36, 1), at .18s.
  *
- * What makes it read as premium is restraint: weight comes from spacing and hierarchy, never from
- * heavy type or strong lines. Nothing in this system uses a font weight above 500.
+ * MATERIAL is glass, and it is the one part that is not from Pons. Glass only looks like glass when
+ * there is something behind it, so glass surfaces sit over the amber field (.aurora-field) and not
+ * over flat paper. The Glass section below explains how the layers stack.
+ *
+ * What makes this feel expensive is restraint. Emphasis comes from spacing and hierarchy, never
+ * from heavier type or stronger lines. Nothing here uses a font weight above 500.
  */
 
 @theme {
-  --color-ink: #0b1f3a;
-  --color-ink-deep: #061527;
+  /* Cocoa - the logo's chocolate chips, and the only dark in the product. */
+  --color-ink: #3a1e0b;
+  --color-ink-deep: #1d1408;
 
-  --color-cookie: #ffc65d;
-  --color-cookie-deep: #f0ad35;
-  --color-cookie-tint: #fff6e4;
+  /* Amber - sampled straight out of the logo. */
+  --color-cookie: #f0b860;
+  --color-cookie-deep: #d89038;
+  --color-cookie-lit: #f8d080;
+  --color-cookie-tint: #fdf4e6;
   --color-sky: #66c3ff;
   --color-sky-tint: #eaf6ff;
 
-  /* Apple's system pair — the calmest legible up/down */
+  /* Apple's system pair - the calmest legible up/down */
   --color-up: #34c759;
   --color-down: #ff3b30;
 
@@ -43,31 +53,65 @@
 :root {
   color-scheme: light;
 
-  --text-primary: #111a26;
-  --text-muted: rgba(17, 26, 38, 0.56);
-  --text-subtle: rgba(17, 26, 38, 0.38);
-  --divider: rgba(17, 26, 38, 0.08);
-  --divider-strong: rgba(17, 26, 38, 0.13);
+  /* Every neutral is cocoa at a low alpha, so nothing in the product is a cool grey. */
+  --text-primary: #1d1408;
+  --text-muted: rgba(29, 20, 8, 0.58);
+  --text-subtle: rgba(29, 20, 8, 0.4);
+  --divider: rgba(29, 20, 8, 0.08);
+  --divider-strong: rgba(29, 20, 8, 0.13);
 
-  --page: #f4f3f1;
-  --surface: #ffffff;
-  --surface-raised: #f0eeeb;
-  --surface-sunken: #e9e7e3;
+  --page: #f5f2ec;
+  --surface: #fffdfa;
+  --surface-raised: #f1ece2;
+  --surface-sunken: #e9e2d5;
 
-  --shadow-card: 0 2px 12px rgba(17, 26, 38, 0.04);
-  --shadow-soft: 0 4px 24px rgba(17, 26, 38, 0.06);
+  --shadow-card: 0 2px 12px rgba(58, 30, 11, 0.05);
+  --shadow-soft: 0 4px 24px rgba(58, 30, 11, 0.07);
   --shadow-float:
-    0 1px 2px rgba(17, 26, 38, 0.04), 0 8px 24px rgba(17, 26, 38, 0.06),
-    0 24px 48px rgba(17, 26, 38, 0.04);
+    0 1px 2px rgba(58, 30, 11, 0.05), 0 8px 24px rgba(58, 30, 11, 0.07),
+    0 24px 48px rgba(58, 30, 11, 0.05);
 
-  --glass-fill: rgba(255, 255, 255, 0.78);
+  --field-focus-border: rgba(240, 184, 96, 0.9);
+  --field-focus-glow: 0 0 0 3px rgba(240, 184, 96, 0.24);
 
-  --field-focus-border: rgba(255, 198, 93, 0.9);
-  --field-focus-glow: 0 0 0 3px rgba(255, 198, 93, 0.22);
+  --accent: #f0b860;
+  --accent-contrast: #1d1408;
+  --accent-tint: #fdf4e6;
 
-  --accent: #ffc65d;
-  --accent-contrast: #0b1f3a;
-  --accent-tint: #fff6e4;
+  /* --- Glass ------------------------------------------------------------------------------- */
+  /*
+   * Kept very transparent on purpose. The first version was 0.62 and the panes looked like frosted
+   * plastic. Above roughly half opacity, too little of the background survives for anything to look
+   * bent, so the pane stops reading as glass. The shader behind it is what the glass is meant to
+   * bend, so the film only has to keep text readable.
+   */
+  --glass-fill: rgba(255, 253, 250, 0.34);
+  /* Cards hold dense data over a calmer background, so they can take a thicker film. */
+  --card-fill: rgba(255, 253, 250, 0.7);
+  --panel-fill: rgba(241, 236, 226, 0.66);
+  /* Moderate, not heavy. Blur above about 14px destroys the shapes the lens is meant to distort. */
+  --glass-blur: 12px;
+  --card-blur: 16px;
+  /*
+   * The edge does most of the work, and over the hero it does nearly all of it. Bending a smooth
+   * gradient just gives you a smooth gradient, so refraction stays invisible until there is real
+   * detail behind the pane. What tells the eye "this is a solid see-through object" over any
+   * background is the rim. Four bands, in paint order:
+   *   - a crisp outer ring, so the shape holds against a busy background
+   *   - a bright highlight on the top and left, and a dimmer one on the bottom and right
+   *   - a warm and cool split a few pixels in, which the eye reads as colour fringing
+   *   - an inner glow, which makes the pane look thick instead of looking like a film
+   */
+  --glass-edge:
+    0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 2px 1px -1px rgba(255, 255, 255, 1),
+    inset 2px 0 1px -1px rgba(255, 255, 255, 0.78), inset 0 -2px 1px -1px rgba(255, 255, 255, 0.5),
+    inset -2px 0 1px -1px rgba(255, 255, 255, 0.42),
+    inset 5px 0 14px -10px rgba(255, 190, 90, 0.95),
+    inset -5px 0 14px -10px rgba(120, 190, 255, 0.72), inset 0 0 30px rgba(255, 255, 255, 0.32);
+  --glass-rim: rgba(255, 255, 255, 0.7);
+  --aurora-a: rgba(240, 184, 96, 0.5);
+  --aurora-b: rgba(248, 208, 128, 0.42);
+  --aurora-c: rgba(216, 144, 56, 0.22);
 
   --duration-fast: 0.18s;
   --duration-normal: 0.28s;
@@ -76,28 +120,44 @@
   --max-width: 1160px;
 }
 
+/*
+ * The terminal runs dark, but it is the same cocoa hue turned down rather than a neutral black -
+ * amber on a warm ground stays legible where amber on slate goes muddy.
+ */
 .terminal {
   color-scheme: dark;
 
-  --text-primary: #f1f5f9;
-  --text-muted: rgba(241, 245, 249, 0.56);
-  --text-subtle: rgba(241, 245, 249, 0.36);
-  --divider: rgba(241, 245, 249, 0.08);
-  --divider-strong: rgba(241, 245, 249, 0.13);
+  --text-primary: #f7f2e9;
+  --text-muted: rgba(247, 242, 233, 0.56);
+  --text-subtle: rgba(247, 242, 233, 0.36);
+  --divider: rgba(247, 242, 233, 0.08);
+  --divider-strong: rgba(247, 242, 233, 0.14);
 
-  --page: #0b1017;
-  --surface: #141b24;
-  --surface-raised: #1b232e;
-  --surface-sunken: #0f151d;
+  --page: #12100c;
+  --surface: #1c1813;
+  --surface-raised: #251f18;
+  --surface-sunken: #15120e;
 
-  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.28);
-  --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.34);
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.34);
+  --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.4);
   --shadow-float:
-    0 1px 2px rgba(0, 0, 0, 0.34), 0 8px 24px rgba(0, 0, 0, 0.34),
-    0 24px 48px rgba(0, 0, 0, 0.28);
+    0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4), 0 24px 48px rgba(0, 0, 0, 0.32);
 
-  --glass-fill: rgba(20, 27, 36, 0.82);
-  --accent-tint: rgba(255, 198, 93, 0.12);
+  --glass-fill: rgba(28, 24, 19, 0.42);
+  --card-fill: rgba(28, 24, 19, 0.68);
+  --panel-fill: rgba(37, 31, 24, 0.66);
+  /* Same four layers as the light surface, but a specular catch on a dark pane is a low-alpha warm
+   * white rather than a bright one - anything stronger reads as a drawn border. */
+  --glass-edge:
+    0 0 0 1px rgba(255, 232, 196, 0.1), inset 0 2px 1px -1px rgba(255, 232, 196, 0.28),
+    inset 2px 0 1px -1px rgba(255, 232, 196, 0.18), inset 0 -2px 1px -1px rgba(255, 232, 196, 0.1),
+    inset -2px 0 1px -1px rgba(255, 232, 196, 0.08), inset 5px 0 14px -10px rgba(240, 184, 96, 0.5),
+    inset -5px 0 14px -10px rgba(120, 190, 255, 0.3), inset 0 0 30px rgba(255, 232, 196, 0.06);
+  --glass-rim: rgba(255, 232, 196, 0.2);
+  --accent-tint: rgba(240, 184, 96, 0.14);
+  --aurora-a: rgba(240, 184, 96, 0.24);
+  --aurora-b: rgba(216, 144, 56, 0.2);
+  --aurora-c: rgba(120, 64, 24, 0.28);
 
   background: var(--page);
   color: var(--text-primary);
@@ -107,9 +167,13 @@ html {
   background: var(--page);
 }
 
+/*
+ * No background on body, deliberately. The page tint lives on <html> and reaches the canvas from
+ * there; painting it again here would sit on top of the negative-z-index aurora field, which is a
+ * descendant of body and therefore renders *behind* body's own background.
+ */
 body {
   margin: 0;
-  background: var(--page);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -145,7 +209,7 @@ body {
 }
 
 /*
- * Numbers stay in Inter — only the figures change. Tabular means columns line up without the
+ * Numbers stay in Inter - only the figures change. Tabular means columns line up without the
  * texture shift a monospace face would introduce.
  */
 .num {
@@ -165,34 +229,183 @@ body {
 
 /* --- Surfaces --------------------------------------------------------------------------------- */
 
-/* The default container: a white card floating on the page tint, no border. */
+/*
+ * The default container. Glass rather than paper, which is what converts the rest of the product -
+ * pools, rewards, launch, the terminal - without any of those files knowing the material changed.
+ *
+ * Deliberately the cheap recipe: blur and a specular edge, no SVG displacement. The pools page can
+ * put fifty of these on screen at once, and fifty filtered backdrop layers is a different order of
+ * cost from fifty blurred ones. `.glass-pane` stays reserved for the handful of large, deliberate
+ * surfaces where the bend is actually visible.
+ */
 .card {
-  background: var(--surface);
+  background: var(--card-fill);
+  backdrop-filter: saturate(160%) blur(var(--card-blur));
+  -webkit-backdrop-filter: saturate(160%) blur(var(--card-blur));
   border-radius: var(--radius-float);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--glass-edge), var(--shadow-card);
 }
 
 .card-float {
-  background: var(--surface);
+  background: var(--card-fill);
+  backdrop-filter: saturate(160%) blur(var(--card-blur));
+  -webkit-backdrop-filter: saturate(160%) blur(var(--card-blur));
   border-radius: var(--radius-float);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--glass-edge), var(--shadow-float);
 }
 
-/* A flat block inside a card — grouping without adding another edge. */
+/* A block inside a card. Tinted rather than blurred - it is already behind one layer of glass, and
+ * stacking a second blur on the same backdrop buys nothing but paint time. */
 .panel {
-  background: var(--surface-raised);
+  background: var(--panel-fill);
   border-radius: var(--radius-card);
 }
 
 .panel-flat {
-  background: var(--surface-raised);
+  background: var(--panel-fill);
   border-radius: var(--radius-panel);
 }
 
+/* --- Glass -------------------------------------------------------------------------------------
+ *
+ * Four layers, and the order matters:
+ *
+ *   1. the background, blurred and saturated, and bent by an SVG displacement map where supported
+ *   2. a near-white film, so text has something to sit on
+ *   3. an inset highlight, bright on the top left and faint on the bottom right
+ *   4. the content
+ *
+ * Only the bend in layer 1 is optional. Combining `filter: url()` with `backdrop-filter` works in
+ * Chromium; Firefox and Safari drop the bend and keep the blur. That is why the film and the
+ * highlight do the real work here. The bend is a bonus in browsers that support it, never the
+ * thing the look depends on.
+ */
+
+/* The cheap version. No SVG filter, so it is safe on anything that scrolls or repaints each frame. */
 .glass {
   background: var(--glass-fill);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  box-shadow: var(--glass-edge);
+}
+
+/* The full one. Isolated so the refraction layer can sit at z-index -1 and still stay inside. */
+.glass-pane {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: var(--glass-edge), var(--shadow-float);
+}
+
+/*
+ * Sits exactly on the pane's edges and takes the same corner radius. Both matter. The lens filter
+ * builds its displacement from this layer's own outline, so the edge it measures has to be the edge
+ * you actually see.
+ *
+ * An earlier version stretched this layer 24px outward to avoid the edge erosion that
+ * feDisplacementMap causes. That put the whole lens outside the visible pane, which is the main
+ * reason those surfaces looked like flat see-through cards.
+ *
+ * Erosion is handled by the shape of the ramp instead. Its gradient peaks about 12px inside the
+ * edge and falls to zero at the edge itself, so nothing is pulled in at the boundary.
+ */
+.glass-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill);
+  backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  filter: url(#corwa-lens-soft);
+}
+
+.glass-pane[data-refract="deep"]::before {
+  filter: url(#corwa-lens-deep);
+}
+
+/*
+ * Chromium composes `filter` over `backdrop-filter`; Firefox and Safari do not, and drop the lens.
+ * They still get the film, the specular edge and the aberration split, which is most of the read.
+ */
+@supports not (-webkit-backdrop-filter: blur(1px)) {
+  .glass-pane::before {
+    filter: none;
+  }
+}
+
+/*
+ * Two reflections. The vertical one is the sky falling on a horizontal-ish surface; the diagonal
+ * band is a specular streak crossing the pane. Neither is refraction - they are what convinces the
+ * eye the pane is a solid object rather than a hole with a blur in it.
+ */
+.glass-pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, var(--glass-rim) 0%, transparent 38%),
+    linear-gradient(
+      105deg,
+      transparent 36%,
+      rgba(255, 255, 255, 0.3) 46%,
+      rgba(255, 255, 255, 0.12) 52%,
+      transparent 60%
+    );
+  opacity: 0.8;
+}
+
+.terminal .glass-pane::after {
+  background:
+    linear-gradient(180deg, var(--glass-rim) 0%, transparent 38%),
+    linear-gradient(105deg, transparent 36%, rgba(255, 240, 214, 0.1) 46%, transparent 60%);
+}
+
+/*
+ * The field the glass refracts. Three amber pools on the page tint - without something behind it,
+ * a pane of glass is just a white card, which is exactly how every one of these surfaces looked
+ * before this existed.
+ *
+ * Fixed to the viewport rather than to the document, for two reasons: every glass surface on the
+ * page then has light behind it no matter how far down it is, and the panes appear to slide across
+ * a lit surface as you scroll instead of dragging their own tint along with them. It also costs
+ * nothing to scroll past - a fixed layer does not repaint.
+ */
+.aurora-field {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 44% at 6% 2%, var(--aurora-a) 0%, transparent 62%),
+    radial-gradient(44% 40% at 96% 12%, var(--aurora-b) 0%, transparent 60%),
+    radial-gradient(60% 50% at 44% 104%, var(--aurora-c) 0%, transparent 64%);
+  filter: blur(26px);
+}
+
+/* Lift on hover, the one motion the glass gets. Transform only - never padding, which reflows. */
+.glass-lift {
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out);
+}
+.glass-lift:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--glass-edge),
+    var(--shadow-float),
+    0 0 0 1px var(--glass-rim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-lift:hover {
+    transform: none;
+  }
 }
 
 .border-hair {
@@ -335,7 +548,7 @@ body {
   box-shadow: var(--field-focus-glow);
 }
 
-/* Segmented control — the Pons/Apple pattern for switching views. */
+/* Segmented control - the Pons/Apple pattern for switching views. */
 .segmented {
   display: inline-flex;
   gap: 2px;

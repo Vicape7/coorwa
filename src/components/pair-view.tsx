@@ -146,7 +146,7 @@ function PairFacts({ pair }: { pair: CorwaPair }) {
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
         There is no {pair.base.symbol}/{pair.quote.ticker} pool anywhere, and Corwa does not pretend
         otherwise. The price is <span className="num text-primary">USD({pair.base.symbol})</span>{" "}
-        &divide; <span className="num text-primary">USD({pair.quote.symbol})</span> — the first from
+        &divide; <span className="num text-primary">USD({pair.quote.symbol})</span> - the first from
         real reserves in the {pair.venue ?? "Cookie Chain"} pool, the second from real Solana
         liquidity. Both are live market prices, so the ratio is a change of units, not a synthetic
         instrument.

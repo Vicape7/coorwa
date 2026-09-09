@@ -7,6 +7,8 @@ import { RWA_ASSETS } from "@/lib/rwa";
 import { usd, amount, rwaRatio, pct } from "@/lib/format";
 import type { CorwaPair, PairUniverse } from "@/lib/pairs";
 import { TokenMark } from "./token-mark";
+import { SearchGlyph } from "./ui/glyphs";
+import { PillSelect } from "./ui/pill-select";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
@@ -19,9 +21,17 @@ const SORTS: [SortKey, string][] = [
   ["price", "Price"],
 ];
 
-export function PairList() {
-  const [ticker, setTicker] = useState("NVDA");
-  const [query, setQuery] = useState("");
+export function PairList({
+  initialQuery = "",
+  initialQuote,
+}: {
+  initialQuery?: string;
+  initialQuote?: string;
+}) {
+  const [ticker, setTicker] = useState(
+    () => RWA_ASSETS.find((a) => a.ticker === initialQuote)?.ticker ?? "NVDA",
+  );
+  const [query, setQuery] = useState(initialQuery);
   const [sort, setSort] = useState<SortKey>("liquidity");
 
   const { data, error, isLoading } = useSWR<PairUniverse>(`/api/pairs?quote=${ticker}`, fetcher, {
@@ -60,62 +70,54 @@ export function PairList() {
 
   return (
     <div className="mx-auto max-w-[1400px] px-5 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div className="max-w-2xl">
-          <h1 className="display text-[40px] text-primary sm:text-[52px]">
-            Every token, priced in shares
-          </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted">
-            Cookie Chain liquidity quoted against real equities. Two live market prices divided —
-            pool reserves here, the xStock on Solana. Nothing synthetic.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-end justify-between gap-5">
+        <h1 className="display text-[30px] text-primary sm:text-[36px]">
+          Every token, priced in shares
+        </h1>
 
         {quote && (
-          <div className="card px-5 py-3.5">
-            <div className="label">{quote.symbol}</div>
-            <div className="mt-1 flex items-baseline gap-2.5">
-              <span className="num text-[22px] text-primary">${quote.priceUsd.toFixed(2)}</span>
-              <span className={`num text-[13px] ${toneClass(quote.change24h)}`}>
-                {pct(quote.change24h)}
-              </span>
-            </div>
+          <div className="flex items-baseline gap-2.5">
+            <span className="label">{quote.symbol}</span>
+            <span className="num text-[20px] text-primary">${quote.priceUsd.toFixed(2)}</span>
+            <span className={`num text-[13px] ${toneClass(quote.change24h)}`}>
+              {pct(quote.change24h)}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Quote-asset selector */}
-      <div className="mt-8 flex flex-wrap items-center gap-1.5">
-        <span className="label mr-1.5">Quote in</span>
-        {RWA_ASSETS.slice(0, 10).map((a) => (
-          <button
-            key={a.ticker}
-            onClick={() => setTicker(a.ticker)}
-            className={
-              a.ticker === ticker
-                ? "pill pill-active"
-                : "pill pill-outline transition-colors hover:text-[color:var(--text-primary)]"
-            }
-          >
-            {a.ticker}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      {/*
+       * One row holds everything the terminal can be told to do. The sixteen quote assets and the
+       * four sort orders used to be fourteen buttons sitting on the surface; they are the same two
+       * controls now, and the search field is the only thing with any visual weight.
+       */}
+      <div className="card mt-6 flex flex-wrap items-center gap-2 py-2 pl-5 pr-2">
+        <SearchGlyph />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search a token, or paste a mint"
-          className="field w-full sm:w-80"
+          aria-label="Search tokens"
+          className="min-w-[12rem] flex-1 bg-transparent text-[15px] text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
         />
-        <div className="segmented ml-auto">
-          {SORTS.map(([k, label]) => (
-            <button key={k} onClick={() => setSort(k)} data-active={sort === k}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <PillSelect
+          id="terminal-quote"
+          label="Quote in"
+          value={ticker}
+          onChange={setTicker}
+          options={RWA_ASSETS.map((a) => ({
+            value: a.ticker,
+            label: a.ticker,
+          }))}
+        />
+        <PillSelect
+          id="terminal-sort"
+          label="Sort by"
+          prefix="Sort"
+          value={sort}
+          onChange={(v) => setSort(v as SortKey)}
+          options={SORTS.map(([value, label]) => ({ value, label }))}
+        />
       </div>
 
       {error && (
@@ -147,14 +149,16 @@ export function PairList() {
         </div>
 
         {!isLoading && rows.length === 0 && (
-          <div className="p-10 text-center text-[14px] text-muted">No token matches that search.</div>
+          <div className="p-10 text-center text-[14px] text-muted">
+            No token matches that search.
+          </div>
         )}
       </div>
 
       {data && (
         <p className="mt-4 text-[12px] text-subtle">
-          {data.pairs.length} pairs · COOK at <span className="num">{usd(data.cookPriceUsd)}</span> ·
-          refreshed every 20s. Liquidity is summed across every pool a token trades in.
+          {data.pairs.length} pairs · COOK at <span className="num">{usd(data.cookPriceUsd)}</span>{" "}
+          · refreshed every 20s. Liquidity is summed across every pool a token trades in.
         </p>
       )}
     </div>

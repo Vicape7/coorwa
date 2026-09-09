@@ -4,7 +4,7 @@
  * Cross-chain settlement: turn a Cookie Chain token into a real xStock position on Solana.
  *
  * Three legs, executed as three separate signatures, because they genuinely are three transactions
- * on two chains. The stepper is not decoration — the bridge leg is asynchronous, so the user needs
+ * on two chains. The stepper is not decoration - the bridge leg is asynchronous, so the user needs
  * to see exactly where their funds are while a relayer works.
  *
  * Corwa deliberately never wraps an xStock onto Cookie Chain. Those mints carry a permanent
@@ -61,7 +61,7 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
    * The plan and the request it answers, stored together.
    *
    * Keeping the key alongside the result means "still planning" is derived by comparing it to what
-   * is being asked for now, rather than flipping a loading flag from inside an effect — which is
+   * is being asked for now, rather than flipping a loading flag from inside an effect - which is
    * both simpler and avoids a cascading render on every keystroke.
    */
   const [settled, setSettled] = useState<{
@@ -101,7 +101,7 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
         if (seq.current !== mine) return;
         setSettled(
           json.error
-            ? { key, plan: null, error: json.hint ? `${json.error} — ${json.hint}` : json.error }
+            ? { key, plan: null, error: json.hint ? `${json.error} - ${json.hint}` : json.error }
             : { key, plan: json, error: null },
         );
       } catch (e) {
@@ -438,7 +438,7 @@ function LegRow({ index, leg, result }: { index: number; leg: RouteLeg; result?:
 /**
  * Poll Solana until the bridged COOK shows up.
  *
- * Delivery is a relayer's job, so there is no receipt to await — the only reliable signal is the
+ * Delivery is a relayer's job, so there is no receipt to await - the only reliable signal is the
  * recipient's balance rising. Returns what actually arrived, which is what leg 3 must spend.
  */
 async function waitForCookOnSolana(
@@ -475,7 +475,7 @@ async function waitForCookOnSolana(
   }
 
   throw new Error(
-    "The bridge has not delivered within 15 minutes. Your COOK is not lost — it is locked in the " +
+    "The bridge has not delivered within 15 minutes. Your COOK is not lost - it is locked in the " +
       "warp route and will arrive when a relayer picks it up. Reopen this panel then to finish leg 3.",
   );
 }

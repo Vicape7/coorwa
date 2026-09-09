@@ -5,9 +5,9 @@ import * as schema from "./schema";
 /**
  * The database is optional.
  *
- * Corwa's trading, launching and LP paths are entirely on-chain and work with no database at all —
- * this only backs cashback accounting, which needs history. So a missing DATABASE_URL degrades the
- * rewards page to "not configured" instead of breaking the app.
+ * Trading, launching and LP all run on-chain and need no database. The database backs one thing:
+ * cashback accounting, which needs history. So a missing DATABASE_URL turns the rewards page into
+ * "not configured" rather than breaking the app.
  */
 const url = process.env.DATABASE_URL?.trim();
 

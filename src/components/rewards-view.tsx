@@ -30,7 +30,7 @@ export function RewardsView() {
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
           Corwa rebates the fees it earns rather than keeping them. Today that means the launchpad
           referral share: MomoSwap pays a referrer 20% of its 1% curve fee, out of the same fee
-          either way — with nobody named, the programme keeps that slice itself. So naming Corwa
+          either way - with nobody named, the programme keeps that slice itself. So naming Corwa
           costs a trader nothing and is what funds the rebate.
         </p>
       </div>
@@ -56,7 +56,7 @@ export function RewardsView() {
             <div className="text-[15px] text-primary">Accounting is not configured here</div>
             <p className="mt-2 max-w-2xl text-[14px] leading-[1.7] text-muted">
               Cashback needs history, so it needs a database. Trading, launching and providing
-              liquidity are entirely on-chain and work without one — this page is the only part that
+              liquidity are entirely on-chain and work without one - this page is the only part that
               does not. Set <span className="num text-primary">DATABASE_URL</span> to enable it.
             </p>
           </div>
@@ -91,7 +91,7 @@ export function RewardsView() {
               </button>
             </div>
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
-              Accrual is live and verifiable — every row below is a confirmed transaction, checked
+              Accrual is live and verifiable - every row below is a confirmed transaction, checked
               against the chain before it was counted. Claiming stays closed until the rebate
               treasury is funded on this deployment, so the button tells you the truth rather than
               failing after you press it.
@@ -173,13 +173,13 @@ export function RewardsView() {
             label="Swap fills"
             state="No fee yet"
             tone="muted"
-            body="Neither Cookie Chain router — Cookiebox or Candy Shop — exposes a platform-fee or referral parameter, so a swap routed through Corwa earns Corwa nothing. Those fills are recorded at zero rather than credited with a rebate no fee is backing. When a router adds one, this turns on with no change to how you trade."
+            body="Neither Cookie Chain router - Cookiebox or Candy Shop - exposes a platform-fee or referral parameter, so a swap routed through Corwa earns Corwa nothing. Those fills are recorded at zero rather than credited with a rebate no fee is backing. When a router adds one, this turns on with no change to how you trade."
           />
           <Source
             label="LP fees"
             state="Yours already"
             tone="muted"
-            body="Fees on a position you own are paid to you by the pool directly. Corwa never sits between you and them — it just builds the claim."
+            body="Fees on a position you own are paid to you by the pool directly. Corwa never sits between you and them - it just builds the claim."
           />
         </dl>
       </div>

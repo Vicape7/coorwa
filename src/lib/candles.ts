@@ -9,7 +9,7 @@
  *   - the RWA leg, Jupiter's USD candles for the xStock.
  *
  * Dividing them bucket by bucket gives a real ratio series: how many shares of the stock one token
- * bought, over time. That is the number the whole product exists to show, and it is honest —
+ * bought, over time. That is the number the whole product exists to show, and it is honest -
  * nothing here is synthesised or back-filled from a current price.
  */
 import { CANDYSHOP_API } from "./config";

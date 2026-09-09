@@ -2,7 +2,7 @@
  * Cookie Chain swap routing.
  *
  * Two independent aggregators cover the same liquidity, so Corwa quotes both and takes the better
- * fill. Both hand back an UNSIGNED transaction that the user's wallet signs locally — Corwa never
+ * fill. Both hand back an UNSIGNED transaction that the user's wallet signs locally - Corwa never
  * touches a key, and never holds funds.
  */
 import { COOKIEBOX_AGG_API, CANDYSHOP_API, DEFAULT_SLIPPAGE_BPS } from "./config";
@@ -24,7 +24,7 @@ export interface RouteSegment {
 export interface SwapRoute {
   aggregator: Aggregator;
   inAmount: string;
-  /** Net of the aggregator's own fee — this is what actually lands. */
+  /** Net of the aggregator's own fee - this is what actually lands. */
   outAmount: string;
   minOutAmount: string;
   priceImpactPct: number | null;
@@ -232,7 +232,7 @@ export async function bestQuote(args: {
       .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
     throw new CorwaError(
       "no route found on Cookie Chain",
-      reasons[0] ?? "neither aggregator could price this pair — the pool may be too thin",
+      reasons[0] ?? "neither aggregator could price this pair - the pool may be too thin",
     );
   }
 

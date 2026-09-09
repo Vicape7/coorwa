@@ -5,9 +5,9 @@
  *
  * The Meteora SDK's high-level paths derive PDAs against Meteora's *mainnet* program id, which
  * fails on Cookie Chain's fork with ConstraintSeeds. So the PDAs and instructions here are built
- * against the Cookie program directly, through an Anchor Program loaded from the fork's own IDL —
- * and only the SDK's pure math (liquidity deltas, deposit/withdraw quotes) is reused, since that
- * part is program-id independent.
+ * against the Cookie program directly, through an Anchor Program loaded from the fork's own IDL.
+ * Only the SDK's pure math is reused (liquidity deltas, deposit and withdraw quotes), because that
+ * part does not depend on the program id.
  *
  * Everything is non-custodial: this module only *builds* transactions. The user's wallet signs.
  */
@@ -105,7 +105,7 @@ export interface CpAmmDeps {
  * Anchor's browser bundle deliberately omits the Node `Wallet` class (it wraps a keypair file), and
  * a provider here would have nothing to sign with anyway: this module only builds instructions and
  * the user's wallet adapter signs them. So the provider gets a public key and signers that refuse
- * to run — if anything ever tries to sign through Anchor, it should fail loudly rather than
+ * to run - if anything ever tries to sign through Anchor, it should fail loudly rather than
  * silently using a throwaway key.
  */
 function readOnlyWallet() {
@@ -213,7 +213,7 @@ export async function loadPool(deps: CpAmmDeps, poolStr: string): Promise<PoolCo
   if (!info.owner.equals(CP_AMM_PROGRAM_ID)) {
     throw new CorwaError(
       "that pool is not a Cookiebox DAMM v2 pool",
-      `it is owned by ${info.owner.toBase58()} — Corwa's LP tools cover DAMM v2 today`,
+      `it is owned by ${info.owner.toBase58()} - Corwa's LP tools cover DAMM v2 today`,
     );
   }
 
@@ -263,7 +263,7 @@ interface RawPositionState {
  *
  * Ownership is an NFT: each position mints a Token-2022 NFT, and the position PDA is derived from
  * that mint. So the lookup is "every Token-2022 account of yours holding exactly 1", then a batch
- * fetch of the derived position addresses — anything that decodes is a real position, anything
+ * fetch of the derived position addresses - anything that decodes is a real position, anything
  * that does not was simply some other NFT.
  */
 export async function findUserPositions(
@@ -320,7 +320,7 @@ export async function findUserPositions(
 /**
  * Add liquidity, creating a fresh position.
  *
- * `positionNft` is a new keypair that must co-sign the transaction — it is the mint the position
+ * `positionNft` is a new keypair that must co-sign the transaction - it is the mint the position
  * PDA is derived from, so the caller has to keep it and partial-sign before the wallet does.
  */
 export async function buildAddLiquidity(args: {
@@ -355,7 +355,7 @@ export async function buildAddLiquidity(args: {
   if (liquidityDelta.lten(0)) {
     throw new CorwaError(
       "that amount is too small to mint any liquidity",
-      "try a larger deposit — the pool's price range makes tiny deposits round to zero",
+      "try a larger deposit - the pool's price range makes tiny deposits round to zero",
     );
   }
 

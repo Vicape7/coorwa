@@ -70,7 +70,7 @@ export async function fetchMarkets(): Promise<CookiescanMarket[]> {
   );
 }
 
-/** COOK's USD price — the hinge between Cookie Chain prices and RWA prices. */
+/** COOK's USD price - the hinge between Cookie Chain prices and RWA prices. */
 export async function fetchCookPriceUsd(): Promise<number | null> {
   return cachedStale("cookiescan:cookprice", 20_000, async () => {
     const j = await fetchJson<{ data?: { price?: { usd?: number } } }>(

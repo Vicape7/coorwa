@@ -130,7 +130,7 @@ export function StatusView() {
         <h2 className="title text-primary">Cross-chain capacity</h2>
         <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-muted">
           A cross-chain settle ends by swapping bridged COOK into an xStock on Solana, so the depth
-          of COOK there is the real ceiling on trade size — not anything in Corwa. It is shown here
+          of COOK there is the real ceiling on trade size - not anything in Corwa. It is shown here
           rather than discovered as slippage.
         </p>
         <div className="mt-6 grid gap-6 sm:grid-cols-3">

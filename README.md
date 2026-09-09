@@ -2,8 +2,8 @@
 
 Trade Cookie Chain in shares.
 
-Corwa prices every token on [Cookie Chain](https://www.cookiechain.wtf) against real equities —
-NVDA, TSLA, SPY — so a trader can see the number no COOK-denominated terminal shows: **is this
+Corwa prices every token on [Cookie Chain](https://www.cookiechain.wtf) against real equities -
+NVDA, TSLA, SPY - so a trader can see the number no COOK-denominated terminal shows: **is this
 beating the stock?** When they want actual exposure rather than a unit of account, Corwa routes
 them cross-chain into the real xStock on Solana.
 
@@ -24,7 +24,7 @@ price(TOKEN in NVDA) = usd(TOKEN) ÷ usd(NVDAx)
 ```
 
 The numerator comes from real reserves in a Cookie Chain pool (via Cookiescan). The denominator
-comes from real Solana liquidity (via Jupiter). Neither is modelled, so the ratio is exact — it is
+comes from real Solana liquidity (via Jupiter). Neither is modelled, so the ratio is exact - it is
 a change of units, not a synthetic instrument.
 
 ### Why not just wrap an xStock onto Cookie Chain?
@@ -33,11 +33,11 @@ Because reading the mint account says not to. Every xStock is Token-2022 and car
 
 | Extension | State | Consequence for a bridge |
 | --- | --- | --- |
-| `permanentDelegate` | set | The issuer can claw tokens out of **any** account, escrow included — leaving wrapped supply unbacked |
+| `permanentDelegate` | set | The issuer can claw tokens out of **any** account, escrow included - leaving wrapped supply unbacked |
 | `pausableConfig` | `paused: false` | All transfers can be halted globally, freezing anything in flight |
 | `freezeAuthority` | set | Individual accounts, including an escrow, can be frozen |
 | `scaledUiAmountConfig` | live multiplier | **The token rebases.** A wrapper locking raw units and minting fixed supply drifts off its backing |
-| `transferHook` | `programId: null` | Inactive today, but the authority exists — switching it on would break any pool holding it |
+| `transferHook` | `programId: null` | Inactive today, but the authority exists - switching it on would break any pool holding it |
 
 So Corwa never escrows an xStock. It routes the user into one, and the share lands in their own
 Solana wallet where all of that is the issuer's problem and Jupiter's job.
@@ -48,7 +48,7 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### Terminal
 - Every Cookie Chain token with real pool depth, crossed with 16 xStocks.
-- **Candles built from executed fills**, not standing pool quotes — and the pair chart is the ratio
+- **Candles built from executed fills**, not standing pool quotes - and the pair chart is the ratio
   of two real series, so it shows genuine relative performance against the stock.
 - A pair that has not traded in 24h shows `—`, never a phantom return from a flat price against a
   moving stock.
@@ -63,14 +63,14 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
-- **Cookiebox DAMM v2 positions managed natively** — deposit, claim fees, withdraw — with
+- **Cookiebox DAMM v2 positions managed natively** - deposit, claim fees, withdraw - with
   instructions built against the fork's own program and IDL.
 - Positions are found by scanning the Token-2022 NFTs you hold, so Corwa keeps no records of its
   own.
 
 ### Cashback
 - Corwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
-  paid out of the same fee either way — with nobody named, MomoSwap keeps it — so it costs a trader
+  paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
 - Split 50 / 30 / 20 between trader, creator and liquidity.
 - **Swaps currently earn Corwa nothing**: neither Cookie Chain router exposes a platform-fee or
@@ -108,7 +108,7 @@ npm run build
 
 ### Wallets
 
-Cookie Chain is an SVM fork, so any Solana wallet signs for it unchanged — only the RPC differs.
+Cookie Chain is an SVM fork, so any Solana wallet signs for it unchanged - only the RPC differs.
 Wallets implementing the Solana Wallet Standard (Nightly, Backpack, Solflare, Phantom) are detected
 automatically. Launching a token additionally needs `signMessage`.
 
@@ -119,7 +119,7 @@ automatically. Launching a token additionally needs `signMessage`.
 ```
 src/
   lib/
-    config.ts       Chain, program and API constants — every one verified against the live network
+    config.ts       Chain, program and API constants - every one verified against the live network
     rwa.ts          The 16 xStocks, read from their own mint accounts
     pairs.ts        The pair engine: the ratio, and the relative-return maths
     candles.ts      Candles from executed fills; the RWA series; the ratio series
@@ -140,13 +140,13 @@ src/
 
 1. **Destination collateral.** The warp route *releases* from a fixed collateral account rather than
    minting. `simulateTransaction` runs on the source chain, so an oversized transfer simulates fine,
-   locks the user's COOK, and only fails inside the relayer — leaving an undeliverable message. So
+   locks the user's COOK, and only fails inside the relayer - leaving an undeliverable message. So
    the destination balance is read explicitly before anything is signed.
 
 2. **Recipient token account.** On delivery the warp program creates the recipient's COOK account
    and pays rent from its own `ata_payer` PDA. That PDA is funded once at deploy and never topped
    up; when it runs dry the relayer's own simulation fails, nothing lands on chain, nothing errors,
-   and the transfer simply hangs. Corwa does not depend on it — it creates the account itself first,
+   and the transfer simply hangs. Corwa does not depend on it - it creates the account itself first,
    and only then dispatches.
 
 ---

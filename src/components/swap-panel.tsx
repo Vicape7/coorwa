@@ -30,7 +30,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
   const [input, setInput] = useState("");
   const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
   /**
-   * The quote and the request it answers, stored together — so "still quoting" is a comparison
+   * The quote and the request it answers, stored together - so "still quoting" is a comparison
    * against what is being asked for now rather than a flag written from inside the effect.
    */
   const [quoted, setQuoted] = useState<{
@@ -112,7 +112,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
             ? {
                 key: quoteKey,
                 quote: null,
-                error: json.hint ? `${json.error} — ${json.hint}` : json.error,
+                error: json.hint ? `${json.error} - ${json.hint}` : json.error,
               }
             : { key: quoteKey, quote: json, error: null },
         );
@@ -138,7 +138,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
   const minOut = activeQuote ? rawToUi(activeQuote.best.minOutAmount, outDecimals) : null;
 
   /**
-   * What you end up holding, expressed in shares of the pair's RWA — the whole point of Corwa.
+   * What you end up holding, expressed in shares of the pair's RWA - the whole point of Corwa.
    *
    * COOK's own USD price is not passed into this component, but it is recoverable from the pair:
    * the base token's price is published both in USD and in COOK, and their ratio is COOK in USD.
@@ -176,7 +176,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
         }),
       });
       const built = await res.json();
-      if (built.error) throw new Error(built.hint ? `${built.error} — ${built.hint}` : built.error);
+      if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
 
       const tx = decodeTx(built.transactionBase64);
       const sent = await signSendConfirm(connection, tx, signTransaction);
@@ -185,7 +185,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
       setQuoted(null);
 
       // Report the fill for cashback accounting. The server re-checks the signature on-chain, so a
-      // failure here costs nothing but the record — never the trade.
+      // failure here costs nothing but the record - never the trade.
       const notional =
         side === "buy" ? amountNum * (pair.base.priceCook ? pair.base.priceUsd / pair.base.priceCook : 0) : amountNum * pair.base.priceUsd;
       fetch("/api/rewards/record", {
@@ -432,7 +432,7 @@ function RouteDetail({
           )}
           <p className="pt-1.5 text-[11px] leading-relaxed text-subtle">
             Both Cookie Chain routers were quoted; this is the better fill. The transaction is built
-            upstream and signed in your wallet — Corwa never holds your funds.
+            upstream and signed in your wallet - Corwa never holds your funds.
           </p>
         </div>
       )}

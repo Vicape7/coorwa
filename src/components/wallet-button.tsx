@@ -3,7 +3,7 @@
 /**
  * Connect button.
  *
- * Cookie Chain is an SVM fork, so a Solana wallet signs for it unchanged — but the balance shown
+ * Cookie Chain is an SVM fork, so a Solana wallet signs for it unchanged - but the balance shown
  * here is COOK read from the Cookie Chain RPC, not SOL.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,7 +22,7 @@ export function WalletButton() {
   const holder = useRef<HTMLDivElement>(null);
 
   // A disconnected wallet has no balance to show, so that case is derived at render rather than
-  // written back into state — the effect only ever reports what the RPC said.
+  // written back into state - the effect only ever reports what the RPC said.
   const shownBalance = publicKey ? balance : null;
 
   useEffect(() => {

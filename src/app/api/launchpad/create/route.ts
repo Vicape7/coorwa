@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 const Body = z.object({
   creator: z.string().min(32).max(44),
-  /** Session token from /api/launchpad/session — the launch path is signature-gated. */
+  /** Session token from /api/launchpad/session - the launch path is signature-gated. */
   session: z.string().min(1),
   name: z.string().min(1).max(32),
   symbol: z
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
       {
         error: e instanceof Error ? e.message : "launch build failed",
         hint: unauthorized
-          ? "the launchpad session expired — sign in again and retry"
+          ? "the launchpad session expired - sign in again and retry"
           : err?.hint,
       },
       { status: unauthorized ? 401 : 502 },

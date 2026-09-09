@@ -1,5 +1,5 @@
 /**
- * Corwa — single source of truth for chain, program and API constants.
+ * Corwa - single source of truth for chain, program and API constants.
  *
  * Everything here was verified against the live network rather than copied from docs:
  * the RPC answers `getVersion` as solana-core 4.1.2, the aggregator and registry endpoints
@@ -11,7 +11,7 @@
 export const COOKIE_RPC_URL =
   process.env.NEXT_PUBLIC_COOKIE_RPC_URL?.trim() || "https://rpc.cookiescan.io";
 
-/** Native/wrapped COOK on Cookie Chain. Identical string to wSOL on Solana — always branch on
+/** Native/wrapped COOK on Cookie Chain. Identical string to wSOL on Solana - always branch on
  *  chain, never on the mint alone. */
 export const COOK_MINT = "So11111111111111111111111111111111111111112";
 export const COOK_DECIMALS = 9;
@@ -22,10 +22,10 @@ export const COOKIE_EXPLORER = "https://cookiescan.io";
 /** Cookiescan REST: the token registry (~6.5k mints) and the markets/pools feed (160 pools). */
 export const COOKIESCAN_API = "https://api.cookiescan.io";
 
-/** Cookiebox aggregator — routes all Cookie Chain DEX liquidity. GET /quote, POST /swap-tx. */
+/** Cookiebox aggregator - routes all Cookie Chain DEX liquidity. GET /quote, POST /swap-tx. */
 export const COOKIEBOX_AGG_API = "https://agg.cookiebox.app";
 
-/** Candy Shop — the second router, used as a fallback and for quote comparison. */
+/** Candy Shop - the second router, used as a fallback and for quote comparison. */
 export const CANDYSHOP_API = "https://swap.cookiescan.io/api";
 
 /** MomoSwap bonding-curve launchpad. Its API builds and partial-signs launchpad transactions. */
@@ -47,7 +47,7 @@ export const SOLANA_RPC_URL =
 
 export const SOLANA_EXPLORER = "https://solscan.io";
 
-/** Bridged COOK on Solana mainnet — a Token-2022 mint with 6 decimals (Cookie Chain's is 9). */
+/** Bridged COOK on Solana mainnet - a Token-2022 mint with 6 decimals (Cookie Chain's is 9). */
 export const COOK_SOLANA_MINT = "36ZrtQoab5MhhySaP1YSTwUahSk6GRVUTtZ6cuVfm9e1";
 export const COOK_SOLANA_DECIMALS = 6;
 
@@ -90,7 +90,7 @@ export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuE
 // --- Corwa economics ---------------------------------------------------------------------------
 
 /**
- * MomoSwap pays the referrer 20% of its 1% curve trade fee, out of the same fee either way — with
+ * MomoSwap pays the referrer 20% of its 1% curve trade fee, out of the same fee either way - with
  * no referrer the program folds that share into its treasury instead. So naming Corwa costs the
  * trader nothing and is the honest source of launchpad-side cashback.
  */
