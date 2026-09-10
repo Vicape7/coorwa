@@ -1,0 +1,29 @@
+[package]
+name = "corwa-vault"
+version = "0.1.0"
+description = "Corwa cashback vault - epoch merkle distributor on Cookie Chain"
+edition = "2021"
+license = "MIT"
+# The floor the Solana platform-tools compiler sets. Dependency resolution reads it, so this one
+# line is what keeps edition-2024 crates out of the graph - see .cargo/config.toml.
+rust-version = "1.84"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "corwa_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+# The vault holds wrapped COOK and nothing else, so every account type it uses is classic SPL
+# Token: a Token-2022 mint with a transfer fee or a hook would break the accounting, and
+# `Program<Token>` refuses one. The token_2022 feature is on only because anchor-spl's own `init`
+# constraint for a token account expands to code that names that module.
+anchor-spl = { version = "0.31.1", default-features = false, features = ["token", "token_2022"] }

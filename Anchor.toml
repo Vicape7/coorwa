@@ -1,0 +1,18 @@
+# No [toolchain] block on purpose. The Anchor CLI would try to switch versions with avm, and the
+# toolchain is already pinned somewhere more honest: the Docker image tag in scripts/program.mjs,
+# which fixes the Rust, Agave and Anchor versions together.
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.mainnet]
+corwa_vault = "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg"
+
+[provider]
+# Cookie Chain is an SVM chain, so it is addressed by URL rather than by a cluster name.
+cluster = "https://rpc.cookiescan.io"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "node --test tests/"

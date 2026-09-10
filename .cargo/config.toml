@@ -1,0 +1,15 @@
+# Pick dependency versions the build toolchain can actually compile.
+#
+# The Solana platform-tools compiler trails upstream Rust by a long way, and crates.io does not.
+# Left alone, cargo takes the newest version of every transitive dependency, and enough of those
+# now require edition 2024 that the build stops before it starts - on zeroize, on blake3, on the
+# toml parser inside a proc macro, a different one each week.
+#
+# "fallback" makes cargo step back to the newest version whose declared rust-version the program's
+# own rust-version can build, so the floor is stated once in programs/corwa-vault/Cargo.toml
+# instead of as a growing list of pinned crates in the lockfile.
+#
+# This lives in cargo config rather than as resolver = "3" in the workspace manifest because the
+# Anchor CLI parses that manifest itself and does not recognise resolver 3 yet.
+[resolver]
+incompatible-rust-versions = "fallback"

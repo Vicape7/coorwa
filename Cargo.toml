@@ -1,0 +1,17 @@
+[workspace]
+members = ["programs/*"]
+resolver = "2"
+
+# Version selection is MSRV aware, which matters here more than usual - see .cargo/config.toml.
+
+# Overflow checks stay on in release. This program is money arithmetic and nothing else,
+# and a silent wrap here would mint claimable balance out of nothing.
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[profile.release.build-override]
+opt-level = 3
+incremental = false
+codegen-units = 1

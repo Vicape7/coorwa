@@ -8,6 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --import ./tests/resolve.mjs --test \"tests/*.test.ts\"",
+    "program:build": "node scripts/program.mjs build",
+    "program:test": "node scripts/program.mjs test",
+    "program:deploy": "node scripts/program.mjs deploy",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },

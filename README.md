@@ -81,6 +81,9 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - **Swaps currently earn Corwa nothing**: neither Cookie Chain router exposes a platform-fee or
   referral parameter, so those fills are recorded at zero rather than credited with a rebate that
   no fee is backing.
+- Payouts go through Corwa's own program on Cookie Chain rather than a payout wallet. Who is owed
+  what is worked out off chain, because it depends on prices and on which wallet generated which
+  fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.
 
 ---
 
@@ -89,6 +92,35 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 Corwa never holds a key, never co-signs, and never takes custody. Every transaction is built either
 by an upstream service or by Corwa's own instruction builders, then **simulated**, then signed by
 the user's wallet in their browser, then sent from there.
+
+### The cashback vault
+
+Cashback is the one place Corwa touches money at all, so it is the one place that needed a program
+rather than a promise. `programs/corwa-vault` is an epoch merkle distributor: Corwa funds it,
+publishes a root naming who is owed what, and each claimant proves their own line and takes it.
+
+What holds it up is what the program cannot do:
+
+- **There is no instruction that pays the authority.** Tokens enter through `fund` and leave
+  through `claim`, and nothing else. The authority is the right to publish, never the right to
+  spend, and `set_authority` hands on only that.
+- **A published epoch is already funded.** `publish_epoch` reserves its total against the balance
+  the vault holds free of earlier epochs and refuses if it cannot. So by the time a claimant sees a
+  root, the tokens behind it are already committed and cannot be published twice.
+- **A claim is bound to the claimant, the amount and the epoch.** The leaf is
+  `sha256(0x00 || epoch || claimant || amount)`, so a proof cannot be replayed for another wallet,
+  another figure, or another epoch. A claim record PDA makes a second attempt fail before anything
+  runs.
+- **`close_epoch` is permissionless.** It moves no tokens; it only returns an expired epoch's
+  remainder to the vault for the next one. Requiring the authority would let a lost key strand
+  every unclaimed reserve forever.
+
+The honest cost of that shape: there is no withdrawal path at all, so tokens sent in by mistake can
+only be routed back out by publishing an epoch that names the sender. And a program this young is
+unaudited, which is stated here rather than buried.
+
+The claim pays wrapped COOK. Turning that into an xStock is the cross-chain route above, run by the
+user, signed by the user.
 
 ---
 
@@ -108,8 +140,23 @@ Optional:
 ```bash
 npm run db:push     # enables the rewards page (needs DATABASE_URL)
 npm run typecheck
+npm run test        # merkle tree, instruction layouts, IDL agreement
 npm run build
 ```
+
+### The program
+
+The vault is Rust, and its toolchain is a specific Rust, a specific Agave and a specific Anchor.
+Rather than ask anyone to install all three, they are pinned as a container image, so the only
+requirement is Docker running:
+
+```bash
+npm run program:build    # compile, and copy the IDL to programs/corwa-vault/idl.json
+npm run program:test     # run tests/integration against a throwaway validator
+```
+
+`program:test` starts a validator with the program preloaded, exercises claiming, double claiming,
+forged proofs and unfunded epochs against it, and tears the validator down again.
 
 ### Wallets
 
@@ -139,9 +186,18 @@ src/
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client
     cashback.ts     Fee accrual and the split
+    merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte
+    vault.ts        Cashback vault client, encoded against the wire format rather than an IDL
     tx.ts           Simulate → sign → send → confirm
   app/api/          Server routes: every rate-limited upstream call is proxied and cached here
   components/       UI
+
+programs/
+  corwa-vault/    The cashback vault: fund, publish an epoch, claim against its root
+    idl.json      What the built program accepts. Committed, and checked against the client in CI
+
+tests/            Unit tests, offline and instant
+  integration/    The vault against a real validator, started by npm run program:test
 ```
 
 ### Two preflight checks in the bridge that a simulation cannot catch
@@ -170,6 +226,10 @@ from documentation:
 - The DAMM v2 vault PDAs this code derives match the vaults stored inside real pools.
 - Every xStock mint was read from its own account, which is where the Token-2022 extension table
   above comes from.
+- The vault client encodes instructions by hand, and `tests/vault-idl.test.ts` compares every one
+  of them against the IDL the compiler emitted: dispatch bytes, account order, which accounts sign,
+  which are written. A program change the client has not followed fails a test rather than a
+  transaction.
 
 ---
 

@@ -118,6 +118,32 @@ export const CASHBACK_SPLIT = {
 
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
+// --- Cashback vault ----------------------------------------------------------------------------
+
+/**
+ * Corwa's own program on Cookie Chain, in `programs/corwa-vault`. It holds the cashback float and
+ * pays it out against published merkle roots, so accrual can be worked out off chain while custody
+ * stays on it. See the module docs in `src/lib/vault.ts` and the program itself.
+ *
+ * Overridable so a fork can point at its own deployment without rebuilding the client.
+ */
+export const VAULT_PROGRAM_ADDRESS =
+  process.env.NEXT_PUBLIC_VAULT_PROGRAM_ID?.trim() ||
+  "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg";
+
+/** The vault pays in wrapped COOK, which is what the launchpad referral revenue arrives as. */
+export const VAULT_MINT = COOK_MINT;
+
+/** How long a published epoch stays claimable before its remainder rolls into the next one. */
+export const CASHBACK_CLAIM_WINDOW_DAYS = 30;
+
+/**
+ * Below this, claiming costs more than it pays. A claim writes two accounts the claimant funds
+ * themselves: the claim record that stops a second attempt, and their token account if they have
+ * none yet. Balances under the floor are not dropped, they simply wait for the next epoch.
+ */
+export const CASHBACK_MIN_CLAIM_COOK = 0.05;
+
 // --- Misc --------------------------------------------------------------------------------------
 
 export const HTTP_TIMEOUT_MS = 12_000;

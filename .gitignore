@@ -52,3 +52,13 @@ AGENTS.md
 CLAUDE.md
 .cursor/
 .vscode/
+
+# Anchor build output. The compiled .so and the cargo cache are rebuilt by `npm run program:build`;
+# the IDL is copied out to programs/corwa-vault/idl.json, which IS committed, because that is the
+# record of what the deployed program accepts.
+/target
+.anchor
+
+# The program's own keypair. It sets the program address and lets whoever holds it claim that
+# address first, so it is backed up out of band rather than committed.
+target/deploy/*-keypair.json

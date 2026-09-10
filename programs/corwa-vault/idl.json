@@ -1,0 +1,936 @@
+{
+  "address": "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg",
+  "metadata": {
+    "name": "corwa_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Corwa cashback vault - epoch merkle distributor on Cookie Chain"
+  },
+  "instructions": [
+    {
+      "name": "claim",
+      "docs": [
+        "Take what a published root says you are owed.",
+        "",
+        "The claimant signs for themselves and the leaf commits to their own key, so a proof cannot",
+        "be replayed on someone else's behalf and the tokens have nowhere to go but their own token",
+        "account. The claim record is a fresh PDA, so a second attempt fails at account creation",
+        "before any of this runs."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "claimant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "epoch"
+          ]
+        },
+        {
+          "name": "epoch",
+          "writable": true
+        },
+        {
+          "name": "claim_status",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "epoch"
+              },
+              {
+                "kind": "account",
+                "path": "claimant"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "funds",
+          "writable": true
+        },
+        {
+          "name": "claimant_token",
+          "docs": [
+            "Where the claim lands. Any token account of theirs for this mint will do, and the client",
+            "creates the associated one in the same transaction when they have none, which keeps the",
+            "rent on the claimant and keeps `init_if_needed` out of a program that moves money."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_epoch",
+      "docs": [
+        "Retire an epoch once its window has passed and return whatever went unclaimed to the",
+        "vault's free balance, where the next epoch can hand it out again.",
+        "",
+        "Anyone may call this. It cannot move a token anywhere, it only lets the vault stop counting",
+        "an expired promise, so putting a key in front of it would add a failure mode and nothing",
+        "else."
+      ],
+      "discriminator": [
+        13,
+        87,
+        7,
+        133,
+        109,
+        14,
+        83,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "epoch"
+          ]
+        },
+        {
+          "name": "epoch",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "fund",
+      "docs": [
+        "Move tokens into the vault. Deliberately open to anyone: the vault has no withdrawal path,",
+        "so funding it is a one-way gift to the claimants of future epochs, and gating it would buy",
+        "nothing."
+      ],
+      "discriminator": [
+        218,
+        188,
+        111,
+        221,
+        152,
+        113,
+        174,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "funds",
+          "writable": true
+        },
+        {
+          "name": "funder_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "Create the vault for one mint. One vault per mint, so its address is derivable from the",
+        "mint alone and a client never has to be told where to look."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "funds",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "publish_epoch",
+      "docs": [
+        "Publish one epoch of cashback.",
+        "",
+        "`total` is checked against the balance the vault holds free of earlier epochs, so an epoch",
+        "can never promise money that is not already sitting there. That check is the whole reason a",
+        "claimant does not have to trust the publisher: by the time they see a root, the tokens",
+        "behind it are already reserved."
+      ],
+      "discriminator": [
+        222,
+        6,
+        136,
+        82,
+        54,
+        246,
+        245,
+        120
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "funds"
+        },
+        {
+          "name": "epoch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "arg",
+                "path": "index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u64"
+        },
+        {
+          "name": "root",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "total",
+          "type": "u64"
+        },
+        {
+          "name": "claimants",
+          "type": "u32"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "set_authority",
+      "docs": [
+        "Hand publishing rights to another key. This is the only authority the vault has, and it is",
+        "the right to publish, never the right to spend."
+      ],
+      "discriminator": [
+        133,
+        250,
+        37,
+        21,
+        110,
+        163,
+        26,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ClaimStatus",
+      "discriminator": [
+        22,
+        183,
+        249,
+        157,
+        247,
+        95,
+        150,
+        96
+      ]
+    },
+    {
+      "name": "Epoch",
+      "discriminator": [
+        93,
+        83,
+        120,
+        89,
+        151,
+        138,
+        152,
+        108
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AuthorityChanged",
+      "discriminator": [
+        31,
+        19,
+        174,
+        152,
+        4,
+        82,
+        215,
+        226
+      ]
+    },
+    {
+      "name": "Claimed",
+      "discriminator": [
+        217,
+        192,
+        123,
+        72,
+        108,
+        150,
+        248,
+        33
+      ]
+    },
+    {
+      "name": "EpochClosed",
+      "discriminator": [
+        21,
+        4,
+        48,
+        56,
+        29,
+        169,
+        77,
+        42
+      ]
+    },
+    {
+      "name": "EpochPublished",
+      "discriminator": [
+        221,
+        95,
+        77,
+        98,
+        203,
+        18,
+        192,
+        225
+      ]
+    },
+    {
+      "name": "Funded",
+      "discriminator": [
+        67,
+        84,
+        56,
+        88,
+        192,
+        12,
+        201,
+        177
+      ]
+    },
+    {
+      "name": "VaultInitialized",
+      "discriminator": [
+        180,
+        43,
+        207,
+        2,
+        18,
+        71,
+        3,
+        75
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Only the vault authority may do that"
+    },
+    {
+      "code": 6001,
+      "name": "AmountZero",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6002,
+      "name": "EmptyRoot",
+      "msg": "A merkle root of all zeroes is not a tree"
+    },
+    {
+      "code": 6003,
+      "name": "EmptyAuthority",
+      "msg": "Authority cannot be the default pubkey"
+    },
+    {
+      "code": 6004,
+      "name": "WrongEpochIndex",
+      "msg": "Epochs must be published in order"
+    },
+    {
+      "code": 6005,
+      "name": "ClaimWindowTooShort",
+      "msg": "The claim window must be at least a day long"
+    },
+    {
+      "code": 6006,
+      "name": "InsufficientReserve",
+      "msg": "The vault does not hold enough unreserved balance to back this epoch"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidProof",
+      "msg": "That proof does not lead to this epoch's root"
+    },
+    {
+      "code": 6008,
+      "name": "ProofTooLong",
+      "msg": "That proof is longer than this program will walk"
+    },
+    {
+      "code": 6009,
+      "name": "EpochClosed",
+      "msg": "This epoch is closed"
+    },
+    {
+      "code": 6010,
+      "name": "ClaimWindowClosed",
+      "msg": "This epoch's claim window has passed"
+    },
+    {
+      "code": 6011,
+      "name": "ClaimWindowOpen",
+      "msg": "This epoch's claim window is still open"
+    },
+    {
+      "code": 6012,
+      "name": "ExceedsEpochTotal",
+      "msg": "Claims would exceed the total this epoch published"
+    },
+    {
+      "code": 6013,
+      "name": "WrongVault",
+      "msg": "That epoch belongs to a different vault"
+    },
+    {
+      "code": 6014,
+      "name": "WrongMint",
+      "msg": "That account is for a different mint"
+    },
+    {
+      "code": 6015,
+      "name": "WrongFundsAccount",
+      "msg": "That is not this vault's funds account"
+    },
+    {
+      "code": 6016,
+      "name": "WrongOwner",
+      "msg": "That token account is not owned by the signer"
+    },
+    {
+      "code": 6017,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflowed"
+    }
+  ],
+  "types": [
+    {
+      "name": "AuthorityChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous",
+            "type": "pubkey"
+          },
+          {
+            "name": "current",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimStatus",
+      "docs": [
+        "Written once per claimant per epoch. Its existence is the double-claim guard."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "pubkey"
+          },
+          {
+            "name": "claimant",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Claimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "claimant",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Epoch",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "u64"
+          },
+          {
+            "name": "claimants",
+            "docs": [
+              "How many leaves the root covers. Reported so the share claimed so far is legible on chain."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "claimed_count",
+            "type": "u32"
+          },
+          {
+            "name": "published_at",
+            "type": "i64"
+          },
+          {
+            "name": "deadline",
+            "docs": [
+              "Last second a claim is accepted."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "closed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "unclaimed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochPublished",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "claimants",
+            "type": "u32"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Funded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "funder",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "May publish epochs. May not spend."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "The token account holding every funded token. Owned by this PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch_count",
+            "docs": [
+              "Index the next epoch will take."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_funded",
+            "type": "u64"
+          },
+          {
+            "name": "total_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Committed to open epochs and therefore unavailable to new ones. The vault's balance is",
+              "always at least this, which is what makes a published epoch trustworthy."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "funds_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}
