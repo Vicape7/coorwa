@@ -12,6 +12,7 @@
  */
 import { MOMOSWAP_API, CORWA_REFERRER } from "./config";
 import { fetchJson, cachedStale, CorwaError } from "./http";
+import { uiToRaw } from "./format";
 
 const LP = `${MOMOSWAP_API}/v1/launchpad`;
 
@@ -58,6 +59,31 @@ export interface LaunchpadPool {
   participantCount: string;
   graduationTarget: string;
   graduatedAt: number;
+  /**
+   * The curve's constants, fixed at creation - they do not move as people trade. Current reserves
+   * are these plus what the pool has taken in and minus what it has sold, which is what
+   * `src/lib/curve.ts` reconstructs to price a trade.
+   */
+  virtualPaymentReserve: string;
+  virtualTokenReserve: string;
+  totalActiveShares: string;
+  /** Per-pool, and not always the same as the launchpad's current default. */
+  tradeFeeBps: number;
+  referralFeeBps: number;
+  minBuy: string;
+  maxBuyPerWallet: string;
+}
+
+/** One fill on a curve, as the launchpad's indexer reports it. Amounts are already in UI units. */
+export interface LaunchpadTrade {
+  ts: number;
+  side: "buy" | "sell";
+  trader: string;
+  /** Payment per token, in COOK. */
+  price: number;
+  tokens: number;
+  payment: number;
+  sig: string;
 }
 
 export interface BuiltTx {
@@ -103,7 +129,10 @@ export async function fetchConfig(): Promise<LaunchpadConfig> {
 
 export async function fetchPools(status: PoolStatus | "all" = "all"): Promise<LaunchpadPool[]> {
   return cachedStale(`lp:pools:${status}`, 15_000, async () => {
-    const res = await get<{ pools?: LaunchpadPool[] }>(`/pools?status=${status}`, "launchpad pools");
+    const res = await get<{ pools?: LaunchpadPool[] }>(
+      `/pools?status=${status}`,
+      "launchpad pools",
+    );
     return res.pools ?? [];
   });
 }
@@ -116,6 +145,48 @@ export async function fetchPool(pool: string): Promise<LaunchpadPool> {
 export async function fetchPendingCreatorFees(pool: string): Promise<number> {
   const res = await get<{ pendingCook?: number }>(`/creator-fees/${pool}`, "pending creator fees");
   return res.pendingCook ?? 0;
+}
+
+export async function fetchPoolTrades(pool: string): Promise<LaunchpadTrade[]> {
+  return cachedStale(`lp:trades:${pool}`, 10_000, async () => {
+    const res = await get<{ trades?: LaunchpadTrade[] }>(
+      `/pools/${pool}/trades`,
+      "launchpad trades",
+    );
+    return res.trades ?? [];
+  });
+}
+
+/**
+ * What a wallet still holds on a curve, in raw shares.
+ *
+ * Curve shares are tracked by the programme rather than as SPL tokens, so a wallet balance is no
+ * help here. The launchpad publishes holders read straight from chain, which is the authority; the
+ * trade feed is only a fallback for when that read comes back empty on a pool that has clearly
+ * traded, and it is derived by netting the wallet's own fills.
+ */
+export async function fetchPosition(
+  pool: string,
+  wallet: string,
+  decimals: number,
+): Promise<{ shares: string; source: "holders" | "trades" | "none" }> {
+  const holders = await get<{ holders?: unknown[] }>(`/pools/${pool}/holders`, "curve holders");
+  for (const raw of holders.holders ?? []) {
+    const h = raw as Record<string, unknown>;
+    const who = h.wallet ?? h.owner ?? h.trader ?? h.address ?? h.buyer;
+    if (who !== wallet) continue;
+    const shares = h.shares ?? h.activeShares ?? h.amount ?? h.balance;
+    if (typeof shares === "string" || typeof shares === "number") {
+      return { shares: String(shares).split(".")[0], source: "holders" };
+    }
+  }
+
+  const trades = await fetchPoolTrades(pool);
+  const mine = trades.filter((t) => t.trader === wallet);
+  if (mine.length === 0) return { shares: "0", source: "none" };
+
+  const net = mine.reduce((sum, t) => sum + (t.side === "buy" ? t.tokens : -t.tokens), 0);
+  return { shares: net > 0 ? uiToRaw(net, decimals) : "0", source: "trades" };
 }
 
 // --- Session (the launch path is signature-gated) -----------------------------------------------
@@ -187,12 +258,11 @@ export async function buildBuyTx(body: {
   paymentAmount: string;
   referrer?: string | null;
 }): Promise<BuiltTx> {
-  return post(
-    "/tx/buy",
-    // The programme rejects self-referral, so a creator buying their own curve drops the referrer.
-    { ...body, referrer: body.referrer ?? (CORWA_REFERRER || undefined) },
-    "buy build",
-  );
+  // Leaving `referrer` out means "use Corwa's". Passing null means "deliberately none" - which is
+  // how a creator buying their own curve gets through, since the programme rejects self-referral.
+  const referrer =
+    body.referrer === undefined ? CORWA_REFERRER || undefined : (body.referrer ?? undefined);
+  return post("/tx/buy", { ...body, referrer }, "buy build");
 }
 
 export async function buildSellTx(body: {

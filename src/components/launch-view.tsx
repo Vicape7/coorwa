@@ -13,6 +13,7 @@ import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { cookieTxUrl, COOKIE_EXPLORER } from "@/lib/config";
 import { shortAddr, amount, usd } from "@/lib/format";
 import { Notice } from "./notice";
+import { CurvePanel } from "./curve-panel";
 import type { LaunchpadConfig, LaunchpadPool } from "@/lib/launchpad";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -31,13 +32,15 @@ export function LaunchView() {
     fetcher,
     { refreshInterval: 60_000 },
   );
-  const { data: poolsData } = useSWR<{ pools: (LaunchpadPool & { progress: number })[] }>(
-    "/api/launchpad/pools?status=all",
-    fetcher,
-    { refreshInterval: 20_000 },
-  );
+  const { data: poolsData } = useSWR<{
+    pools: (LaunchpadPool & { progress: number })[];
+    cookPriceUsd: number | null;
+  }>("/api/launchpad/pools?status=all", fetcher, { refreshInterval: 20_000 });
+
+  const [selected, setSelected] = useState<string | null>(null);
 
   const pools = poolsData?.pools ?? [];
+  const trading = pools.find((p) => p.pubkey === selected) ?? null;
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
@@ -47,8 +50,8 @@ export function LaunchView() {
           Launch a token on a COOK curve.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Corwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades on
-          the curve until it hits the graduation target, then moves to a real DEX pool - where it
+          Corwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades
+          on the curve until it hits the graduation target, then moves to a real DEX pool - where it
           becomes a Corwa pair you can price against any stock.
         </p>
       </div>
@@ -60,7 +63,15 @@ export function LaunchView() {
         </div>
 
         <div className="space-y-4">
-          <LivePools pools={pools} />
+          {trading && (
+            <CurvePanel
+              pool={trading}
+              decimals={cfg?.config.defaultTokenDecimals ?? 6}
+              cookPriceUsd={poolsData?.cookPriceUsd ?? null}
+              onClose={() => setSelected(null)}
+            />
+          )}
+          <LivePools pools={pools} selected={selected} onSelect={setSelected} />
         </div>
       </div>
     </div>
@@ -106,7 +117,9 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
   const launch = useCallback(async () => {
     if (!publicKey || !signTransaction) return;
     if (!signMessage) {
-      setError("This wallet cannot sign messages, which the launchpad requires to authorise a launch.");
+      setError(
+        "This wallet cannot sign messages, which the launchpad requires to authorise a launch.",
+      );
       return;
     }
     setError(null);
@@ -115,9 +128,9 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     try {
       // 1. Session: sign a message. No chain fee, nothing submitted.
       setStep("Requesting a login nonce");
-      const nonceRes = await fetch(
-        `/api/launchpad/session?wallet=${publicKey.toBase58()}`,
-      ).then((r) => r.json());
+      const nonceRes = await fetch(`/api/launchpad/session?wallet=${publicKey.toBase58()}`).then(
+        (r) => r.json(),
+      );
       if (nonceRes.error) throw new Error(nonceRes.error);
 
       setStep("Sign the login message in your wallet");
@@ -216,7 +229,9 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             <Labeled label="Symbol">
               <input
                 value={symbol}
-                onChange={(e) => setSymbol(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 10))}
+                onChange={(e) =>
+                  setSymbol(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 10))
+                }
                 placeholder="MON"
                 className="field w-full uppercase"
               />
@@ -331,13 +346,7 @@ function Labeled({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function ImagePicker({
-  preview,
-  onFile,
-}: {
-  preview: string | null;
-  onFile: (f: File) => void;
-}) {
+function ImagePicker({ preview, onFile }: { preview: string | null; onFile: (f: File) => void }) {
   return (
     <label className="panel grid h-[104px] w-[104px] cursor-pointer place-items-center overflow-hidden text-center">
       {preview ? (
@@ -391,7 +400,10 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Mini label="Launch cost" value={Number(config.creationFeeLamports) === 0 ? "Free" : "—"} />
-        <Mini label="Supply" value={amount(Number(config.defaultTotalSupply) / 10 ** config.defaultTokenDecimals, 0)} />
+        <Mini
+          label="Supply"
+          value={amount(Number(config.defaultTotalSupply) / 10 ** config.defaultTokenDecimals, 0)}
+        />
         <Mini
           label="Graduates at"
           value={`${amount(Number(config.graduationTarget) / 1e9, 0)} COOK`}
@@ -413,12 +425,20 @@ function Mini({ label, value }: { label: string; value: string }) {
 
 // --- Pools ----------------------------------------------------------------------------------------
 
-function LivePools({ pools }: { pools: (LaunchpadPool & { progress: number })[] }) {
+function LivePools({
+  pools,
+  selected,
+  onSelect,
+}: {
+  pools: (LaunchpadPool & { progress: number })[];
+  selected: string | null;
+  onSelect: (pubkey: string | null) => void;
+}) {
   return (
     <div className="card p-7">
       <h2 className="title text-primary">On the curve</h2>
       <p className="mt-1.5 text-[13px] text-muted">
-        Pools still climbing toward graduation.
+        Pools climbing toward graduation. Pick one to trade it.
       </p>
 
       {pools.length === 0 ? (
@@ -430,24 +450,30 @@ function LivePools({ pools }: { pools: (LaunchpadPool & { progress: number })[] 
       ) : (
         <ul className="mt-5 space-y-2.5">
           {pools.slice(0, 12).map((p) => (
-            <li key={p.pubkey} className="panel p-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[14px] text-primary">
-                    {p.name} <span className="text-subtle">{p.symbol}</span>
+            <li key={p.pubkey}>
+              <button
+                onClick={() => onSelect(selected === p.pubkey ? null : p.pubkey)}
+                data-active={selected === p.pubkey}
+                className="panel w-full p-4 text-left transition-colors data-[active=true]:border-[color:var(--color-cookie)]"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[14px] text-primary">
+                      {p.name} <span className="text-subtle">{p.symbol}</span>
+                    </div>
+                    <div className="num mt-0.5 text-[12px] text-muted">
+                      {usd(Number(p.paymentRaisedNet) / 1e9)} raised · {p.participantCount} holders
+                    </div>
                   </div>
-                  <div className="num mt-0.5 text-[12px] text-muted">
-                    {usd(Number(p.paymentRaisedNet) / 1e9)} raised · {p.participantCount} holders
-                  </div>
+                  <span className="pill pill-quiet shrink-0">{p.status}</span>
                 </div>
-                <span className="pill pill-quiet shrink-0">{p.status}</span>
-              </div>
-              <div className="mt-3 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-                <div
-                  className="h-full rounded-full bg-[var(--color-cookie)]"
-                  style={{ width: `${Math.round(p.progress * 100)}%` }}
-                />
-              </div>
+                <div className="mt-3 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
+                  <div
+                    className="h-full rounded-full bg-[var(--color-cookie)]"
+                    style={{ width: `${Math.round(p.progress * 100)}%` }}
+                  />
+                </div>
+              </button>
             </li>
           ))}
         </ul>

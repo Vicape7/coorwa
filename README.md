@@ -64,7 +64,13 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ### Launchpad
 - Launch on a COOK bonding curve through [MomoSwap](https://momoswap.fun): sign a login message,
   Corwa builds, your wallet signs.
-- The real fee split is read from the launchpad config at load time, not hardcoded.
+- **Buy and sell on any curve**, priced before you sign. The launchpad publishes no quote endpoint,
+  so Corwa reconstructs the curve from the reserves the pool itself reports. Replayed against fills
+  that already settled on chain it reproduces both legs to the raw unit.
+- Every buy names Corwa as referrer, which is the one place a fee reaches Corwa at all, and the
+  fill is reported for cashback with the token's creator attached so both sides accrue.
+- The real fee split is read from the launchpad config at load time, not hardcoded, and the trade
+  panel reads it per pool rather than assuming the current default.
 
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
@@ -78,6 +84,11 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
 - Split 50 / 30 / 20 between trader, creator and liquidity.
+- **Nothing is credited on the client's word.** A reported fill is re-read on chain before it is
+  written: the transaction has to exist, to have succeeded, and to have been signed by the wallet
+  being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
+  moved, and the referral fee is credited only when Corwa's referrer address is named on the
+  transaction itself. No referrer on chain, no revenue, so nothing to rebate.
 - **Swaps currently earn Corwa nothing**: neither Cookie Chain router exposes a platform-fee or
   referral parameter, so those fills are recorded at zero rather than credited with a rebate that
   no fee is backing.
@@ -223,6 +234,7 @@ src/
     bridge.ts       Hyperlane warp route, hand-encoded, with two preflight checks
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client
+    curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
     cashback.ts     Fee accrual and the split
     epochs.ts       Epoch accounting: who is owed what, and what has already been committed
     merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte

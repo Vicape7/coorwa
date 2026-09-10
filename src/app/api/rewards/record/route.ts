@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { Connection } from "@solana/web3.js";
-import { recordFill } from "@/lib/cashback";
-import { COOKIE_RPC_URL, SOLANA_RPC_URL } from "@/lib/config";
+import { Connection, type VersionedTransactionResponse } from "@solana/web3.js";
+import { recordFill, launchpadReferralFee } from "@/lib/cashback";
+import { fetchCookPriceUsd } from "@/lib/cookiescan";
+import { COOKIE_RPC_URL, SOLANA_RPC_URL, COOK_DECIMALS, CORWA_REFERRER } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,35 @@ const Body = z.object({
   creator: z.string().min(32).max(44).optional(),
   chain: z.enum(["cookie", "solana"]).default("cookie"),
 });
+
+/** Every address the transaction touched, lookup tables included. */
+function accountsOf(tx: VersionedTransactionResponse): Set<string> {
+  const keys = tx.transaction.message.getAccountKeys({
+    accountKeysFromLookups: tx.meta?.loadedAddresses,
+  });
+  const out = new Set<string>();
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys.get(i);
+    if (k) out.add(k.toBase58());
+  }
+  return out;
+}
+
+/**
+ * What the fee payer's COOK balance actually did, in UI units and always positive.
+ *
+ * COOK is Cookie Chain's native unit, so a curve trade shows up as a plain lamport movement on the
+ * payer. The network fee is added back because it is not part of the trade.
+ */
+function cookMoved(tx: VersionedTransactionResponse, side: "buy" | "sell"): number | null {
+  const pre = tx.meta?.preBalances?.[0];
+  const post = tx.meta?.postBalances?.[0];
+  if (typeof pre !== "number" || typeof post !== "number") return null;
+
+  const fee = tx.meta?.fee ?? 0;
+  const moved = side === "buy" ? pre - post - fee : post - pre + fee;
+  return moved > 0 ? moved / 10 ** COOK_DECIMALS : 0;
+}
 
 /**
  * Report a confirmed fill for cashback accrual.
@@ -38,7 +68,10 @@ export async function POST(req: Request) {
   const b = parsed.data;
 
   try {
-    const conn = new Connection(b.chain === "solana" ? SOLANA_RPC_URL : COOKIE_RPC_URL, "confirmed");
+    const conn = new Connection(
+      b.chain === "solana" ? SOLANA_RPC_URL : COOKIE_RPC_URL,
+      "confirmed",
+    );
     const tx = await conn.getTransaction(b.signature, {
       maxSupportedTransactionVersion: 0,
       commitment: "confirmed",
@@ -66,9 +99,28 @@ export async function POST(req: Request) {
       );
     }
 
-    const res = await recordFill(b);
+    // The launchpad is the one path that accrues real money, so neither the size of the trade nor
+    // the fee it earned is taken on the client's word.
+    let valueUsd = b.valueUsd;
+    let feeUsd = b.feeUsd;
+    if (b.source === "launchpad") {
+      const [cookPriceUsd, moved] = [await fetchCookPriceUsd(), cookMoved(tx, b.side)];
+      if (cookPriceUsd && moved != null) {
+        // Rent for a token account the buy had to open moves in the same balance, so this is a
+        // ceiling on the trade rather than the trade itself, which is all it has to be.
+        valueUsd = Math.min(valueUsd, moved * cookPriceUsd);
+      }
+      // MomoSwap pays the referral share only to an address named on the transaction, and it names
+      // it as an account. Not there, no revenue, so nothing to rebate.
+      feeUsd =
+        CORWA_REFERRER && accountsOf(tx).has(CORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
+    }
+
+    const res = await recordFill({ ...b, valueUsd, feeUsd });
     return NextResponse.json({
       ...res,
+      valueUsd,
+      feeUsd,
       note: res.recorded
         ? undefined
         : "cashback accounting is not configured on this deployment (no DATABASE_URL)",
