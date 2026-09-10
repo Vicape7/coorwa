@@ -15,6 +15,13 @@
       "when": 1789053411823,
       "tag": "0001_cashback_epochs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789070853363,
+      "tag": "0002_launches",
+      "breakpoints": true
     }
   ]
 }

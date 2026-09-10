@@ -12,8 +12,10 @@ import bs58 from "bs58";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { cookieTxUrl, COOKIE_EXPLORER } from "@/lib/config";
 import { shortAddr, amount, usd } from "@/lib/format";
+import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
 import { Notice } from "./notice";
 import { CurvePanel } from "./curve-panel";
+import { CreatorLaunches } from "./creator-launches";
 import type { LaunchpadConfig, LaunchpadPool } from "@/lib/launchpad";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -59,6 +61,7 @@ export function LaunchView() {
       <div className="mt-10 grid gap-4 lg:grid-cols-[1fr_400px]">
         <div className="space-y-4">
           <CreateForm config={cfg?.config} />
+          <CreatorLaunches pools={pools} cookPriceUsd={poolsData?.cookPriceUsd ?? null} />
           {cfg?.config && <Economics config={cfg.config} fees={cfg.fees} />}
         </div>
 
@@ -93,10 +96,17 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [durationHours, setDurationHours] = useState(72);
   const [devBuy, setDevBuy] = useState("");
+  const [benchmark, setBenchmark] = useState(DEFAULT_RWA.ticker);
 
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ signature: string; mint?: string } | null>(null);
+  const [done, setDone] = useState<{
+    signature: string;
+    mint?: string;
+    ticker: string;
+    /** False when the benchmark could not be stored, which quietly changes what the token is. */
+    pinned: boolean;
+  } | null>(null);
 
   const onFile = useCallback((file: File) => {
     if (file.size > 2_000_000) {
@@ -179,7 +189,30 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         signTransaction,
       );
 
-      setDone({ signature: sent.signature, mint: built.mint });
+      // Pin the benchmark. The server proves the launch on chain before it writes anything, so this
+      // can only ever record a token this wallet really created. If it fails the token still exists
+      // and simply falls back to being quotable against every asset, which the notice says.
+      let pinned = false;
+      if (built.mint && built.pool) {
+        pinned = await fetch("/api/launchpad/launches", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            signature: sent.signature,
+            mint: built.mint,
+            pool: built.pool,
+            creator: publicKey.toBase58(),
+            ticker: benchmark,
+            symbol: symbol.toUpperCase(),
+            name,
+          }),
+        })
+          .then((r) => r.json())
+          .then((r) => r.recorded === true)
+          .catch(() => false);
+      }
+
+      setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned });
       setName("");
       setSymbol("");
       setDescription("");
@@ -202,6 +235,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     imageType,
     durationHours,
     devBuy,
+    benchmark,
     connection,
   ]);
 
@@ -251,6 +285,26 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           />
         </Labeled>
 
+        <Labeled label="Benchmark">
+          <select
+            value={benchmark}
+            onChange={(e) => setBenchmark(e.target.value)}
+            className="field w-full cursor-pointer"
+          >
+            {RWA_ASSETS.map((a) => (
+              <option key={a.ticker} value={a.ticker}>
+                {a.ticker} · {a.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
+            Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark} and against
+            nothing else. Liquidity is still the COOK curve, the way it is everywhere on this chain;
+            the benchmark is what the price is quoted and charted in. Fixed at launch, like the
+            name.
+          </p>
+        </Labeled>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <Labeled label="Curve open for">
             <div className="segmented w-full">
@@ -289,8 +343,8 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         {error && <Notice tone="down">{error}</Notice>}
 
         {done && (
-          <Notice tone="up">
-            Launched.{" "}
+          <Notice tone={done.pinned ? "up" : "note"}>
+            Launched{done.pinned ? ` as ${done.ticker}` : ", but the benchmark was not saved"}.{" "}
             {done.mint && (
               <>
                 Mint{" "}

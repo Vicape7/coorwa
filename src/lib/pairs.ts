@@ -15,6 +15,12 @@
  * terminal can show: whether a token is beating NVIDIA. Settlement stays honest too - liquidity is
  * the real TOKEN/wCOOK pool, and anyone wanting true RWA exposure exits through the cross-chain
  * route in `crosschain.ts`.
+ *
+ * There are two regimes, and the difference is who chose the benchmark. A token launched through
+ * Corwa has one: its creator picked an asset at launch, so it appears as that pair and no other,
+ * the way a launchpad pair behaves anywhere else. A token that already existed on Cookie Chain had
+ * nobody to choose, so it stays quotable against every asset and the trader picks. `launches.ts`
+ * holds the first set; with no database there is no first set and everything crosses.
  */
 import { COOK_MINT } from "./config";
 import {
@@ -28,6 +34,7 @@ import {
 } from "./cookiescan";
 import { fetchRwaPrices, type RwaQuote } from "./jupiter";
 import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
+import { benchmarks } from "./launches";
 
 export interface CorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -60,6 +67,11 @@ export interface CorwaPair {
     priceUsd: number;
     change24h: number | null;
   };
+  /**
+   * True when this token was launched through Corwa and its creator picked this asset as the
+   * benchmark. Such a token has exactly one pair; everything else is quotable against all of them.
+   */
+  pinned: boolean;
   /** How many RWA shares one base token is worth. Always tiny - render with `rwaRatio`. */
   price: number;
   /** How many base tokens buy one whole RWA share. The human-readable direction. */
@@ -84,6 +96,24 @@ export interface PairUniverse {
   /** Cookie Chain mints that have real liquidity but no usable price yet. */
   skipped: number;
   updatedAt: string;
+}
+
+/**
+ * Which assets a token may be quoted against.
+ *
+ * A token launched through Corwa has one benchmark, chosen by its creator, and appears against that
+ * asset alone. Everything else on the chain had nobody to choose, so it stays quotable against all
+ * of them and the trader picks.
+ *
+ * The narrowing matters: asking for one asset that is not the pinned one has to come back empty
+ * rather than falling back to the cross, or `findPair("token-nvda")` would happily resolve a token
+ * its creator benchmarked against something else.
+ */
+export function quotesFor<T extends { ticker: string }>(
+  pin: string | undefined,
+  requested: readonly T[],
+): readonly T[] {
+  return pin ? requested.filter((a) => a.ticker === pin) : requested;
 }
 
 function slugify(symbol: string, ticker: string): string {
@@ -114,12 +144,16 @@ function tokenUsd(t: CookiescanToken, cookUsd: number | null): number | null {
  * Build the tradeable universe: every Cookie Chain token with real pool depth, crossed with every
  * RWA in the registry.
  */
-export async function buildUniverse(opts?: { quotes?: string[]; minLiquidityUsd?: number }): Promise<PairUniverse> {
-  const [tokens, markets, cookUsd, rwaPrices] = await Promise.all([
+export async function buildUniverse(opts?: {
+  quotes?: string[];
+  minLiquidityUsd?: number;
+}): Promise<PairUniverse> {
+  const [tokens, markets, cookUsd, rwaPrices, pinned] = await Promise.all([
     fetchTokens(),
     fetchMarkets(),
     fetchCookPriceUsd(),
     fetchRwaPrices(),
+    benchmarks(),
   ]);
 
   const minLiq = opts?.minLiquidityUsd ?? 1;
@@ -156,7 +190,9 @@ export async function buildUniverse(opts?: { quotes?: string[]; minLiquidityUsd?
     const deepest = pools[0] as CookiescanMarket | undefined;
     const symbol = t.metadata?.symbol?.trim() || mint.slice(0, 4);
 
-    for (const asset of quoteTickers) {
+    const pin = pinned.get(mint);
+
+    for (const asset of quotesFor(pin, quoteTickers)) {
       const rwa = rwaPrices[asset.ticker];
       if (!rwa || !(rwa.priceUsd > 0)) continue;
 
@@ -186,6 +222,7 @@ export async function buildUniverse(opts?: { quotes?: string[]; minLiquidityUsd?
           priceUsd: rwa.priceUsd,
           change24h: rwa.change24h,
         },
+        pinned: pin != null,
         price: usd / rwa.priceUsd,
         inverse: rwa.priceUsd / usd,
         change24h: stale ? null : ratioChange(t.price?.change24h ?? null, rwa.change24h),
@@ -200,9 +237,7 @@ export async function buildUniverse(opts?: { quotes?: string[]; minLiquidityUsd?
   return {
     pairs,
     cookPriceUsd: cookUsd,
-    rwa: Object.values(rwaPrices).sort(
-      (a, b) => (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0),
-    ),
+    rwa: Object.values(rwaPrices).sort((a, b) => (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0)),
     skipped,
     updatedAt: new Date().toISOString(),
   };

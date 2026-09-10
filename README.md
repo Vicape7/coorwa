@@ -47,7 +47,10 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ## What it does
 
 ### Terminal
-- Every Cookie Chain token with real pool depth, crossed with 16 xStocks.
+- Every Cookie Chain token with real pool depth, crossed with 16 xStocks. A token launched through
+  Corwa is the exception: its creator picked one benchmark at launch, so it appears as that pair
+  alone, the way a launchpad pair behaves anywhere else. Tokens that already existed here had
+  nobody to choose, so the trader still picks.
 - **Candles built from executed fills**, not standing pool quotes - and the pair chart is the ratio
   of two real series, so it shows genuine relative performance against the stock.
 - A pair that has not traded in 24h shows `—`, never a phantom return from a flat price against a
@@ -64,9 +67,16 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ### Launchpad
 - Launch on a COOK bonding curve through [MomoSwap](https://momoswap.fun): sign a login message,
   Corwa builds, your wallet signs.
+- **The creator picks the RWA the token is benchmarked against**, once, at launch. That is what
+  makes a Corwa launch a TOKEN/RWA instrument rather than one more row in a cross product. It is
+  recorded only after the launch transaction has been read back from the chain and found to name
+  that mint, so nobody can pin a token they did not create. Liquidity is still the COOK curve, as
+  it is for everything on this chain; the benchmark is what the price is quoted and charted in.
 - **Buy and sell on any curve**, priced before you sign. The launchpad publishes no quote endpoint,
   so Corwa reconstructs the curve from the reserves the pool itself reports. Replayed against fills
   that already settled on chain it reproduces both legs to the raw unit.
+- **Creators see and claim their own fees.** MomoSwap pays the creator 0.35% of every trade on
+  their curve; it accrues on the pool and is claimed with the creator's own key.
 - Every buy names Corwa as referrer, which is the one place a fee reaches Corwa at all, and the
   fill is reported for cashback with the token's creator attached so both sides accrue.
 - The real fee split is read from the launchpad config at load time, not hardcoded, and the trade
@@ -235,6 +245,8 @@ src/
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client
     curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
+    launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
+    onchain.ts      Proving a reported transaction really happened before anything is written down
     cashback.ts     Fee accrual and the split
     epochs.ts       Epoch accounting: who is owed what, and what has already been committed
     merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte

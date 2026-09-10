@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { Connection, type VersionedTransactionResponse } from "@solana/web3.js";
+import { type VersionedTransactionResponse } from "@solana/web3.js";
 import { recordFill, launchpadReferralFee } from "@/lib/cashback";
 import { fetchCookPriceUsd } from "@/lib/cookiescan";
-import { COOKIE_RPC_URL, SOLANA_RPC_URL, COOK_DECIMALS, CORWA_REFERRER } from "@/lib/config";
+import { proveTransaction, isProven } from "@/lib/onchain";
+import { COOK_DECIMALS, CORWA_REFERRER } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +20,6 @@ const Body = z.object({
   creator: z.string().min(32).max(44).optional(),
   chain: z.enum(["cookie", "solana"]).default("cookie"),
 });
-
-/** Every address the transaction touched, lookup tables included. */
-function accountsOf(tx: VersionedTransactionResponse): Set<string> {
-  const keys = tx.transaction.message.getAccountKeys({
-    accountKeysFromLookups: tx.meta?.loadedAddresses,
-  });
-  const out = new Set<string>();
-  for (let i = 0; i < keys.length; i++) {
-    const k = keys.get(i);
-    if (k) out.add(k.toBase58());
-  }
-  return out;
-}
 
 /**
  * What the fee payer's COOK balance actually did, in UI units and always positive.
@@ -52,10 +40,9 @@ function cookMoved(tx: VersionedTransactionResponse, side: "buy" | "sell"): numb
 /**
  * Report a confirmed fill for cashback accrual.
  *
- * A client could otherwise claim any trade it liked, so the signature is verified against the chain
- * before anything is written: the transaction must exist, must have succeeded, and must have been
- * signed by the wallet being credited. Combined with the unique index on the signature, that makes
- * the accrual table an index of provable events rather than a claim log.
+ * A client could otherwise claim any trade it liked, so the transaction is proved against the chain
+ * before anything is written. Combined with the unique index on the signature, that makes the
+ * accrual table an index of provable events rather than a claim log.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -68,35 +55,13 @@ export async function POST(req: Request) {
   const b = parsed.data;
 
   try {
-    const conn = new Connection(
-      b.chain === "solana" ? SOLANA_RPC_URL : COOKIE_RPC_URL,
-      "confirmed",
-    );
-    const tx = await conn.getTransaction(b.signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: "confirmed",
+    const proof = await proveTransaction({
+      signature: b.signature,
+      wallet: b.wallet,
+      chain: b.chain,
     });
-
-    if (!tx) {
-      return NextResponse.json(
-        { error: "that transaction was not found on chain", recorded: false },
-        { status: 404 },
-      );
-    }
-    if (tx.meta?.err) {
-      return NextResponse.json(
-        { error: "that transaction failed on chain", recorded: false },
-        { status: 409 },
-      );
-    }
-
-    // The fee payer is the first signer; crediting anyone else would let a caller credit a stranger.
-    const signer = tx.transaction.message.getAccountKeys().get(0)?.toBase58();
-    if (signer !== b.wallet) {
-      return NextResponse.json(
-        { error: "that transaction was not signed by this wallet", recorded: false },
-        { status: 403 },
-      );
+    if (!isProven(proof)) {
+      return NextResponse.json({ error: proof.error, recorded: false }, { status: proof.status });
     }
 
     // The launchpad is the one path that accrues real money, so neither the size of the trade nor
@@ -104,7 +69,7 @@ export async function POST(req: Request) {
     let valueUsd = b.valueUsd;
     let feeUsd = b.feeUsd;
     if (b.source === "launchpad") {
-      const [cookPriceUsd, moved] = [await fetchCookPriceUsd(), cookMoved(tx, b.side)];
+      const [cookPriceUsd, moved] = [await fetchCookPriceUsd(), cookMoved(proof.tx, b.side)];
       if (cookPriceUsd && moved != null) {
         // Rent for a token account the buy had to open moves in the same balance, so this is a
         // ceiling on the trade rather than the trade itself, which is all it has to be.
@@ -113,7 +78,7 @@ export async function POST(req: Request) {
       // MomoSwap pays the referral share only to an address named on the transaction, and it names
       // it as an account. Not there, no revenue, so nothing to rebate.
       feeUsd =
-        CORWA_REFERRER && accountsOf(tx).has(CORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
+        CORWA_REFERRER && proof.accounts.has(CORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
     }
 
     const res = await recordFill({ ...b, valueUsd, feeUsd });

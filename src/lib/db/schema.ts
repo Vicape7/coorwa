@@ -48,6 +48,40 @@ export const fills = pgTable(
 );
 
 /**
+ * A token launched through Corwa, and the RWA its creator benchmarked it against.
+ *
+ * This is what makes a Corwa-launched token a TOKEN/RWA instrument rather than one more row in a
+ * cross product. Without it every token on the chain is quotable against all sixteen xStocks, which
+ * is right for tokens that already existed and had nobody to choose, and wrong for a token launched
+ * here on purpose. The choice is made once, at launch, and never edited: a benchmark that moved
+ * would silently rewrite every chart and every ratio ever shown for that token.
+ *
+ * A row is only written after the launch transaction has been read back from the chain and found to
+ * name this mint, so a wallet cannot claim a benchmark on a token it did not launch.
+ */
+export const launches = pgTable(
+  "launches",
+  {
+    /** The token's mint. Primary key, because one mint has exactly one benchmark. */
+    mint: text("mint").primaryKey(),
+    pool: text("pool").notNull(),
+    creator: text("creator").notNull(),
+    /** The chosen RWA, by ticker, e.g. "NVDA". Resolved against `RWA_ASSETS` on read. */
+    ticker: text("ticker").notNull(),
+    symbol: text("symbol"),
+    name: text("name"),
+    /** The confirmed create transaction this was proved against. */
+    signature: text("signature").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("launches_signature_idx").on(t.signature),
+    index("launches_creator_idx").on(t.creator),
+    index("launches_ticker_idx").on(t.ticker),
+  ],
+);
+
+/**
  * A cashback epoch: one merkle root, published on chain.
  *
  * This is the off-chain half of `programs/corwa-vault`. The vault pays against a root and knows

@@ -94,6 +94,8 @@ export interface BuiltTx {
   lastValidBlockHeight: number;
   /** create-pool only: the leased `momo` mint the token will be created at. */
   mint?: string;
+  /** create-pool only: the pool the curve will live at, known before the launch is even signed. */
+  pool?: string;
 }
 
 type Envelope<T> = T & { success?: boolean; error?: string };
