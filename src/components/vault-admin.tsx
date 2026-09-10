@@ -15,12 +15,7 @@
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
-import {
-  createAssociatedTokenAccountIdempotentInstruction,
-  createSyncNativeInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import { Notice } from "./notice";
 import { amount, shortAddr, usd } from "@/lib/format";
 import { signSendConfirm, explainError } from "@/lib/tx";
@@ -33,7 +28,7 @@ import {
   cookieAccountUrl,
   cookieTxUrl,
 } from "@/lib/config";
-import { closeEpochIx, fundIx, initializeIx, publishEpochIx } from "@/lib/vault";
+import { closeEpochIx, fundTransaction, initializeIx, publishEpochIx } from "@/lib/vault";
 import type { EpochOverview, EpochRow } from "@/lib/epochs";
 
 const MINT = new PublicKey(VAULT_MINT);
@@ -88,7 +83,11 @@ export function VaultAdmin() {
 
   /** Every action here is the same three steps, so they share one runner. */
   const run = useCallback(
-    async (key: string, build: () => Promise<Transaction>, after?: (sig: string) => Promise<void>) => {
+    async (
+      key: string,
+      build: () => Promise<Transaction>,
+      after?: (sig: string) => Promise<void>,
+    ) => {
       if (!publicKey || !signTransaction) return;
       setBusy(key);
       setNote(null);
@@ -132,63 +131,27 @@ export function VaultAdmin() {
     }
     const raw = BigInt(Math.floor(cook * UNITS));
 
-    return run("fund", async () => {
-      const funderToken = getAssociatedTokenAddressSync(MINT, publicKey!);
-      const tx = new Transaction();
-
-      let held = 0n;
-      try {
-        const balance = await connection.getTokenAccountBalance(funderToken, "confirmed");
-        held = BigInt(balance.value.amount);
-      } catch {
-        // No wrapped account yet, which the idempotent create below handles.
-      }
-
-      if (held < raw) {
-        tx.add(
-          createAssociatedTokenAccountIdempotentInstruction(
-            publicKey!,
-            funderToken,
-            publicKey!,
-            MINT,
-          ),
-        );
-        tx.add(
-          SystemProgram.transfer({
-            fromPubkey: publicKey!,
-            toPubkey: funderToken,
-            lamports: raw - held,
-          }),
-        );
-        tx.add(createSyncNativeInstruction(funderToken));
-      }
-
-      tx.add(fundIx(publicKey!, MINT, funderToken, raw));
-      return tx;
-    });
+    return run("fund", () => fundTransaction(connection, publicKey!, MINT, raw));
   }, [run, fundInput, publicKey, connection]);
 
-  const onDraft = useCallback(
-    async (rebuild: boolean) => {
-      setBusy(rebuild ? "rebuild" : "draft");
-      setNote(null);
-      try {
-        const res = await fetch("/api/cashback/draft", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ rebuild }),
-        });
-        const body: DraftResponse = await res.json();
-        if (!res.ok) throw new Error(body.error ?? "could not build the epoch");
-        setDraft(body);
-      } catch (e) {
-        setNote({ tone: "down", text: explainError(e) });
-      } finally {
-        setBusy(null);
-      }
-    },
-    [],
-  );
+  const onDraft = useCallback(async (rebuild: boolean) => {
+    setBusy(rebuild ? "rebuild" : "draft");
+    setNote(null);
+    try {
+      const res = await fetch("/api/cashback/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rebuild }),
+      });
+      const body: DraftResponse = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "could not build the epoch");
+      setDraft(body);
+    } catch (e) {
+      setNote({ tone: "down", text: explainError(e) });
+    } finally {
+      setBusy(null);
+    }
+  }, []);
 
   const onPublish = useCallback(() => {
     if (!draft) return;
@@ -226,9 +189,7 @@ export function VaultAdmin() {
 
   const onClose = useCallback(
     (index: string) =>
-      run(`close:${index}`, async () =>
-        new Transaction().add(closeEpochIx(MINT, BigInt(index))),
-      ),
+      run(`close:${index}`, async () => new Transaction().add(closeEpochIx(MINT, BigInt(index)))),
     [run],
   );
 
@@ -264,11 +225,7 @@ export function VaultAdmin() {
             this becomes the authority, and the authority can only publish roots - there is no
             instruction that lets it spend the float.
           </p>
-          <button
-            className="btn btn-primary mt-5"
-            disabled={busy !== null}
-            onClick={onInitialize}
-          >
+          <button className="btn btn-primary mt-5" disabled={busy !== null} onClick={onInitialize}>
             {busy === "init" ? "Initializing" : "Initialize the vault"}
           </button>
         </>
@@ -315,7 +272,14 @@ export function VaultAdmin() {
         </>
       )}
 
-      {draft && <DraftCard draft={draft} busy={busy} onPublish={onPublish} onRebuild={() => onDraft(true)} />}
+      {draft && (
+        <DraftCard
+          draft={draft}
+          busy={busy}
+          onPublish={onPublish}
+          onRebuild={() => onDraft(true)}
+        />
+      )}
 
       {data?.closable && data.closable.length > 0 && (
         <div className="mt-6 border-t border-hair pt-6">

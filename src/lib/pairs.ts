@@ -35,6 +35,7 @@ import {
 import { fetchRwaPrices, type RwaQuote } from "./jupiter";
 import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
 import { benchmarks } from "./launches";
+import { listedByMint, FREE_TICKER } from "./listings";
 
 export interface CorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -101,19 +102,24 @@ export interface PairUniverse {
 /**
  * Which assets a token may be quoted against.
  *
- * A token launched through Corwa has one benchmark, chosen by its creator, and appears against that
- * asset alone. Everything else on the chain had nobody to choose, so it stays quotable against all
- * of them and the trader picks.
+ * Three cases, and the difference is who decided. A token launched through Corwa has one benchmark
+ * its creator chose at launch, and appears against that asset alone. Any other token carries one
+ * free benchmark, plus whatever pairs somebody has paid to add. Nothing is crossed with everything
+ * any more: sixteen rows per token was a list of arithmetic, not a list of markets.
  *
- * The narrowing matters: asking for one asset that is not the pinned one has to come back empty
- * rather than falling back to the cross, or `findPair("token-nvda")` would happily resolve a token
- * its creator benchmarked against something else.
+ * The narrowing matters: asking for one asset a token does not carry has to come back empty rather
+ * than falling back to the full set, or `findPair("token-nvda")` would happily resolve a pair
+ * nobody chose and nobody paid for.
  */
 export function quotesFor<T extends { ticker: string }>(
   pin: string | undefined,
+  listed: readonly string[] | undefined,
   requested: readonly T[],
 ): readonly T[] {
-  return pin ? requested.filter((a) => a.ticker === pin) : requested;
+  if (pin) return requested.filter((a) => a.ticker === pin);
+
+  const carried = new Set<string>([FREE_TICKER, ...(listed ?? [])]);
+  return requested.filter((a) => carried.has(a.ticker));
 }
 
 function slugify(symbol: string, ticker: string): string {
@@ -148,12 +154,13 @@ export async function buildUniverse(opts?: {
   quotes?: string[];
   minLiquidityUsd?: number;
 }): Promise<PairUniverse> {
-  const [tokens, markets, cookUsd, rwaPrices, pinned] = await Promise.all([
+  const [tokens, markets, cookUsd, rwaPrices, pinned, listed] = await Promise.all([
     fetchTokens(),
     fetchMarkets(),
     fetchCookPriceUsd(),
     fetchRwaPrices(),
     benchmarks(),
+    listedByMint(),
   ]);
 
   const minLiq = opts?.minLiquidityUsd ?? 1;
@@ -192,7 +199,7 @@ export async function buildUniverse(opts?: {
 
     const pin = pinned.get(mint);
 
-    for (const asset of quotesFor(pin, quoteTickers)) {
+    for (const asset of quotesFor(pin, listed.get(mint), quoteTickers)) {
       const rwa = rwaPrices[asset.ticker];
       if (!rwa || !(rwa.priceUsd > 0)) continue;
 

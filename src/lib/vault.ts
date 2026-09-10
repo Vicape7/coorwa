@@ -15,6 +15,7 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
+  Transaction,
   TransactionInstruction,
   type AccountMeta,
   type Connection,
@@ -22,6 +23,7 @@ import {
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
+  createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { VAULT_PROGRAM_ADDRESS } from "./config";
@@ -211,7 +213,12 @@ export function decodeEpoch(address: PublicKey, data: Uint8Array): EpochState {
 export function decodeClaimStatus(data: Uint8Array): ClaimStatusState {
   checkTag(data, ACCOUNT_DISCRIMINATOR.claimStatus, "claim record");
   const r = new Reader(data);
-  return { epoch: r.key(), claimant: r.key(), amount: r.u64(), claimedAt: new Date(Number(r.i64()) * 1000) };
+  return {
+    epoch: r.key(),
+    claimant: r.key(),
+    amount: r.u64(),
+    claimedAt: new Date(Number(r.i64()) * 1000),
+  };
 }
 
 /** What the vault could still back with a new epoch. Everything else is already promised. */
@@ -321,6 +328,50 @@ export function fundIx(
     ],
     data: new Writer().tag(IX.fund).u64(amount).finish(),
   });
+}
+
+/**
+ * A whole funding transaction, wrapping only as much COOK as the wrapped balance is short.
+ *
+ * COOK is the chain's native unit but the vault holds it wrapped, so paying in means moving native
+ * COOK into the wrapped account first. Anything already sitting there is used before touching the
+ * spendable balance, because a wallet that happens to hold wrapped COOK did not ask for it to be
+ * left alone and did not ask for more of it either.
+ *
+ * The programme lets anyone call `fund`, which is what makes this reusable: the operator topping up
+ * the float and a stranger paying a listing fee build the same transaction.
+ */
+export async function fundTransaction(
+  connection: Connection,
+  funder: PublicKey,
+  mint: PublicKey,
+  amount: bigint,
+): Promise<Transaction> {
+  const funderToken = getAssociatedTokenAddressSync(mint, funder);
+  const tx = new Transaction();
+
+  let held = 0n;
+  try {
+    const balance = await connection.getTokenAccountBalance(funderToken, "confirmed");
+    held = BigInt(balance.value.amount);
+  } catch {
+    // No wrapped account yet, which the idempotent create below handles.
+  }
+
+  if (held < amount) {
+    tx.add(createAssociatedTokenAccountIdempotentInstruction(funder, funderToken, funder, mint));
+    tx.add(
+      SystemProgram.transfer({
+        fromPubkey: funder,
+        toPubkey: funderToken,
+        lamports: amount - held,
+      }),
+    );
+    tx.add(createSyncNativeInstruction(funderToken));
+  }
+
+  tx.add(fundIx(funder, mint, funderToken, amount));
+  return tx;
 }
 
 export interface PublishEpochArgs {
@@ -467,7 +518,10 @@ export async function fetchVault(
 ): Promise<VaultSnapshot | null> {
   const vault = vaultPda(mint);
   const funds = fundsPda(vault);
-  const [vaultInfo, fundsInfo] = await connection.getMultipleAccountsInfo([vault, funds], "confirmed");
+  const [vaultInfo, fundsInfo] = await connection.getMultipleAccountsInfo(
+    [vault, funds],
+    "confirmed",
+  );
   if (!vaultInfo) return null;
 
   const state = decodeVault(vault, vaultInfo.data);

@@ -109,6 +109,20 @@ export const CORWA_REFERRER = process.env.CORWA_REFERRER?.trim() || "";
 export const MOMOSWAP_TRADE_FEE_BPS = 100;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
+/**
+ * What one extra benchmark costs, in USD, paid in COOK into the cashback vault.
+ *
+ * Every token gets one benchmark for nothing, so the terminal is a list of deliberate pairs rather
+ * than every token crossed with every asset. Anything beyond that first one is paid for, which is
+ * the only thing keeping the list honest: a dollar is nothing to someone who means it and enough to
+ * stop a bot listing sixteen pairs on a dead token.
+ *
+ * The money is not Corwa's. It goes into the same vault the cashback is paid out of, through the
+ * same permissionless `fund` instruction anyone can call, so a listing fee ends up back with the
+ * people trading rather than with whoever runs this.
+ */
+export const PAIR_LISTING_USD = 1;
+
 /** How the referral + router revenue is split back out. Must sum to 1. */
 export const CASHBACK_SPLIT = {
   trader: 0.5,

@@ -47,10 +47,10 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ## What it does
 
 ### Terminal
-- Every Cookie Chain token with real pool depth, crossed with 16 xStocks. A token launched through
-  Corwa is the exception: its creator picked one benchmark at launch, so it appears as that pair
-  alone, the way a launchpad pair behaves anywhere else. Tokens that already existed here had
-  nobody to choose, so the trader still picks.
+- **A list of pairs somebody chose, not a cross product.** Every token with real pool depth carries
+  one benchmark for free. A token launched through Corwa carries the one its creator picked at
+  launch and nothing else. Any other pair has to be bought, a dollar a time, on the pools page.
+  Crossing 23 tokens with 16 assets produced 368 rows of arithmetic; this produces a market list.
 - **Candles built from executed fills**, not standing pool quotes - and the pair chart is the ratio
   of two real series, so it shows genuine relative performance against the stock.
 - A pair that has not traded in 24h shows `—`, never a phantom return from a flat price against a
@@ -84,6 +84,14 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
+- **Add a benchmark to any token, for a dollar a pair.** The fee is paid in COOK by calling `fund`
+  on the cashback vault, which the program lets anyone call, so it lands in the account the rebate
+  is paid out of and Corwa never holds it. Nothing is credited on the client's word: the payment is
+  read back from the chain, and the amount that actually reached the vault decides how many pairs
+  it bought. One transaction buys one batch.
+- What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
+  Chain, for the reasons in the table above, and the benchmark is what the price is quoted and
+  charted in rather than what it trades against.
 - **Cookiebox DAMM v2 positions managed natively** - deposit, claim fees, withdraw - with
   instructions built against the fork's own program and IDL.
 - Positions are found by scanning the Token-2022 NFTs you hold, so Corwa keeps no records of its
@@ -246,6 +254,7 @@ src/
     launchpad.ts    MomoSwap client
     curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
     launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
+    listings.ts     Benchmarks bought for tokens launched elsewhere, priced and proved
     onchain.ts      Proving a reported transaction really happened before anything is written down
     cashback.ts     Fee accrual and the split
     epochs.ts       Epoch accounting: who is owed what, and what has already been committed

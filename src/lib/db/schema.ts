@@ -82,6 +82,42 @@ export const launches = pgTable(
 );
 
 /**
+ * A benchmark somebody paid to add to a token that was not launched here.
+ *
+ * The terminal used to cross every token with every asset, which made most of it noise. Now a token
+ * carries one benchmark for free and anything beyond it is bought, one dollar's worth of COOK per
+ * pair, paid into the cashback vault rather than to Corwa.
+ *
+ * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
+ * only written once that transaction has been read back from the chain: it has to have funded the
+ * vault, and the amount that actually moved decides how many pairs it bought. The signature is
+ * unique across the table, so one payment can never be presented twice.
+ */
+export const listings = pgTable(
+  "listings",
+  {
+    id: serial("id").primaryKey(),
+    mint: text("mint").notNull(),
+    /** The RWA being added, by ticker. */
+    ticker: text("ticker").notNull(),
+    /** Whoever paid. Not necessarily the token's creator, because the fee is the gate, not identity. */
+    payer: text("payer").notNull(),
+    /** The confirmed `fund` transaction that bought this row and its siblings. */
+    signature: text("signature").notNull(),
+    /** Raw COOK that reached the vault on that transaction, and what it was worth at the time. */
+    paidRaw: bigint("paid_raw", { mode: "bigint" }).notNull(),
+    paidUsd: doublePrecision("paid_usd").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One row per pair: paying twice for the same benchmark buys nothing and must not look like it did.
+    uniqueIndex("listings_mint_ticker_idx").on(t.mint, t.ticker),
+    index("listings_mint_idx").on(t.mint),
+    index("listings_signature_idx").on(t.signature),
+  ],
+);
+
+/**
  * A cashback epoch: one merkle root, published on chain.
  *
  * This is the off-chain half of `programs/corwa-vault`. The vault pays against a root and knows

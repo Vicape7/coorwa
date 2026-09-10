@@ -29,6 +29,7 @@ import { RWA_ASSETS } from "@/lib/rwa";
 import { TokenMark } from "./token-mark";
 import { Notice } from "./notice";
 import { PillSelect } from "./ui/pill-select";
+import { ListPair } from "./list-pair";
 import type { PoolRow } from "@/app/api/pools/route";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -66,6 +67,8 @@ export function PoolsView() {
           your position sized in shares, not just dollars.
         </p>
       </div>
+
+      <ListPair />
 
       <MyPositions />
 

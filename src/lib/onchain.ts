@@ -16,7 +16,9 @@ export type Chain = "cookie" | "solana";
 
 export interface ProvenTransaction {
   tx: VersionedTransactionResponse;
-  /** Every address the transaction touched, lookup tables included. */
+  /** Every address the transaction touched, in order, lookup tables included. */
+  keys: string[];
+  /** The same addresses, for asking whether one was named at all. */
   accounts: Set<string>;
 }
 
@@ -29,21 +31,45 @@ export function isProven(r: ProvenTransaction | ProofFailure): r is ProvenTransa
   return "tx" in r;
 }
 
-function accountsOf(tx: VersionedTransactionResponse): Set<string> {
-  const out = new Set<string>();
+function keysOf(tx: VersionedTransactionResponse): string[] {
   try {
     const keys = tx.transaction.message.getAccountKeys({
       accountKeysFromLookups: tx.meta?.loadedAddresses,
     });
-    for (let i = 0; i < keys.length; i++) {
-      const k = keys.get(i);
-      if (k) out.add(k.toBase58());
-    }
+    return Array.from({ length: keys.length }, (_, i) => keys.get(i)?.toBase58() ?? "");
   } catch {
-    // A transaction whose lookup tables did not resolve has no readable account list. An empty set
+    // A transaction whose lookup tables did not resolve has no readable account list. An empty list
     // reads as "this address was not named", which is the safe answer for every caller here.
+    return [];
   }
-  return out;
+}
+
+/**
+ * How much of one token moved into an account on this transaction, in raw units.
+ *
+ * Read from the balances the chain recorded either side of the transaction rather than by decoding
+ * instruction data, so it is the amount that actually landed and not the amount that was asked for.
+ */
+export function tokenCredited(
+  proof: ProvenTransaction,
+  account: string,
+  mint: string,
+): bigint | null {
+  const index = proof.keys.indexOf(account);
+  if (index < 0) return null;
+
+  const at = (
+    list:
+      | { accountIndex: number; mint: string; uiTokenAmount: { amount: string } }[]
+      | null
+      | undefined,
+  ) => list?.find((b) => b.accountIndex === index && b.mint === mint)?.uiTokenAmount.amount;
+
+  const before = at(proof.tx.meta?.preTokenBalances);
+  const after = at(proof.tx.meta?.postTokenBalances);
+  if (after == null) return null;
+
+  return BigInt(after) - BigInt(before ?? "0");
 }
 
 export async function proveTransaction(args: {
@@ -71,5 +97,6 @@ export async function proveTransaction(args: {
     return { error: "that transaction was not signed by this wallet", status: 403 };
   }
 
-  return { tx, accounts: accountsOf(tx) };
+  const keys = keysOf(tx);
+  return { tx, keys, accounts: new Set(keys) };
 }
