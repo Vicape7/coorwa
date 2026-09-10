@@ -7,11 +7,19 @@
  * v24, so this hook only has to fix the specifier.
  */
 import { registerHooks } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
+
+/**
+ * A path is only finished if it names an actual file. `./db` names a directory, and Node refuses a
+ * directory import outright, so it has to fall through to the index candidates below.
+ */
+function isFile(path) {
+  return existsSync(path) && statSync(path).isFile();
+}
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -19,16 +27,16 @@ registerHooks({
     if (specifier.startsWith("@/")) {
       const asFile = resolvePath(SRC, specifier.slice(2));
       for (const candidate of [asFile, `${asFile}.ts`, `${asFile}.tsx`, `${asFile}/index.ts`]) {
-        if (existsSync(candidate)) return { url: pathToFileURL(candidate).href, shortCircuit: true };
+        if (isFile(candidate)) return { url: pathToFileURL(candidate).href, shortCircuit: true };
       }
     }
 
     if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
       const from = dirname(fileURLToPath(context.parentURL));
       const asFile = resolvePath(from, specifier);
-      if (!existsSync(asFile)) {
+      if (!isFile(asFile)) {
         for (const candidate of [`${asFile}.ts`, `${asFile}.tsx`, `${asFile}/index.ts`]) {
-          if (existsSync(candidate)) {
+          if (isFile(candidate)) {
             return { url: pathToFileURL(candidate).href, shortCircuit: true };
           }
         }

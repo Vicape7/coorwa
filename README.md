@@ -84,6 +84,8 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - Payouts go through Corwa's own program on Cookie Chain rather than a payout wallet. Who is owed
   what is worked out off chain, because it depends on prices and on which wallet generated which
   fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.
+- Balances accrue in USD and are converted to COOK once, at the rate recorded on the epoch that
+  pays them. A debt carried in tokens would quietly change value between the trade and the payout.
 
 ---
 
@@ -122,6 +124,39 @@ unaudited, which is stated here rather than buried.
 The claim pays wrapped COOK. Turning that into an xStock is the cross-chain route above, run by the
 user, signed by the user.
 
+### How an epoch is run
+
+The vault holds the money and knows nothing about who is owed it. Corwa knows exactly who is owed
+what and holds none of the money. The two halves meet at a merkle root and nowhere else.
+
+1. **Build.** `POST /api/cashback/draft` sums every confirmed fill up to a cutoff, applies the
+   split, subtracts anything already committed to an earlier epoch, drops balances under the claim
+   floor, converts USD to COOK at a single rate recorded on the epoch, and freezes the result as a
+   draft. It is deterministic on the cutoff, so rebuilding lands on the same root.
+2. **Publish.** The authority signs `publish_epoch` in their own browser. Corwa then reads that
+   transaction back off the chain, decodes the instruction out of it, and marks the epoch published
+   only if the root it carries matches the draft byte for byte. No key ever reaches the server, and
+   Corwa cannot talk an epoch into existing.
+3. **Claim.** The rewards page hands a wallet the proof for its own line. One transaction, signed
+   by the claimant, and the program pays them. The proof is not a secret: it opens the leaf naming
+   that wallet and no other.
+4. **Close.** After 30 days the window shuts and anyone may call `close_epoch`, returning the
+   unclaimed remainder to the vault.
+
+The rule that stops a double payout is that a balance counts as committed while it sits in a
+published epoch which is either claimed or still inside its window. Only an expired, closed epoch
+returns its balance to what can be published next, so an unclaimed line rolls into a later epoch
+instead of being forfeited.
+
+Two things are worth knowing before running this for the first time:
+
+- **`initialize` is open to anyone**, and whoever calls it first for a mint is that vault's
+  authority permanently. Deploy and initialize in the same sitting. The operator panel on the
+  rewards page is shown to the wallet named by `NEXT_PUBLIC_VAULT_AUTHORITY` until a vault exists,
+  and to the on-chain authority afterwards. Everyone else sees nothing.
+- **Funding is one way.** Tokens leave only through an epoch that names their recipient, so an
+  overfunded vault is corrected by publishing a root that pays it back, not by withdrawing.
+
 ---
 
 ## Running it
@@ -140,7 +175,7 @@ Optional:
 ```bash
 npm run db:push     # enables the rewards page (needs DATABASE_URL)
 npm run typecheck
-npm run test        # merkle tree, instruction layouts, IDL agreement
+npm run test        # merkle tree, epoch accounting, instruction layouts, IDL agreement
 npm run build
 ```
 
@@ -152,11 +187,14 @@ requirement is Docker running:
 
 ```bash
 npm run program:build    # compile, and copy the IDL to programs/corwa-vault/idl.json
-npm run program:test     # run tests/integration against a throwaway validator
+npm run program:test     # run tests/integration against a throwaway validator and postgres
 ```
 
-`program:test` starts a validator with the program preloaded, exercises claiming, double claiming,
-forged proofs and unfunded epochs against it, and tears the validator down again.
+`program:test` starts a validator with the program preloaded and a throwaway Postgres beside it,
+then exercises two things. Against the program: claiming, double claiming, forged proofs and
+unfunded epochs. Against both at once: the whole pipeline, from fills in the database through a
+published root to tokens in a claimant's wallet, including the check that a claimed balance is
+never offered to a second epoch. Both containers are torn down afterwards.
 
 ### Wallets
 
@@ -186,6 +224,7 @@ src/
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client
     cashback.ts     Fee accrual and the split
+    epochs.ts       Epoch accounting: who is owed what, and what has already been committed
     merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte
     vault.ts        Cashback vault client, encoded against the wire format rather than an IDL
     tx.ts           Simulate → sign → send → confirm

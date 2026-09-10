@@ -134,6 +134,17 @@ export const VAULT_PROGRAM_ADDRESS =
 /** The vault pays in wrapped COOK, which is what the launchpad referral revenue arrives as. */
 export const VAULT_MINT = COOK_MINT;
 
+/**
+ * Who gets to see the vault operator panel before a vault exists.
+ *
+ * Once a vault is initialized the panel follows the authority stored on chain, and nothing here
+ * matters. The gap this fills is the one before that: `initialize` is open to anyone, and whoever
+ * calls it first for this mint becomes the authority permanently. So the panel offers that button
+ * to one named wallet rather than to every visitor, and the honest advice is to deploy and
+ * initialize in the same sitting.
+ */
+export const VAULT_AUTHORITY = process.env.NEXT_PUBLIC_VAULT_AUTHORITY?.trim() || "";
+
 /** How long a published epoch stays claimable before its remainder rolls into the next one. */
 export const CASHBACK_CLAIM_WINDOW_DAYS = 30;
 

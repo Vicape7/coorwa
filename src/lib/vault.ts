@@ -17,6 +17,7 @@ import {
   SYSVAR_RENT_PUBKEY,
   TransactionInstruction,
   type AccountMeta,
+  type Connection,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -430,4 +431,79 @@ export function setAuthorityIx(
     keys: [signer(authority, false), rw(vaultPda(mint))],
     data: new Writer().tag(IX.setAuthority).key(newAuthority).finish(),
   });
+}
+
+// --- reading the chain -------------------------------------------------------------------------
+
+/**
+ * Is the program actually there?
+ *
+ * `VAULT_PROGRAM_ADDRESS` is a constant, so the client can build a claim against a chain where
+ * nothing has been deployed and the transaction would fail with a blank "program not found". Every
+ * surface that offers to claim asks this first and says so plainly instead.
+ */
+export async function isVaultDeployed(connection: Connection): Promise<boolean> {
+  const info = await connection.getAccountInfo(VAULT_PROGRAM_ID, "confirmed");
+  return info !== null && info.executable;
+}
+
+/** An SPL token account holds its balance as a u64 at offset 64, after the mint and the owner. */
+function tokenAmount(data: Uint8Array): bigint {
+  return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true);
+}
+
+export interface VaultSnapshot {
+  state: VaultState;
+  /** What the vault's token account actually holds right now. */
+  balance: bigint;
+  /** Balance not already promised to an open epoch. This is the ceiling on the next epoch. */
+  free: bigint;
+}
+
+/** Both accounts in one round trip, because the two numbers only mean anything together. */
+export async function fetchVault(
+  connection: Connection,
+  mint: PublicKey,
+): Promise<VaultSnapshot | null> {
+  const vault = vaultPda(mint);
+  const funds = fundsPda(vault);
+  const [vaultInfo, fundsInfo] = await connection.getMultipleAccountsInfo([vault, funds], "confirmed");
+  if (!vaultInfo) return null;
+
+  const state = decodeVault(vault, vaultInfo.data);
+  const balance = fundsInfo ? tokenAmount(fundsInfo.data) : 0n;
+  return { state, balance, free: unreserved(state, balance) };
+}
+
+/** Epoch accounts by index. A null in the result means that epoch was never published. */
+export async function fetchEpochs(
+  connection: Connection,
+  mint: PublicKey,
+  indices: (bigint | number)[],
+): Promise<(EpochState | null)[]> {
+  if (indices.length === 0) return [];
+  const vault = vaultPda(mint);
+  const addresses = indices.map((i) => epochPda(vault, i));
+  const infos = await connection.getMultipleAccountsInfo(addresses, "confirmed");
+  return infos.map((info, i) => (info ? decodeEpoch(addresses[i], info.data) : null));
+}
+
+/**
+ * Which of these epochs the wallet has already claimed.
+ *
+ * The claim record is the program's own guard against a second attempt, so its existence is the
+ * only answer that matters. Corwa's database can be behind - a claim that confirmed while the
+ * report to the API was in flight, say - and this is what catches that.
+ */
+export async function fetchClaimStatuses(
+  connection: Connection,
+  mint: PublicKey,
+  indices: (bigint | number)[],
+  claimant: PublicKey,
+): Promise<(ClaimStatusState | null)[]> {
+  if (indices.length === 0) return [];
+  const vault = vaultPda(mint);
+  const addresses = indices.map((i) => claimStatusPda(epochPda(vault, i), claimant));
+  const infos = await connection.getMultipleAccountsInfo(addresses, "confirmed");
+  return infos.map((info) => (info ? decodeClaimStatus(info.data) : null));
 }

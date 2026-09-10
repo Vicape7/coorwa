@@ -1,24 +1,117 @@
 "use client";
 
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { usd, shortAddr, timeAgo } from "@/lib/format";
-import { cookieTxUrl, CASHBACK_SPLIT } from "@/lib/config";
+import { PublicKey, Transaction } from "@solana/web3.js";
+import { usd, amount, shortAddr, timeAgo } from "@/lib/format";
+import { cookieTxUrl, CASHBACK_SPLIT, COOK_SYMBOL, VAULT_MINT } from "@/lib/config";
+import { claimInstructions } from "@/lib/vault";
+import { signSendConfirm, explainError } from "@/lib/tx";
+import { Notice } from "./notice";
+import { VaultAdmin } from "./vault-admin";
 import type { CashbackSummary } from "@/lib/cashback";
+import type { ClaimableReport } from "@/lib/epochs";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
+const MINT = new PublicKey(VAULT_MINT);
+
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
 export function RewardsView() {
-  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
   const wallet = publicKey?.toBase58();
 
-  const { data } = useSWR<CashbackSummary>(
+  const { data, mutate } = useSWR<CashbackSummary>(
     wallet ? `/api/rewards?wallet=${wallet}` : "/api/rewards",
     fetcher,
     { refreshInterval: 30_000 },
   );
+
+  const { data: vault, mutate: refreshVault } = useSWR<ClaimableReport>(
+    wallet ? `/api/cashback/claimable?wallet=${wallet}` : "/api/cashback/claimable",
+    fetcher,
+    { refreshInterval: 30_000 },
+  );
+
+  const [claiming, setClaiming] = useState(false);
+  const [claimNote, setClaimNote] = useState<{ tone: "up" | "down"; text: string } | null>(null);
+
+  const open = useMemo(() => vault?.lines.filter((l) => l.claimable) ?? [], [vault]);
+
+  /**
+   * Why the button cannot be pressed, said plainly. An empty reason means it can.
+   *
+   * Each of these is a different truth and they used to be one disabled button with one tooltip.
+   * "Nothing has been published yet" and "there is no vault here" are not the same problem, and a
+   * claimant deserves to know which one they are looking at.
+   */
+  const blocked = !vault
+    ? "Checking the vault."
+    : !vault.deployed
+      ? "The cashback vault is not deployed on this network yet."
+      : !vault.vault
+        ? "The vault has not been opened for COOK yet."
+        : open.length === 0
+          ? "Your balance is accruing. It becomes claimable when the next root is published."
+          : null;
+
+  /**
+   * Claim every open epoch, one transaction each.
+   *
+   * One per epoch rather than all in one, because a proof grows with the size of the tree and a
+   * batch would silently stop fitting in a transaction as Corwa gets busier. Each claim stands on
+   * its own, so a wallet that rejects the second signature keeps the first.
+   */
+  const onClaim = useCallback(async () => {
+    if (!publicKey || !signTransaction || open.length === 0) return;
+    setClaiming(true);
+    setClaimNote(null);
+
+    let last: string | null = null;
+    try {
+      for (const line of open) {
+        const tx = new Transaction().add(
+          ...claimInstructions({
+            claimant: publicKey,
+            mint: MINT,
+            index: BigInt(line.epoch),
+            amount: BigInt(line.amountRaw),
+            proof: line.proof.map(hexToBytes),
+          }),
+        );
+        const { blockhash } = await connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = publicKey;
+
+        const sent = await signSendConfirm(connection, tx, signTransaction);
+        if (!sent.confirmed) throw new Error("the claim did not confirm");
+        last = sent.signature;
+
+        // Nothing depends on this landing: the vault's own claim record is what the next read
+        // believes. It is here so the claimant keeps a link to their transaction.
+        await fetch("/api/cashback/claim", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ signature: sent.signature, wallet, epoch: line.epoch }),
+        }).catch(() => undefined);
+      }
+      if (last) setClaimNote({ tone: "up", text: last });
+    } catch (e) {
+      setClaimNote({ tone: "down", text: explainError(e) });
+    } finally {
+      setClaiming(false);
+      await Promise.all([refreshVault(), mutate()]);
+    }
+  }, [publicKey, signTransaction, connection, open, wallet, refreshVault, mutate]);
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
@@ -64,41 +157,76 @@ export function RewardsView() {
           <>
             <div className="grid gap-8 sm:grid-cols-3">
               <Figure
-                label="Claimable"
-                value={usd(data.claimableUsd)}
-                sub="Trader plus creator share, net of payouts"
+                label="Claimable now"
+                value={`${amount(vault?.claimableCook ?? 0, 3)} ${COOK_SYMBOL}`}
+                sub={
+                  open.length === 0
+                    ? "Nothing published for you yet"
+                    : `Across ${open.length} epoch${open.length > 1 ? "s" : ""}, ready to sign`
+                }
                 emphasis
               />
               <Figure
-                label="As a trader"
-                value={usd(data.traderAccruedUsd)}
-                sub={`${Math.round(CASHBACK_SPLIT.trader * 100)}% of fees you generated`}
+                label="Accruing"
+                value={usd(data.pendingUsd)}
+                sub="Earned, waiting for the next root"
               />
-              <Figure
-                label="As a creator"
-                value={usd(data.creatorAccruedUsd)}
-                sub={`${Math.round(CASHBACK_SPLIT.creator * 100)}% of fees on tokens you launched`}
-              />
+              <Figure label="Claimed" value={usd(data.paidUsd)} sub="Paid out of the vault to you" />
             </div>
 
             <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-hair pt-6">
               <div className="text-[13px] text-muted">
-                <span className="num text-primary">{data.fillCount}</span> fills ·{" "}
-                <span className="num text-primary">{usd(data.volumeUsd)}</span> routed
+                <span className="num text-primary">{usd(data.traderAccruedUsd)}</span> as a trader ·{" "}
+                <span className="num text-primary">{usd(data.creatorAccruedUsd)}</span> as a creator
               </div>
-              <button className="btn btn-primary ml-auto" disabled title="Claiming opens once the rebate treasury is funded for this deployment.">
-                Claim
+              <button
+                className="btn btn-primary ml-auto"
+                disabled={blocked !== null || claiming}
+                title={blocked ?? undefined}
+                onClick={onClaim}
+              >
+                {claiming
+                  ? "Claiming"
+                  : open.length > 0
+                    ? `Claim ${amount(vault?.claimableCook ?? 0, 3)} ${COOK_SYMBOL}`
+                    : "Claim"}
               </button>
             </div>
+
+            {claimNote && (
+              <div className="mt-4">
+                <Notice tone={claimNote.tone}>
+                  {claimNote.tone === "up" ? (
+                    <>
+                      Paid.{" "}
+                      <a
+                        href={cookieTxUrl(claimNote.text)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="num underline underline-offset-4"
+                      >
+                        {shortAddr(claimNote.text, 6)}
+                      </a>
+                    </>
+                  ) : (
+                    claimNote.text
+                  )}
+                </Notice>
+              </div>
+            )}
+
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
-              Accrual is live and verifiable - every row below is a confirmed transaction, checked
-              against the chain before it was counted. Claiming stays closed until the rebate
-              treasury is funded on this deployment, so the button tells you the truth rather than
-              failing after you press it.
+              {blocked ??
+                "The claim is yours to sign. Corwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
             </p>
+
+            {vault && vault.lines.length > 0 && <EpochLines lines={vault.lines} />}
           </>
         )}
       </div>
+
+      {/* Operator surface. Renders nothing at all unless the connected wallet is the authority. */}
+      <VaultAdmin />
 
       {/* History */}
       {data?.configured && wallet && (
@@ -229,6 +357,51 @@ export function RewardsView() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The wallet's own lines, epoch by epoch.
+ *
+ * This is the part that makes the balance checkable rather than asserted: the epoch index and the
+ * root are on chain, and the amount below is the one hashed into the leaf a claim opens.
+ */
+function EpochLines({ lines }: { lines: ClaimableReport["lines"] }) {
+  return (
+    <div className="mt-6 border-t border-hair pt-5">
+      <div className="label text-[12px]">Your epochs</div>
+      <ul className="mt-3 space-y-2.5">
+        {lines.map((l) => (
+          <li key={l.epoch} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px]">
+            <span className="num w-10 shrink-0 text-subtle">#{l.epoch}</span>
+            <span className="num text-primary">
+              {amount(l.amountCook, 3)} {COOK_SYMBOL}
+            </span>
+            <span className="num text-muted">{usd(l.amountUsd)}</span>
+            <span className="ml-auto text-muted">
+              {l.claimed ? (
+                l.signature ? (
+                  <a
+                    href={cookieTxUrl(l.signature)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="num underline decoration-[color:var(--divider-strong)] underline-offset-4"
+                  >
+                    claimed
+                  </a>
+                ) : (
+                  "claimed"
+                )
+              ) : l.claimable ? (
+                `open until ${new Date(l.deadline).toLocaleDateString()}`
+              ) : (
+                "expired unclaimed, rolled into a later epoch"
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

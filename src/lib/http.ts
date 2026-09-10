@@ -1,13 +1,16 @@
 import { HTTP_TIMEOUT_MS } from "./config";
 
 export class CorwaError extends Error {
-  constructor(
-    message: string,
-    readonly hint?: string,
-    readonly status?: number,
-  ) {
+  // Declared rather than written as constructor parameter properties: the test runner strips types
+  // instead of compiling them, and that syntax is the one thing it cannot strip.
+  readonly hint?: string;
+  readonly status?: number;
+
+  constructor(message: string, hint?: string, status?: number) {
     super(message);
     this.name = "CorwaError";
+    this.hint = hint;
+    this.status = status;
   }
 }
 

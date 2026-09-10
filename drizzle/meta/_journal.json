@@ -8,6 +8,13 @@
       "when": 1788916327453,
       "tag": "0000_sharp_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789053411823,
+      "tag": "0001_cashback_epochs",
+      "breakpoints": true
     }
   ]
 }

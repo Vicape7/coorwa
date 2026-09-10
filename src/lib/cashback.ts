@@ -22,8 +22,18 @@ export interface CashbackSummary {
   feesGeneratedUsd: number;
   traderAccruedUsd: number;
   creatorAccruedUsd: number;
+  /** Already claimed out of the vault, against a published root. */
   paidUsd: number;
-  claimableUsd: number;
+  /**
+   * Sitting in a published epoch: either claimed already, or waiting for its claimant inside the
+   * window. Committed money cannot appear in a later epoch, which is what stops a double payout.
+   */
+  committedUsd: number;
+  /**
+   * Accrued and not yet in any epoch. Real and owed, but not claimable until the next root is
+   * published, so the page says "accruing" rather than offering a button that would fail.
+   */
+  pendingUsd: number;
   fillCount: number;
   volumeUsd: number;
   recent: {
@@ -44,7 +54,8 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   traderAccruedUsd: 0,
   creatorAccruedUsd: 0,
   paidUsd: 0,
-  claimableUsd: 0,
+  committedUsd: 0,
+  pendingUsd: 0,
   fillCount: 0,
   volumeUsd: 0,
   recent: [],
@@ -59,7 +70,7 @@ export function launchpadReferralFee(valueUsd: number): number {
 export async function summarise(wallet: string | null): Promise<CashbackSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
 
-  const { fills, payouts } = schema;
+  const { fills, claims, epochs } = schema;
 
   // Leaderboard is global and cheap to keep alongside the wallet's own numbers.
   const board = await db
@@ -95,10 +106,17 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     .from(fills)
     .where(eq(fills.creator, wallet));
 
-  const [paid] = await db
-    .select({ amountUsd: sql<number>`coalesce(sum(${payouts.amountUsd}), 0)` })
-    .from(payouts)
-    .where(and(eq(payouts.wallet, wallet), sql`${payouts.signature} is not null`));
+  // Two numbers out of the same table. Paid is what the vault has actually handed over; committed
+  // also counts a published epoch the wallet has not got round to claiming yet, because that money
+  // is already reserved on chain and must not be promised twice.
+  const [committed] = await db
+    .select({
+      paidUsd: sql<number>`coalesce(sum(case when ${claims.claimedAt} is not null then ${claims.amountUsd} else 0 end), 0)`,
+      committedUsd: sql<number>`coalesce(sum(case when ${claims.claimedAt} is not null or ${epochs.deadline} > now() then ${claims.amountUsd} else 0 end), 0)`,
+    })
+    .from(claims)
+    .innerJoin(epochs, eq(claims.epoch, epochs.index))
+    .where(and(eq(claims.wallet, wallet), eq(epochs.status, "published")));
 
   const recent = await db
     .select({
@@ -117,7 +135,8 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
   const feesGeneratedUsd = Number(mine?.feeUsd ?? 0);
   const traderAccruedUsd = feesGeneratedUsd * CASHBACK_SPLIT.trader;
   const creatorAccruedUsd = Number(asCreator?.feeUsd ?? 0) * CASHBACK_SPLIT.creator;
-  const paidUsd = Number(paid?.amountUsd ?? 0);
+  const paidUsd = Number(committed?.paidUsd ?? 0);
+  const committedUsd = Number(committed?.committedUsd ?? 0);
 
   return {
     configured: true,
@@ -126,7 +145,8 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     traderAccruedUsd,
     creatorAccruedUsd,
     paidUsd,
-    claimableUsd: Math.max(0, traderAccruedUsd + creatorAccruedUsd - paidUsd),
+    committedUsd,
+    pendingUsd: Math.max(0, traderAccruedUsd + creatorAccruedUsd - committedUsd),
     fillCount: Number(mine?.fills ?? 0),
     volumeUsd: Number(mine?.volumeUsd ?? 0),
     recent: recent.map((r) => ({

@@ -9,7 +9,7 @@
  * Docker running.
  *
  *   npm run program:build     compile, then copy the IDL next to the source
- *   npm run program:test      run tests/integration against a throwaway validator
+ *   npm run program:test      run tests/integration against a throwaway validator and postgres
  *   npm run program:deploy    send it to Cookie Chain (needs a funded wallet, see below)
  *
  * Deploying is the one step that spends money and cannot be undone quietly, so it never runs by
@@ -147,6 +147,69 @@ function stopValidator() {
   spawnSync(docker(), ["rm", "-f", VALIDATOR], { stdio: "ignore" });
 }
 
+/**
+ * A throwaway Postgres for the one integration suite that needs one.
+ *
+ * The cashback pipeline is half database and half chain, and the join between them is the part
+ * worth testing: a balance in Postgres becoming a root on chain becoming tokens in a wallet. That
+ * cannot be checked without both, so both are started here and thrown away afterwards. The port is
+ * deliberately not 5432, so a Postgres somebody is already running is left alone.
+ */
+const POSTGRES = "corwa-test-postgres";
+const POSTGRES_PORT = 55432;
+const TEST_DATABASE_URL = `postgres://postgres:corwa@127.0.0.1:${POSTGRES_PORT}/corwa`;
+
+function stopPostgres() {
+  spawnSync(docker(), ["rm", "-f", POSTGRES], { stdio: "ignore" });
+}
+
+async function startPostgres() {
+  stopPostgres();
+  const started = spawnSync(
+    docker(),
+    [
+      "run", "-d", "--rm",
+      "--name", POSTGRES,
+      "-e", "POSTGRES_PASSWORD=corwa",
+      "-e", "POSTGRES_DB=corwa",
+      "-p", `${POSTGRES_PORT}:5432`,
+      "postgres:16-alpine",
+    ],
+    { encoding: "utf8" },
+  );
+  if (started.status !== 0) {
+    console.error(started.stderr || started.stdout);
+    return false;
+  }
+
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const ready = spawnSync(docker(), ["exec", POSTGRES, "pg_isready", "-U", "postgres"], {
+      stdio: "ignore",
+    });
+    if (ready.status === 0) break;
+    if (Date.now() > deadline) {
+      console.error("postgres never became ready");
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+
+  // push rather than migrate: this database lives for one test run and only has to match the
+  // schema the code is compiled against.
+  //
+  // drizzle-kit is called through its own entry point rather than through npx, because npx is a
+  // shell script on one platform and a .cmd on the other, and spawnSync without a shell wants the
+  // exact file either way.
+  const push = spawnSync(
+    process.execPath,
+    [join(ROOT, "node_modules", "drizzle-kit", "bin.cjs"), "push", "--force"],
+    { stdio: "inherit", cwd: ROOT, env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL } },
+  );
+  if (push.error) console.error(push.error.message);
+  return push.status === 0;
+}
+
 async function integrationTest() {
   const so = join(ROOT, "target", "deploy", `${PROGRAM}.so`);
   const idlPath = join(ROOT, "programs", "corwa-vault", "idl.json");
@@ -157,6 +220,12 @@ async function integrationTest() {
   const programId = JSON.parse(readFileSync(idlPath, "utf8")).address;
 
   stopValidator();
+  console.log("starting postgres");
+  if (!(await startPostgres())) {
+    stopPostgres();
+    return 1;
+  }
+
   console.log(`starting a validator with ${programId} loaded`);
 
   const started = spawnSync(
@@ -183,6 +252,7 @@ async function integrationTest() {
   );
   if (started.status !== 0) {
     console.error(started.stderr || started.stdout);
+    stopPostgres();
     return 1;
   }
 
@@ -213,11 +283,22 @@ async function integrationTest() {
     const res = spawnSync(
       process.execPath,
       ["--import", "./tests/resolve.mjs", "--test", "tests/integration/*.test.ts"],
-      { stdio: "inherit", cwd: ROOT },
+      {
+        stdio: "inherit",
+        cwd: ROOT,
+        // Both point at the throwaway pair above rather than at anything real. Without the RPC
+        // override the epoch suite would build its draft against Cookie Chain and publish it here.
+        env: {
+          ...process.env,
+          DATABASE_URL: TEST_DATABASE_URL,
+          NEXT_PUBLIC_COOKIE_RPC_URL: "http://127.0.0.1:8899",
+        },
+      },
     );
     return res.status ?? 1;
   } finally {
     stopValidator();
+    stopPostgres();
   }
 }
 
