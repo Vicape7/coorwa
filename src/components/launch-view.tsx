@@ -147,7 +147,9 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           signature: bs58.encode(sig),
         }),
       }).then((r) => r.json());
-      if (session.error) throw new Error(session.error);
+      if (session.error) {
+        throw new Error(session.hint ? `${session.error} - ${session.hint}` : session.error);
+      }
 
       // 2. Build. The launchpad pins the image, leases a `momo` mint and partial-signs.
       setStep("Pinning metadata and building the launch");

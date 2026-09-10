@@ -10,6 +10,8 @@
  * as referrer. With no referrer the programme keeps that share itself - so naming Corwa costs the
  * trader nothing and is the honest source of the launchpad half of cashback.
  */
+import { createPublicKey, verify } from "node:crypto";
+import bs58 from "bs58";
 import { MOMOSWAP_API, CORWA_REFERRER } from "./config";
 import { fetchJson, cachedStale, CorwaError } from "./http";
 import { uiToRaw } from "./format";
@@ -201,6 +203,42 @@ export function loginMessage(wallet: string, ts: number, nonce: string): string 
 
 export async function fetchLoginNonce(): Promise<{ nonce: string; ttlSecs?: number }> {
   return get<{ nonce: string; ttlSecs?: number }>("/session/nonce", "login nonce");
+}
+
+/** A raw ed25519 key wrapped as DER, which is the only shape node's verifier accepts. */
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+/**
+ * Check the wallet signed the message Corwa handed it, before spending an upstream call on it.
+ *
+ * MomoSwap answers anything it does not like with a flat `401 Invalid signature`, which covers at
+ * least three different mistakes: a wallet that signed with a different account than the one it
+ * reports, a wallet that altered the message before signing, and a message rebuilt from mismatched
+ * parts. Re-deriving the message here and verifying against the wallet address separates the first
+ * two from the rest, so the page can say which one happened instead of forwarding a shrug.
+ */
+export function verifyLoginSignature(args: {
+  wallet: string;
+  ts: number;
+  nonce: string;
+  signature: string;
+}): boolean {
+  try {
+    const key = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(bs58.decode(args.wallet))]),
+      format: "der",
+      type: "spki",
+    });
+    return verify(
+      null,
+      Buffer.from(loginMessage(args.wallet, args.ts, args.nonce), "utf8"),
+      key,
+      Buffer.from(bs58.decode(args.signature)),
+    );
+  } catch {
+    // A malformed address or signature is not a verified one, which is all the caller needs.
+    return false;
+  }
 }
 
 export async function createSession(body: {
