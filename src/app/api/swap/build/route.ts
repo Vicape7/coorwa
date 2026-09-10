@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildCookieboxTx, buildCandyshopTx } from "@/lib/swap";
+import { attachSwapFee, cookLeg } from "@/lib/swap-fee";
 import { CorwaError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ const Body = z.object({
   outputMint: z.string().min(32).max(44),
   amount: z.string().regex(/^\d+$/),
   slippageBps: z.number().int().min(1).max(5000),
+  /** The quoted output, so the fee on a sell can be taken on the COOK the trade will produce. */
+  outAmount: z.string().regex(/^\d+$/).optional(),
   /** Candy Shop needs its own quote object handed back verbatim. */
   raw: z.unknown().optional(),
 });
@@ -22,6 +25,10 @@ const Body = z.object({
  * Both aggregators re-quote server-side and return a transaction the user's wallet signs. Corwa
  * never sees a private key and never co-signs - this route is a proxy that keeps the upstream
  * call server-side, where rate limits and CORS are not the browser's problem.
+ *
+ * Corwa's own fee is appended here rather than in the browser, so it cannot be dropped by editing
+ * the client. It is a visible instruction paying the cashback vault, and the amount charged is
+ * returned alongside the transaction so the panel can show it before anybody signs.
  */
 export async function POST(req: Request) {
   let json: unknown;
@@ -40,6 +47,9 @@ export async function POST(req: Request) {
   }
   const b = parsed.data;
 
+  // Charged on whichever side is COOK, which is every pair in the terminal.
+  const leg = cookLeg(b.inputMint, b.outputMint, b.amount, b.outAmount ?? "0");
+
   try {
     if (b.aggregator === "cookiebox") {
       const tx = await buildCookieboxTx({
@@ -49,9 +59,10 @@ export async function POST(req: Request) {
         slippageBps: b.slippageBps,
         owner: b.owner,
       });
+      const priced = attachSwapFee(tx.transactionBase64, b.owner, leg);
       return NextResponse.json({
         aggregator: "cookiebox",
-        transactionBase64: tx.transactionBase64,
+        ...priced,
         blockhash: tx.blockhash,
         lastValidBlockHeight: tx.lastValidBlockHeight,
       });
@@ -66,7 +77,7 @@ export async function POST(req: Request) {
     const tx = await buildCandyshopTx(b.raw, b.owner);
     return NextResponse.json({
       aggregator: "candyshop",
-      transactionBase64: tx.transactionBase64,
+      ...attachSwapFee(tx.transactionBase64, b.owner, leg),
     });
   } catch (e) {
     const err = e instanceof CorwaError ? e : null;

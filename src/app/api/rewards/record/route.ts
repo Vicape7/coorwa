@@ -3,8 +3,10 @@ import { z } from "zod";
 import { type VersionedTransactionResponse } from "@solana/web3.js";
 import { recordFill, launchpadReferralFee } from "@/lib/cashback";
 import { fetchCookPriceUsd } from "@/lib/cookiescan";
-import { proveTransaction, isProven } from "@/lib/onchain";
-import { COOK_DECIMALS, CORWA_REFERRER } from "@/lib/config";
+import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
+import { vaultFundsAccount } from "@/lib/swap-fee";
+import { tokenCreator } from "@/lib/creators";
+import { COOK_DECIMALS, COOK_MINT, CORWA_REFERRER } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -64,12 +66,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: proof.error, recorded: false }, { status: proof.status });
     }
 
-    // The launchpad is the one path that accrues real money, so neither the size of the trade nor
-    // the fee it earned is taken on the client's word.
+    // Neither the size of a trade nor the fee it earned is taken on the client's word, whichever
+    // path it came from. Both are re-derived from what the transaction actually did.
+    const cookPriceUsd = await fetchCookPriceUsd();
     let valueUsd = b.valueUsd;
-    let feeUsd = b.feeUsd;
+    let feeUsd = 0;
+
     if (b.source === "launchpad") {
-      const [cookPriceUsd, moved] = [await fetchCookPriceUsd(), cookMoved(proof.tx, b.side)];
+      const moved = cookMoved(proof.tx, b.side);
       if (cookPriceUsd && moved != null) {
         // Rent for a token account the buy had to open moves in the same balance, so this is a
         // ceiling on the trade rather than the trade itself, which is all it has to be.
@@ -79,13 +83,25 @@ export async function POST(req: Request) {
       // it as an account. Not there, no revenue, so nothing to rebate.
       feeUsd =
         CORWA_REFERRER && proof.accounts.has(CORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
+    } else {
+      // A swap earns only what the transaction actually paid the vault. A route too long to carry
+      // the fee instruction goes through without one, and that fill is worth exactly zero here.
+      const paid = tokenCredited(proof, vaultFundsAccount().toBase58(), COOK_MINT);
+      if (cookPriceUsd && paid != null && paid > 0n) {
+        feeUsd = (Number(paid) / 10 ** COOK_DECIMALS) * cookPriceUsd;
+      }
     }
 
-    const res = await recordFill({ ...b, valueUsd, feeUsd });
+    // Resolved here rather than sent, so a client cannot name whoever it likes as the creator and
+    // route somebody else's share to them.
+    const creator = (await tokenCreator(b.mint))?.wallet ?? null;
+
+    const res = await recordFill({ ...b, valueUsd, feeUsd, creator: creator ?? undefined });
     return NextResponse.json({
       ...res,
       valueUsd,
       feeUsd,
+      creator,
       note: res.recorded
         ? undefined
         : "cashback accounting is not configured on this deployment (no DATABASE_URL)",

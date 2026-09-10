@@ -84,11 +84,17 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
-- **Add a benchmark to any token, for a dollar a pair.** The fee is paid in COOK by calling `fund`
-  on the cashback vault, which the program lets anyone call, so it lands in the account the rebate
-  is paid out of and Corwa never holds it. Nothing is credited on the client's word: the payment is
-  read back from the chain, and the amount that actually reached the vault decides how many pairs
-  it bought. One transaction buys one batch.
+- **A token's creator can add benchmarks to it, for a dollar a pair.** Only the creator: they earn
+  the creator share of every fee the pair goes on to generate, so letting a stranger pick it would
+  be handing away somebody else's position. Proved against the launch for tokens Corwa made, and
+  against the mint's metadata authority otherwise - which is worth nothing across the registry at
+  large, where 4,449 of 5,088 tokens share one launchpad key, and works for every token that
+  actually has liquidity here, where each resolves to its own wallet. That shared key is refused by
+  name.
+- The fee is paid in COOK by calling `fund` on the cashback vault, which the program lets anyone
+  call, so it lands in the account the rebate is paid out of and Corwa never holds it. Nothing is
+  credited on the client's word: the payment is read back from the chain, and the amount that
+  actually reached the vault decides how many pairs it bought. One transaction buys one batch.
 - What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
   Chain, for the reasons in the table above, and the benchmark is what the price is quoted and
   charted in rather than what it trades against.
@@ -107,9 +113,14 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
   moved, and the referral fee is credited only when Corwa's referrer address is named on the
   transaction itself. No referrer on chain, no revenue, so nothing to rebate.
-- **Swaps currently earn Corwa nothing**: neither Cookie Chain router exposes a platform-fee or
-  referral parameter, so those fills are recorded at zero rather than credited with a rebate that
-  no fee is backing.
+- **Terminal swaps carry Corwa's own 0.10% fee**, because neither Cookie Chain router will pay a
+  referrer. Six plausible parameter names were tried on both aggregators and every quote came back
+  identical, so there is nothing to collect unless Corwa asks. It asks in the open: two extra
+  instructions on the aggregator's own transaction, shown on the panel before anything is signed,
+  paying the cashback vault rather than Corwa. **All of it is returned** - 62.5% to the trader,
+  37.5% to the token's creator - because a fee out of the trader's own pocket that Corwa kept any
+  of would be a toll, not a rebate. A route too long to carry the two instructions inside the
+  1,232-byte limit goes through unpriced rather than being refused.
 - Payouts go through Corwa's own program on Cookie Chain rather than a payout wallet. Who is owed
   what is worked out off chain, because it depends on prices and on which wallet generated which
   fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.
@@ -255,6 +266,8 @@ src/
     curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
     launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
     listings.ts     Benchmarks bought for tokens launched elsewhere, priced and proved
+    creators.ts     Who made a token, from the launch record or the mint's metadata authority
+    swap-fee.ts     Corwa's fee, appended to the aggregator's transaction or dropped if it will not fit
     onchain.ts      Proving a reported transaction really happened before anything is written down
     cashback.ts     Fee accrual and the split
     epochs.ts       Epoch accounting: who is owed what, and what has already been committed

@@ -10,7 +10,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
-import { COOK_MINT, COOK_DECIMALS, cookieTxUrl, DEFAULT_SLIPPAGE_BPS } from "@/lib/config";
+import {
+  COOK_MINT,
+  COOK_DECIMALS,
+  CORWA_SWAP_FEE_BPS,
+  SWAP_CASHBACK_SPLIT,
+  cookieTxUrl,
+  DEFAULT_SLIPPAGE_BPS,
+} from "@/lib/config";
 import { rawToUi, uiToRaw, amount, pct, shortAddr } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { Notice } from "./notice";
@@ -135,6 +142,11 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
   const quoting = quoteKey !== null && currentQuote === null;
 
   const outAmount = activeQuote ? rawToUi(activeQuote.best.outAmount, outDecimals) : null;
+  /** Charged on whichever side is COOK: what is paid in on a buy, what comes out on a sell. */
+  const feeCook =
+    activeQuote == null
+      ? null
+      : ((side === "buy" ? amountNum : (outAmount ?? 0)) * CORWA_SWAP_FEE_BPS) / 10_000;
   const minOut = activeQuote ? rawToUi(activeQuote.best.minOutAmount, outDecimals) : null;
 
   /**
@@ -172,6 +184,8 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
           outputMint: outMint,
           amount: uiToRaw(amountNum, inDecimals),
           slippageBps,
+          // So a sell is charged on the COOK it produces rather than on the token going in.
+          outAmount: activeQuote.best.outAmount,
           raw: activeQuote.best.aggregator === "candyshop" ? activeQuote.best.raw : undefined,
         }),
       });
@@ -184,10 +198,13 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
       setInput("");
       setQuoted(null);
 
-      // Report the fill for cashback accounting. The server re-checks the signature on-chain, so a
-      // failure here costs nothing but the record - never the trade.
+      // Report the fill for cashback accounting. The server re-reads the transaction on chain and
+      // works out both the fee and the token's creator itself, so a failure here costs the record
+      // and never the trade.
       const notional =
-        side === "buy" ? amountNum * (pair.base.priceCook ? pair.base.priceUsd / pair.base.priceCook : 0) : amountNum * pair.base.priceUsd;
+        side === "buy"
+          ? amountNum * (pair.base.priceCook ? pair.base.priceUsd / pair.base.priceCook : 0)
+          : amountNum * pair.base.priceUsd;
       fetch("/api/rewards/record", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -199,9 +216,7 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
           symbol: pair.base.symbol,
           side,
           valueUsd: Number.isFinite(notional) ? Math.max(0, notional) : 0,
-          // Neither Cookie Chain router exposes a platform-fee or referral parameter today, so a
-          // swap routed through Corwa earns Corwa nothing. Recording it at zero keeps the volume
-          // visible without inventing a rebate that no fee is backing.
+          // Derived server-side from what the transaction actually paid the vault.
           feeUsd: 0,
           chain: "cookie",
         }),
@@ -322,7 +337,14 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
           </div>
         </div>
 
-        {activeQuote && <RouteDetail quote={activeQuote} minOut={minOut} outSymbol={outSymbol} />}
+        {activeQuote && (
+          <RouteDetail
+            quote={activeQuote}
+            minOut={minOut}
+            outSymbol={outSymbol}
+            feeCook={feeCook}
+          />
+        )}
 
         {activeQuoteError && <Notice tone="down">{activeQuoteError}</Notice>}
 
@@ -370,10 +392,13 @@ function RouteDetail({
   quote,
   minOut,
   outSymbol,
+  feeCook,
 }: {
   quote: { best: SwapRoute; all: SwapRoute[] };
   minOut: number | null;
   outSymbol: string;
+  /** Corwa's own fee on this trade, in COOK. Shown before anybody signs, not after. */
+  feeCook: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const best = quote.best;
@@ -414,6 +439,11 @@ function RouteDetail({
               <span className="num text-primary">{(best.feeBps / 100).toFixed(2)}%</span>
             </Line>
           )}
+          <Line label={`Corwa fee (${(CORWA_SWAP_FEE_BPS / 100).toFixed(2)}%)`}>
+            <span className="num text-primary">
+              {feeCook != null ? `${amount(feeCook)} COOK` : "—"}
+            </span>
+          </Line>
           <Line label="Hops">
             <span className="num text-primary">
               {best.isMultiHop ? `${best.segments.length} (multi-hop)` : "1"}
@@ -432,7 +462,12 @@ function RouteDetail({
           )}
           <p className="pt-1.5 text-[11px] leading-relaxed text-subtle">
             Both Cookie Chain routers were quoted; this is the better fill. The transaction is built
-            upstream and signed in your wallet - Corwa never holds your funds.
+            upstream and signed in your wallet - Corwa never holds your funds. Corwa&apos;s fee is a
+            visible instruction paying the cashback vault, and all of it is returned:{" "}
+            {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
+            {(SWAP_CASHBACK_SPLIT.trader * 100).toFixed(1)}% to whoever traded,{" "}
+            {(SWAP_CASHBACK_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither
+            router will pay a referrer, so this is the only thing funding the rebate here.
           </p>
         </div>
       )}

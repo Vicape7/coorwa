@@ -13,7 +13,12 @@ import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
 import { entitlementsFrom, toCook, type Accrual } from "../src/lib/epochs";
 import { buildEpochTree, verifyProof } from "../src/lib/merkle";
-import { CASHBACK_MIN_CLAIM_COOK, CASHBACK_SPLIT, COOK_DECIMALS } from "../src/lib/config";
+import {
+  CASHBACK_MIN_CLAIM_COOK,
+  CASHBACK_SPLIT,
+  SWAP_CASHBACK_SPLIT,
+  COOK_DECIMALS,
+} from "../src/lib/config";
 
 const COOK_USD = 0.5;
 const UNITS = 10 ** COOK_DECIMALS;
@@ -23,43 +28,51 @@ const B = Keypair.generate().publicKey.toBase58();
 
 function accrual(over: Partial<Accrual> = {}): Accrual {
   return {
-    traderFeesUsd: new Map(),
-    creatorFeesUsd: new Map(),
+    traderUsd: new Map(),
+    creatorUsd: new Map(),
     committedUsd: new Map(),
     cookPriceUsd: COOK_USD,
     ...over,
   };
 }
 
-/** A fee big enough that the trader's half clears the claim floor several times over. */
-const BIG_FEE = (CASHBACK_MIN_CLAIM_COOK * COOK_USD * 20) / CASHBACK_SPLIT.trader;
+/**
+ * A share big enough to clear the claim floor several times over.
+ *
+ * These are shares, not fees: the split moved out to `computeEntitlements`, where the source of the
+ * fee is known, because a launchpad referral and a swap fee are not split the same way. What is
+ * left here is the part that must not be wrong whatever the split was - the subtraction, the
+ * conversion and the floor.
+ */
+const TRADER_SHARE = CASHBACK_MIN_CLAIM_COOK * COOK_USD * 20;
+const CREATOR_SHARE = TRADER_SHARE * (CASHBACK_SPLIT.creator / CASHBACK_SPLIT.trader);
 
 test("a wallet is paid its share of what it generated, converted once", () => {
-  const [line] = entitlementsFrom(accrual({ traderFeesUsd: new Map([[A, BIG_FEE]]) }));
+  const [line] = entitlementsFrom(accrual({ traderUsd: new Map([[A, TRADER_SHARE]]) }));
 
   assert.equal(line.wallet, A);
-  assert.equal(line.traderUsd, BIG_FEE * CASHBACK_SPLIT.trader);
+  assert.equal(line.traderUsd, TRADER_SHARE);
   assert.equal(line.creatorUsd, 0);
-  assert.equal(line.amountUsd, BIG_FEE * CASHBACK_SPLIT.trader);
+  assert.equal(line.amountUsd, TRADER_SHARE);
   assert.equal(line.amountRaw, BigInt(Math.floor((line.amountUsd / COOK_USD) * UNITS)));
 });
 
 test("trading and launching add up on the same line", () => {
   const [line] = entitlementsFrom(
     accrual({
-      traderFeesUsd: new Map([[A, BIG_FEE]]),
-      creatorFeesUsd: new Map([[A, BIG_FEE]]),
+      traderUsd: new Map([[A, TRADER_SHARE]]),
+      creatorUsd: new Map([[A, CREATOR_SHARE]]),
     }),
   );
 
   // One leaf per wallet per epoch, because the program pays a wallet once and the merkle builder
   // refuses a duplicate outright.
-  assert.equal(line.amountUsd, BIG_FEE * (CASHBACK_SPLIT.trader + CASHBACK_SPLIT.creator));
+  assert.equal(line.amountUsd, TRADER_SHARE + CREATOR_SHARE);
 });
 
 test("a balance already sitting in an epoch is not offered again", () => {
-  const earned = BIG_FEE * CASHBACK_SPLIT.trader;
-  const base = { traderFeesUsd: new Map([[A, BIG_FEE]]) };
+  const earned = TRADER_SHARE;
+  const base = { traderUsd: new Map([[A, TRADER_SHARE]]) };
 
   // The whole balance is committed, so there is nothing left to publish.
   assert.deepEqual(
@@ -75,8 +88,8 @@ test("a balance already sitting in an epoch is not offered again", () => {
 test("a wallet that has been paid more than it earned is skipped, never negative", () => {
   const lines = entitlementsFrom(
     accrual({
-      traderFeesUsd: new Map([[A, BIG_FEE]]),
-      committedUsd: new Map([[A, BIG_FEE * 10]]),
+      traderUsd: new Map([[A, TRADER_SHARE]]),
+      committedUsd: new Map([[A, TRADER_SHARE * 10]]),
     }),
   );
   assert.deepEqual(lines, []);
@@ -85,21 +98,21 @@ test("a wallet that has been paid more than it earned is skipped, never negative
 test("dust waits for a later epoch instead of costing its claimant rent", () => {
   // Just under the floor: a claim writes two accounts the claimant pays for, so paying this out
   // would leave them worse off than not claiming.
-  const justUnder = ((CASHBACK_MIN_CLAIM_COOK - 0.001) * COOK_USD) / CASHBACK_SPLIT.trader;
-  assert.deepEqual(entitlementsFrom(accrual({ traderFeesUsd: new Map([[A, justUnder]]) })), []);
+  const justUnder = (CASHBACK_MIN_CLAIM_COOK - 0.001) * COOK_USD;
+  assert.deepEqual(entitlementsFrom(accrual({ traderUsd: new Map([[A, justUnder]]) })), []);
 
-  const justOver = ((CASHBACK_MIN_CLAIM_COOK + 0.001) * COOK_USD) / CASHBACK_SPLIT.trader;
-  const [line] = entitlementsFrom(accrual({ traderFeesUsd: new Map([[A, justOver]]) }));
+  const justOver = (CASHBACK_MIN_CLAIM_COOK + 0.001) * COOK_USD;
+  const [line] = entitlementsFrom(accrual({ traderUsd: new Map([[A, justOver]]) }));
   assert.ok(toCook(line.amountRaw) >= CASHBACK_MIN_CLAIM_COOK);
 });
 
 test("the same inputs always produce the same root", () => {
   const input = accrual({
-    traderFeesUsd: new Map([
-      [A, BIG_FEE],
-      [B, BIG_FEE * 3],
+    traderUsd: new Map([
+      [A, TRADER_SHARE],
+      [B, TRADER_SHARE * 3],
     ]),
-    creatorFeesUsd: new Map([[B, BIG_FEE]]),
+    creatorUsd: new Map([[B, CREATOR_SHARE]]),
   });
 
   // Republishing after a crash has to land on the same root, or every proof handed out before it
@@ -118,8 +131,8 @@ test("the same inputs always produce the same root", () => {
 test("a proof survives the trip to the browser as hex and back", () => {
   const lines = entitlementsFrom(
     accrual({
-      traderFeesUsd: new Map(
-        Array.from({ length: 9 }, () => [Keypair.generate().publicKey.toBase58(), BIG_FEE]),
+      traderUsd: new Map(
+        Array.from({ length: 9 }, () => [Keypair.generate().publicKey.toBase58(), TRADER_SHARE]),
       ),
     }),
   );
@@ -141,4 +154,20 @@ test("a proof survives the trip to the browser as hex and back", () => {
 
 test("a missing COOK price is refused rather than guessed", () => {
   assert.throws(() => entitlementsFrom(accrual({ cookPriceUsd: 0 })), /COOK price/);
+});
+
+test("every split returns the whole fee, and the swap split holds nothing back", () => {
+  // A split that does not sum to 1 either invents money or quietly keeps some. The launchpad's
+  // holds a fifth for liquidity because that revenue is a referral share somebody else pays; the
+  // swap fee comes out of the trader's own pocket, so all of it goes back.
+  const launchpad = CASHBACK_SPLIT.trader + CASHBACK_SPLIT.creator + CASHBACK_SPLIT.liquidity;
+  const swap = SWAP_CASHBACK_SPLIT.trader + SWAP_CASHBACK_SPLIT.creator;
+
+  assert.ok(Math.abs(launchpad - 1) < 1e-9, `launchpad split sums to ${launchpad}`);
+  assert.ok(Math.abs(swap - 1) < 1e-9, `swap split sums to ${swap}`);
+  assert.equal(
+    SWAP_CASHBACK_SPLIT.trader / SWAP_CASHBACK_SPLIT.creator,
+    CASHBACK_SPLIT.trader / CASHBACK_SPLIT.creator,
+    "the weighting between trader and creator should be the same either way",
+  );
 });

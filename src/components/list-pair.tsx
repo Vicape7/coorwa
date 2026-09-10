@@ -38,6 +38,9 @@ interface Quote {
   cook: number | null;
   pricePerPairUsd: number;
   cookPriceUsd: number | null;
+  /** Whose wallet has to be connected. Only a token's creator may benchmark it. */
+  creator: string | null;
+  creatorSource: "launch" | "authority" | null;
   error?: string;
 }
 
@@ -70,6 +73,8 @@ export function ListPair() {
 
   const free = quote?.free;
   const listed = quote?.listed ?? [];
+  const creator = quote?.creator ?? null;
+  const mine = creator != null && creator === publicKey?.toBase58();
   // The server decides what is billable, not this side: it knows what has already been paid for.
   const billable = useMemo(() => quote?.billable ?? [], [quote?.billable]);
 
@@ -119,10 +124,11 @@ export function ListPair() {
     <div className="card mt-10 p-7">
       <h2 className="title text-primary">Add a benchmark</h2>
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
-        Every token is priced against one asset for nothing. Adding another costs{" "}
+        Every token is priced against one asset for nothing. Its creator can add more at{" "}
         {usd(quote?.pricePerPairUsd ?? 1)} a pair, paid in COOK straight into the cashback vault -
-        not to Corwa, which cannot touch it. Liquidity is still this token&apos;s COOK pool; the
-        benchmark is what the price is quoted and charted in.
+        not to Corwa, which cannot touch it. Worth doing: once a pair exists, the creator earns a
+        share of the fee on every trade against it. Liquidity is still this token&apos;s COOK pool;
+        the benchmark is what the price is quoted and charted in.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -141,6 +147,24 @@ export function ListPair() {
 
         {mint.length > 0 && !validMint && (
           <Notice tone="note">That does not look like a mint address.</Notice>
+        )}
+
+        {validMint && quote && !mine && (
+          <Notice tone="note">
+            {creator == null ? (
+              <>
+                Corwa cannot tell who made this token, so there is nobody to prove a claim against.
+                Its mint names no metadata authority.
+              </>
+            ) : (
+              <>
+                Only this token&apos;s creator can benchmark it, because they earn the creator share
+                of every fee the pair goes on to generate. Connect{" "}
+                <span className="num">{shortAddr(creator, 6)}</span>
+                {quote.creatorSource === "launch" ? ", the wallet that launched it." : "."}
+              </>
+            )}
+          </Notice>
         )}
 
         {validMint && (
@@ -228,14 +252,16 @@ export function ListPair() {
         ) : (
           <button
             className="btn btn-primary"
-            disabled={busy || billable.length === 0 || !quote?.cook}
+            disabled={busy || billable.length === 0 || !quote?.cook || !mine}
             onClick={pay}
           >
             {busy
               ? "Confirm in your wallet"
-              : billable.length === 0
-                ? "Pick an asset"
-                : `Pay ${usd(quote?.usd ?? 0)} into the vault`}
+              : !mine
+                ? "Only the creator can list"
+                : billable.length === 0
+                  ? "Pick an asset"
+                  : `Pay ${usd(quote?.usd ?? 0)} into the vault`}
           </button>
         )}
       </div>

@@ -130,6 +130,33 @@ export const CASHBACK_SPLIT = {
   liquidity: 0.2,
 } as const;
 
+/**
+ * Corwa's own fee on a terminal swap, in basis points of the COOK leg.
+ *
+ * Neither Cookie Chain aggregator will pay a referrer - six plausible parameter names were tried on
+ * both and every quote came back identical - so a swap routed through Corwa earned nothing at all
+ * and every fill was recorded at zero. This is the only way the terminal can fund anything.
+ *
+ * It is charged honestly rather than hidden: the instruction is appended to the aggregator's own
+ * transaction, in plain sight, paying into the cashback vault rather than to Corwa. Say plainly on
+ * the panel that it is charged, because a trader can always route around Corwa and should be able
+ * to see what routing through it costs.
+ */
+export const CORWA_SWAP_FEE_BPS = 10;
+
+/**
+ * Where a swap fee goes back to. Must sum to 1: all of it is returned, none of it kept.
+ *
+ * The launchpad split holds a fifth back for liquidity because that revenue is a referral share
+ * somebody else pays. This one comes out of the trader's own pocket, so keeping any of it would
+ * make Corwa a toll rather than a rebate. The 50:30 weighting between trader and creator is the
+ * same as the launchpad's, with the liquidity slice removed and the rest scaled back up.
+ */
+export const SWAP_CASHBACK_SPLIT = {
+  trader: 0.625,
+  creator: 0.375,
+} as const;
+
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
 // --- Cashback vault ----------------------------------------------------------------------------

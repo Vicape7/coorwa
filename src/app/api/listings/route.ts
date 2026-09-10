@@ -13,6 +13,7 @@ import {
   FREE_TICKER,
 } from "@/lib/listings";
 import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
+import { tokenCreator } from "@/lib/creators";
 import { fetchCookPriceUsd } from "@/lib/cookiescan";
 import { fundsPda, vaultPda } from "@/lib/vault";
 import { COOK_MINT, VAULT_MINT } from "@/lib/config";
@@ -41,10 +42,11 @@ export async function GET(req: Request) {
     .filter(Boolean);
 
   try {
-    const [listed, cookPriceUsd, history] = await Promise.all([
+    const [listed, cookPriceUsd, history, creator] = await Promise.all([
       listedFor(mint),
       fetchCookPriceUsd(),
       listingsFor(mint),
+      tokenCreator(mint),
     ]);
     const billable = billableTickers(wanted, listed);
 
@@ -53,6 +55,9 @@ export async function GET(req: Request) {
       free: FREE_TICKER,
       listed,
       billable,
+      // Named so the panel can say whose wallet has to be connected rather than just refusing.
+      creator: creator?.wallet ?? null,
+      creatorSource: creator?.source ?? null,
       cookPriceUsd,
       fundsAccount: vaultFunds(),
       history,
@@ -98,6 +103,32 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "that payment has already bought its pairs", recorded: 0 },
         { status: 409 },
+      );
+    }
+
+    // Only the token's creator may benchmark it. They are the one who earns the creator share of
+    // every fee the pair goes on to generate, so letting a stranger choose it would be handing away
+    // somebody else's position. Proved against the launch when Corwa made the token, and against
+    // the mint's own metadata authority otherwise.
+    const creator = await tokenCreator(b.mint);
+    if (!creator) {
+      return NextResponse.json(
+        {
+          error: "this token has no creator Corwa can verify",
+          hint: "its mint names no metadata authority, so there is nobody to prove a claim against",
+          recorded: 0,
+        },
+        { status: 403 },
+      );
+    }
+    if (creator.wallet !== b.payer) {
+      return NextResponse.json(
+        {
+          error: "only this token's creator can add a benchmark to it",
+          hint: `connect ${creator.wallet} and try again`,
+          recorded: 0,
+        },
+        { status: 403 },
       );
     }
 
