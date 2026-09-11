@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { HeroSearch } from "@/components/hero-search";
@@ -34,27 +33,17 @@ export default function Home() {
 
       <Nav />
 
-      <section className="mx-auto w-full max-w-[1160px] px-5 pb-20 pt-10 text-center sm:pt-14">
-        <Image
-          src="/coorwa-logo-word.png"
-          alt="Coorwa"
-          width={2000}
-          height={666}
-          priority
-          className="rise mx-auto h-auto w-[min(360px,74vw)] object-contain drop-shadow-[0_10px_28px_rgba(120,64,24,0.2)]"
-        />
+      <section className="mx-auto w-full max-w-[1160px] px-5 pb-20 pt-2 text-center sm:pt-4">
+        {/* The sixteen benchmarks, as objects rather than a list. This is the hero's argument. */}
+        <div className="rise">
+          <RwaCarousel />
+        </div>
 
-        <h1 className="display rise mx-auto mt-8 max-w-[15ch] text-[clamp(2.5rem,6.4vw,4.25rem)] text-primary">
+        <h1 className="display rise mx-auto -mt-6 max-w-[15ch] text-[clamp(2.5rem,6.4vw,4.25rem)] text-primary sm:-mt-10">
           Trade Cookie Chain in RWAs.
         </h1>
 
-        <p className="rise mx-auto mt-6 max-w-[46ch] text-[17px] leading-[1.6] text-muted">
-          Every token here priced against a real equity, so you can see the one number no
-          COOK-denominated terminal shows you:{" "}
-          <span className="text-primary">is this beating the stock?</span>
-        </p>
-
-        <div className="rise mt-10">
+        <div className="rise mt-9">
           <HeroSearch />
         </div>
 
@@ -67,12 +56,7 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* The sixteen benchmarks, as objects rather than a list. This is the hero's argument. */}
-        <div className="rise mt-12">
-          <RwaCarousel />
-        </div>
-
-        <div className="rise mt-10 text-left">
+        <div className="rise mt-14 text-left">
           <LiveStats />
         </div>
       </section>
