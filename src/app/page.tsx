@@ -4,7 +4,7 @@ import { Nav } from "@/components/nav";
 import { HeroSearch } from "@/components/hero-search";
 import { LiveStats, ChainBadge } from "@/components/live-stats";
 import { AuroraField, GlassEffect } from "@/components/ui/liquid-glass";
-import { ShaderBackground } from "@/components/ui/mesh-drift-shader";
+import { GradientWave } from "@/components/ui/gradient-wave";
 
 export default function Home() {
   return (
@@ -13,9 +13,9 @@ export default function Home() {
       <AuroraField />
 
       {/*
-       * The hero's own backdrop: a live WebGL field in the logo's ambers. This is what the glass is
-       * for - a pane over a flat page is a translucent card no matter how it is lit, and the whole
-       * lensing chain has nothing to show until something behind it actually moves.
+       * The hero's own backdrop: slow amber waves in WebGL. This is what the glass is for - a pane
+       * over a flat page is a translucent card no matter how it is lit, and the whole lensing chain
+       * has nothing to show until something behind it actually moves.
        *
        * Masked out over its bottom half rather than cut off, and it sits behind the sticky header
        * so the nav is glass over the field rather than glass over paper.
@@ -28,7 +28,7 @@ export default function Home() {
           WebkitMaskImage: "linear-gradient(180deg, #000 0%, #000 52%, transparent 100%)",
         }}
       >
-        <ShaderBackground className="h-full w-full" />
+        <GradientWave className="h-full w-full" />
       </div>
 
       <Nav />
