@@ -4,7 +4,7 @@ import { jupQuote, jupSwapTx, routeLabels } from "@/lib/jupiter";
 import { rwaByTicker } from "@/lib/rwa";
 import { COOK_SOLANA_MINT, COOK_SOLANA_DECIMALS, DEFAULT_SLIPPAGE_BPS } from "@/lib/config";
 import { uiToRaw } from "@/lib/format";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,7 @@ const Body = z
  * Leg 3 of a cross-chain route: swap bridged COOK into the xStock on Solana mainnet (or back).
  *
  * Jupiter returns a fully built transaction carrying its own blockhash, so the client signs and
- * sends it against a Solana connection without Corwa ever touching a key.
+ * sends it against a Solana connection without Coorwa ever touching a key.
  */
 export async function POST(req: Request) {
   let json: unknown;
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
       route: routeLabels(quote),
     });
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "solana leg failed", hint: err?.hint },
       { status: 502 },

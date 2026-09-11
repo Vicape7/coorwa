@@ -7,7 +7,7 @@
  *   Sell  that xStock            ->  back into TOKEN on Cookie Chain
  *
  * The return trip is what makes this a market rather than a quote. A pair you can only enter is a
- * price; a pair you can leave is a position. Corwa still never wraps an xStock onto Cookie Chain -
+ * price; a pair you can leave is a position. Coorwa still never wraps an xStock onto Cookie Chain -
  * those mints carry a permanent delegate, a pause authority and a live rebase multiplier, so a
  * wrapped representation could be seized, frozen or drift off its backing. Both directions route
  * through the user's own wallet on both chains instead.
@@ -41,7 +41,7 @@ import {
 import { runJourney } from "@/lib/crosschain-exec";
 import { RouteSteps } from "./route-steps";
 import { Notice } from "./notice";
-import type { CorwaPair } from "@/lib/pairs";
+import type { CoorwaPair } from "@/lib/pairs";
 import type { RouteLeg } from "@/lib/crosschain";
 
 /** Whatever the two planners return, reduced to the handful of things this panel draws. */
@@ -60,7 +60,7 @@ interface PlanView {
   warnings: string[];
 }
 
-export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
+export function CrossChainPanel({ pair }: { pair: CoorwaPair }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -117,7 +117,7 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
   // --- The Solana-side position, which the sell direction is priced from ------------------------
 
   /**
-   * Read through Corwa's own route, not straight from the browser.
+   * Read through Coorwa's own route, not straight from the browser.
    *
    * Solana's public RPC returns 403 to anything with a browser origin, and a failed multiplier read
    * falls back to 1 - which would size every sale wrong by exactly the rebase, quietly.
@@ -327,7 +327,7 @@ export function CrossChainPanel({ pair }: { pair: CorwaPair }) {
         {SOLANA_RPC_IS_PUBLIC && (
           <Notice tone="note">
             No dedicated Solana RPC is configured, so the Solana legs cannot be signed from this
-            browser. Corwa reads what it can through its own server, and pricing below is live, but
+            browser. Coorwa reads what it can through its own server, and pricing below is live, but
             settling needs <span className="num">NEXT_PUBLIC_SOLANA_RPC_URL</span> set.
           </Notice>
         )}

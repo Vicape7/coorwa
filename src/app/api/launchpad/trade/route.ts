@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildBuyTx, buildSellTx, buildClaimCreatorFeesTx } from "@/lib/launchpad";
-import { COOK_DECIMALS, CORWA_REFERRER } from "@/lib/config";
+import { COOK_DECIMALS, COORWA_REFERRER } from "@/lib/config";
 import { uiToRaw } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ const Body = z.discriminatedUnion("action", [
 /**
  * Bonding-curve actions.
  *
- * Buys name Corwa as referrer, which routes 20% of the launchpad's 1% trade fee into the cashback
+ * Buys name Coorwa as referrer, which routes 20% of the launchpad's 1% trade fee into the cashback
  * pot. That share comes out of the same fee either way - with nobody named, the programme keeps it
  * - so this costs the buyer nothing. The programme rejects self-referral, so a wallet buying its
  * own curve is sent without one.
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   try {
     if (b.action === "buy") {
       const referrer =
-        CORWA_REFERRER && CORWA_REFERRER !== b.wallet ? CORWA_REFERRER : null;
+        COORWA_REFERRER && COORWA_REFERRER !== b.wallet ? COORWA_REFERRER : null;
       const built = await buildBuyTx({
         buyer: b.wallet,
         pool: b.pool,

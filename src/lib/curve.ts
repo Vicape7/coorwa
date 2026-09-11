@@ -1,7 +1,7 @@
 /**
  * Bonding-curve pricing, on its own so the browser can use it.
  *
- * MomoSwap publishes no quote endpoint, so Corwa reconstructs the curve from numbers the pool feed
+ * MomoSwap publishes no quote endpoint, so Coorwa reconstructs the curve from numbers the pool feed
  * already carries and prices the trade itself. It is a constant product over virtual reserves: the
  * two `virtual*` fields are constants set when the pool was created, and what has since been raised
  * and sold moves them. Replayed against a fill that actually settled on chain this reproduces both

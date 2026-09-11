@@ -12,8 +12,8 @@ import * as schema from "./schema";
 const url = process.env.DATABASE_URL?.trim();
 
 declare global {
-  var __corwaDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
-  var __corwaDbUrl: string | undefined;
+  var __coorwaDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
+  var __coorwaDbUrl: string | undefined;
 }
 
 function connect() {
@@ -22,17 +22,17 @@ function connect() {
   // One pool per process, reused across hot reloads in development. The url it was opened with is
   // remembered alongside it, because editing .env.local in a running dev server changes the url but
   // not the cached pool, and the app would go on talking to the database it started with.
-  if (globalThis.__corwaDb && globalThis.__corwaDbUrl !== url) {
-    void globalThis.__corwaDb.$client.end({ timeout: 5 }).catch(() => undefined);
-    globalThis.__corwaDb = undefined;
+  if (globalThis.__coorwaDb && globalThis.__coorwaDbUrl !== url) {
+    void globalThis.__coorwaDb.$client.end({ timeout: 5 }).catch(() => undefined);
+    globalThis.__coorwaDb = undefined;
   }
 
-  if (!globalThis.__corwaDb) {
+  if (!globalThis.__coorwaDb) {
     const client = postgres(url, { max: 5, prepare: false });
-    globalThis.__corwaDb = drizzle(client, { schema });
-    globalThis.__corwaDbUrl = url;
+    globalThis.__coorwaDb = drizzle(client, { schema });
+    globalThis.__coorwaDbUrl = url;
   }
-  return globalThis.__corwaDb;
+  return globalThis.__coorwaDb;
 }
 
 export const db = connect();
@@ -46,8 +46,8 @@ export { schema };
  * because an open socket keeps node alive after the last assertion has passed.
  */
 export async function closeDb(): Promise<void> {
-  if (!globalThis.__corwaDb) return;
-  await globalThis.__corwaDb.$client.end({ timeout: 5 });
-  globalThis.__corwaDb = undefined;
-  globalThis.__corwaDbUrl = undefined;
+  if (!globalThis.__coorwaDb) return;
+  await globalThis.__coorwaDb.$client.end({ timeout: 5 });
+  globalThis.__coorwaDb = undefined;
+  globalThis.__coorwaDbUrl = undefined;
 }

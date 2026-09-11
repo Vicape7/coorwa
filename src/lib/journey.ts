@@ -1,7 +1,7 @@
 /**
  * A cross-chain route in progress, and the only honest way to survive a partial failure.
  *
- * A Corwa settlement is three transactions on two chains with an asynchronous relayer in the
+ * A Coorwa settlement is three transactions on two chains with an asynchronous relayer in the
  * middle. That middle leg is the problem. Once the bridge has dispatched, the user's COOK has
  * already left the source chain, so a failure on the last leg is not "the trade did not happen" -
  * it is "the trade is half done and the funds are sitting somewhere else". Showing an error there
@@ -85,6 +85,8 @@ export interface Journey {
   updatedAt: number;
 }
 
+// Spelled the old way on purpose: a cross-chain route that stopped halfway resumes from this key,
+// and renaming it along with the product would make the app forget the route it was resuming.
 const STORE_KEY = "corwa.journeys.v1";
 
 /** One in-flight route per wallet per pair. */

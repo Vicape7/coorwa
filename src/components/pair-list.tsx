@@ -5,7 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { usd, amount, rwaRatio, pct } from "@/lib/format";
-import type { CorwaPair, PairUniverse } from "@/lib/pairs";
+import type { CoorwaPair, PairUniverse } from "@/lib/pairs";
 import { TokenMark } from "./token-mark";
 import { SearchGlyph } from "./ui/glyphs";
 import { PillSelect } from "./ui/pill-select";
@@ -51,7 +51,7 @@ export function PairList({
         )
       : pairs;
 
-    const key = (p: CorwaPair) => {
+    const key = (p: CoorwaPair) => {
       switch (sort) {
         case "volume":
           return p.base.volume24h ?? -1;
@@ -190,7 +190,7 @@ function toneClass(v: number | null | undefined) {
   return v >= 0 ? "text-[color:var(--color-up)]" : "text-[color:var(--color-down)]";
 }
 
-function Row({ pair, ticker }: { pair: CorwaPair; ticker: string }) {
+function Row({ pair, ticker }: { pair: CoorwaPair; ticker: string }) {
   return (
     <tr className="row-hover border-b border-hair last:border-0">
       <td className="px-4 py-3">
@@ -209,7 +209,7 @@ function Row({ pair, ticker }: { pair: CorwaPair; ticker: string }) {
       <td className="num px-4 py-3 text-right text-muted">{amount(pair.inverse)}</td>
       <td className={`num px-4 py-3 text-right ${toneClass(pair.change24h)}`}>
         {pair.change24h == null ? (
-          <span title="No fills in the last 24h. A flat price against a moving stock is not a real return, so Corwa shows nothing rather than a phantom gain.">
+          <span title="No fills in the last 24h. A flat price against a moving stock is not a real return, so Coorwa shows nothing rather than a phantom gain.">
             &mdash;
           </span>
         ) : (

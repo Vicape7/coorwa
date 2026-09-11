@@ -1,8 +1,8 @@
 /**
- * The pair engine - Corwa's core idea.
+ * The pair engine - Coorwa's core idea.
  *
- * A Corwa pair is TOKEN/RWA: a Cookie Chain token quoted in shares of a real-world asset. There is
- * no TOKEN/NVDA pool anywhere, and Corwa never pretends there is. The pair is a *denomination*
+ * A Coorwa pair is TOKEN/RWA: a Cookie Chain token quoted in shares of a real-world asset. There is
+ * no TOKEN/NVDA pool anywhere, and Coorwa never pretends there is. The pair is a *denomination*
  * built from two independently verifiable prices:
  *
  *     price(TOKEN in NVDA) = usd(TOKEN) / usd(NVDAx)
@@ -17,7 +17,7 @@
  * route in `crosschain.ts`.
  *
  * There are two regimes, and the difference is who chose the benchmark. A token launched through
- * Corwa has one: its creator picked an asset at launch, so it appears as that pair and no other,
+ * Coorwa has one: its creator picked an asset at launch, so it appears as that pair and no other,
  * the way a launchpad pair behaves anywhere else. A token that already existed on Cookie Chain had
  * nobody to choose, so it stays quotable against every asset and the trader picks. `launches.ts`
  * holds the first set; with no database there is no first set and everything crosses.
@@ -37,7 +37,7 @@ import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
 import { benchmarks } from "./launches";
 import { listedByMint, FREE_TICKER } from "./listings";
 
-export interface CorwaPair {
+export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
   slug: string;
   base: {
@@ -69,7 +69,7 @@ export interface CorwaPair {
     change24h: number | null;
   };
   /**
-   * True when this token was launched through Corwa and its creator picked this asset as the
+   * True when this token was launched through Coorwa and its creator picked this asset as the
    * benchmark. Such a token has exactly one pair; everything else is quotable against all of them.
    */
   pinned: boolean;
@@ -91,7 +91,7 @@ export interface CorwaPair {
 }
 
 export interface PairUniverse {
-  pairs: CorwaPair[];
+  pairs: CoorwaPair[];
   cookPriceUsd: number | null;
   rwa: RwaQuote[];
   /** Cookie Chain mints that have real liquidity but no usable price yet. */
@@ -102,7 +102,7 @@ export interface PairUniverse {
 /**
  * Which assets a token may be quoted against.
  *
- * Three cases, and the difference is who decided. A token launched through Corwa has one benchmark
+ * Three cases, and the difference is who decided. A token launched through Coorwa has one benchmark
  * its creator chose at launch, and appears against that asset alone. Any other token carries one
  * free benchmark, plus whatever pairs somebody has paid to add. Nothing is crossed with everything
  * any more: sixteen rows per token was a list of arithmetic, not a list of markets.
@@ -172,7 +172,7 @@ export async function buildUniverse(opts?: {
     ? opts.quotes.map((q) => rwaByTicker(q)).filter((a): a is NonNullable<typeof a> => !!a)
     : RWA_ASSETS;
 
-  const pairs: CorwaPair[] = [];
+  const pairs: CoorwaPair[] = [];
   let skipped = 0;
 
   // Only mints that actually appear in a pool are tradeable, so the markets feed defines the set.
@@ -251,7 +251,7 @@ export async function buildUniverse(opts?: {
 }
 
 /** Resolve a slug like "cookhouse-nvda", or "<mint>-nvda", to a single pair. */
-export async function findPair(slug: string): Promise<CorwaPair | null> {
+export async function findPair(slug: string): Promise<CoorwaPair | null> {
   const idx = slug.lastIndexOf("-");
   if (idx < 1) return null;
   const ticker = slug.slice(idx + 1);

@@ -4,7 +4,7 @@
  * The vault operator panel.
  *
  * This is the only place where cashback stops being a report and starts being money, and it is
- * built so that no key ever reaches Corwa's server. The authority signs `initialize`, `fund` and
+ * built so that no key ever reaches Coorwa's server. The authority signs `initialize`, `fund` and
  * `publish_epoch` in their own browser, exactly like a trader signs a swap. The server's part is
  * arithmetic: it works out the leaves, and afterwards it reads the published transaction back off
  * the chain to check it got the root it expected.
@@ -172,7 +172,7 @@ export function VaultAdmin() {
           }),
         ),
       async (signature) => {
-        // Only now does the epoch become real to Corwa, and only because the chain says so.
+        // Only now does the epoch become real to Coorwa, and only because the chain says so.
         const res = await fetch("/api/cashback/publish", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -180,7 +180,7 @@ export function VaultAdmin() {
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? "published on chain, but Corwa could not record it");
+          throw new Error(body.error ?? "published on chain, but Coorwa could not record it");
         }
         setDraft(null);
       },

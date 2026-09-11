@@ -1,10 +1,10 @@
 /**
- * Corwa's fee on a terminal swap, attached to the aggregator's own transaction.
+ * Coorwa's fee on a terminal swap, attached to the aggregator's own transaction.
  *
- * Neither Cookie Chain aggregator will pay a referrer, so there is nothing to collect unless Corwa
+ * Neither Cookie Chain aggregator will pay a referrer, so there is nothing to collect unless Coorwa
  * asks for it directly. It asks in the open: two instructions appended to the transaction the user
- * is about to sign, moving `CORWA_SWAP_FEE_BPS` of the COOK leg into the cashback vault's own
- * account. Not to Corwa - into the vault, which can only pay out against a published root, so the
+ * is about to sign, moving `COORWA_SWAP_FEE_BPS` of the COOK leg into the cashback vault's own
+ * account. Not to Coorwa - into the vault, which can only pay out against a published root, so the
  * fee is beyond reach the moment it lands.
  *
  * Both aggregators hand back a v0 message with no signatures and no address lookup tables, which is
@@ -20,7 +20,7 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { createSyncNativeInstruction } from "@solana/spl-token";
-import { COOK_MINT, CORWA_SWAP_FEE_BPS, VAULT_MINT } from "./config";
+import { COOK_MINT, COORWA_SWAP_FEE_BPS, VAULT_MINT } from "./config";
 import { fundsPda, vaultPda } from "./vault";
 
 /** The hard limit on a serialized transaction. */
@@ -41,7 +41,7 @@ export function vaultFundsAccount(): PublicKey {
 
 /** The fee on a COOK leg of this size, in raw units. */
 export function swapFeeRaw(cookLegRaw: bigint): bigint {
-  return (cookLegRaw * BigInt(CORWA_SWAP_FEE_BPS)) / 10_000n;
+  return (cookLegRaw * BigInt(COORWA_SWAP_FEE_BPS)) / 10_000n;
 }
 
 /**

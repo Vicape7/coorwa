@@ -2,8 +2,8 @@
  * Cashback accounting.
  *
  * The money is real and already exists: MomoSwap pays a referrer 20% of its 1% curve fee, and the
- * aggregator path carries Corwa's own router margin. Neither is invented - with no referrer named,
- * MomoSwap simply keeps that slice - so naming Corwa costs a trader nothing and is what funds the
+ * aggregator path carries Coorwa's own router margin. Neither is invented - with no referrer named,
+ * MomoSwap simply keeps that slice - so naming Coorwa costs a trader nothing and is what funds the
  * rebate.
  *
  * Accrual is split per `CASHBACK_SPLIT`: half back to the trader who generated the fee, a share to
@@ -62,7 +62,7 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   leaderboard: [],
 });
 
-/** The fee Corwa earns on a launchpad fill of this size, in the same units as `valueUsd`. */
+/** The fee Coorwa earns on a launchpad fill of this size, in the same units as `valueUsd`. */
 export function launchpadReferralFee(valueUsd: number): number {
   return valueUsd * (MOMOSWAP_TRADE_FEE_BPS / 10_000) * MOMOSWAP_REFERRAL_SHARE;
 }

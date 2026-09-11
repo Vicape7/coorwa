@@ -11,7 +11,7 @@ const Body = z.object({
   mint: z.string().min(32).max(44),
   pool: z.string().min(32).max(44),
   creator: z.string().min(32).max(44),
-  /** The RWA the creator picked. Checked against the assets Corwa actually prices. */
+  /** The RWA the creator picked. Checked against the assets Coorwa actually prices. */
   ticker: z.string().min(1).max(12),
   symbol: z.string().max(32).optional(),
   name: z.string().max(64).optional(),
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const asset = rwaByTicker(b.ticker);
   if (!asset) {
     return NextResponse.json(
-      { error: `${b.ticker} is not an asset Corwa prices`, recorded: false },
+      { error: `${b.ticker} is not an asset Coorwa prices`, recorded: false },
       { status: 400 },
     );
   }

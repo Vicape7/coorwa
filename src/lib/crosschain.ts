@@ -1,10 +1,10 @@
 /**
  * Cross-chain settlement: turning a Cookie Chain token into a real RWA position.
  *
- * Corwa deliberately does NOT wrap xStocks onto Cookie Chain. Their mints carry a permanent
+ * Coorwa deliberately does NOT wrap xStocks onto Cookie Chain. Their mints carry a permanent
  * delegate, a pause authority, a freeze authority and a live rebase multiplier - a bridged
  * representation could be drained, frozen or silently drift away from its backing. So instead of
- * escrowing the asset, Corwa routes the user into it, and the xStock lands in their own Solana
+ * escrowing the asset, Coorwa routes the user into it, and the xStock lands in their own Solana
  * wallet where all of that is Backed's problem and Jupiter's job.
  *
  * The route is three legs, each of which already exists in production:
@@ -25,7 +25,7 @@ import { bestQuote, type SwapRoute } from "./swap";
 import { jupQuote, routeLabels, type JupQuote } from "./jupiter";
 import { rwaByTicker, type RwaAsset } from "./rwa";
 import { rawToUi, uiToRaw } from "./format";
-import { CorwaError } from "./http";
+import { CoorwaError } from "./http";
 
 export interface RouteLeg {
   kind: "cookie-swap" | "bridge" | "solana-swap";
@@ -98,8 +98,8 @@ export async function planCrossChainBuy(args: {
   owner?: string;
 }): Promise<CrossChainPlan> {
   const asset = rwaByTicker(args.ticker);
-  if (!asset) throw new CorwaError(`unknown RWA: ${args.ticker}`);
-  if (!(args.amount > 0)) throw new CorwaError("amount must be positive");
+  if (!asset) throw new CoorwaError(`unknown RWA: ${args.ticker}`);
+  if (!(args.amount > 0)) throw new CoorwaError("amount must be positive");
 
   const slippageBps = args.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
   const legs: RouteLeg[] = [];
@@ -138,7 +138,7 @@ export async function planCrossChainBuy(args: {
   // --- Leg 2: bridge COOK to Solana over Hyperlane (1:1, minus interchain gas) ---
   const bridged = Math.max(0, cookAmount - BRIDGE_GAS_COOK);
   if (bridged <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "amount too small to bridge",
       `the Hyperlane leg costs about ${BRIDGE_GAS_COOK} COOK in interchain gas`,
     );
@@ -274,8 +274,8 @@ export async function planCrossChainSell(args: {
   owner?: string;
 }): Promise<CrossChainSellPlan> {
   const asset = rwaByTicker(args.ticker);
-  if (!asset) throw new CorwaError(`unknown RWA: ${args.ticker}`);
-  if (!(BigInt(args.amountRaw) > 0n)) throw new CorwaError("amount must be positive");
+  if (!asset) throw new CoorwaError(`unknown RWA: ${args.ticker}`);
+  if (!(BigInt(args.amountRaw) > 0n)) throw new CoorwaError("amount must be positive");
 
   const slippageBps = args.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
   const legs: RouteLeg[] = [];
@@ -307,7 +307,7 @@ export async function planCrossChainSell(args: {
 
   // --- Leg 2: bridge COOK back to Cookie Chain ---
   if (cookOnSolana <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "that size does not clear the Solana leg",
       "the COOK pool on Solana is thin enough that this sale rounds to nothing",
     );
@@ -368,7 +368,7 @@ export async function planCrossChainSell(args: {
   }
 
   warnings.push(
-    "Leg 1 is subject to the issuer's controls, not Corwa's: an xStock mint can be paused and an " +
+    "Leg 1 is subject to the issuer's controls, not Coorwa's: an xStock mint can be paused and an " +
       "individual account frozen, and either would stop the sale before it starts.",
   );
   warnings.push(

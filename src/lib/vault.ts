@@ -1,5 +1,5 @@
 /**
- * Client for the Corwa cashback vault (`programs/corwa-vault`).
+ * Client for the Coorwa cashback vault (`programs/corwa-vault`).
  *
  * Deliberately written against the wire format rather than against a generated IDL. The vault is a
  * handful of instructions with fixed layouts, and hand-encoding them means the app never has to
@@ -9,7 +9,7 @@
  * them from the instruction name, so this file cannot drift without a test going red.
  *
  * Reading is safe from anywhere. Writing is a plain instruction the user's own wallet signs, the
- * same as every other transaction Corwa builds.
+ * same as every other transaction Coorwa builds.
  */
 import {
   PublicKey,
@@ -546,7 +546,7 @@ export async function fetchEpochs(
  * Which of these epochs the wallet has already claimed.
  *
  * The claim record is the program's own guard against a second attempt, so its existence is the
- * only answer that matters. Corwa's database can be behind - a claim that confirmed while the
+ * only answer that matters. Coorwa's database can be behind - a claim that confirmed while the
  * report to the API was in flight, say - and this is what catches that.
  */
 export async function fetchClaimStatuses(

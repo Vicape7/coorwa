@@ -1,6 +1,6 @@
 import { HTTP_TIMEOUT_MS } from "./config";
 
-export class CorwaError extends Error {
+export class CoorwaError extends Error {
   // Declared rather than written as constructor parameter properties: the test runner strips types
   // instead of compiling them, and that syntax is the one thing it cannot strip.
   readonly hint?: string;
@@ -8,7 +8,7 @@ export class CorwaError extends Error {
 
   constructor(message: string, hint?: string, status?: number) {
     super(message);
-    this.name = "CorwaError";
+    this.name = "CoorwaError";
     this.hint = hint;
     this.status = status;
   }
@@ -40,22 +40,22 @@ export async function fetchJson<T>(
       } catch {
         /* keep the raw body */
       }
-      throw new CorwaError(`HTTP ${res.status}: ${detail}`, undefined, res.status);
+      throw new CoorwaError(`HTTP ${res.status}: ${detail}`, undefined, res.status);
     }
     return JSON.parse(text) as T;
   } catch (e) {
-    if (e instanceof CorwaError) throw e;
+    if (e instanceof CoorwaError) throw e;
     if (e instanceof Error && e.name === "AbortError") {
-      throw new CorwaError(`request timed out after ${timeoutMs}ms`, url);
+      throw new CoorwaError(`request timed out after ${timeoutMs}ms`, url);
     }
-    throw new CorwaError(e instanceof Error ? e.message : String(e), url);
+    throw new CoorwaError(e instanceof Error ? e.message : String(e), url);
   } finally {
     clearTimeout(timer);
   }
 }
 
 /**
- * A tiny in-process TTL cache. Corwa fans a lot of reads out to rate-limited public APIs
+ * A tiny in-process TTL cache. Coorwa fans a lot of reads out to rate-limited public APIs
  * (Jupiter's keyless tier is 0.5 req/s), so every upstream read goes through this.
  */
 const cache = new Map<string, { value: unknown; expires: number }>();

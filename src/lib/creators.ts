@@ -7,14 +7,14 @@
  *
  * There are two sources and they are checked in that order:
  *
- * 1. `launches`, for tokens launched through Corwa. The launch transaction was read back from the
+ * 1. `launches`, for tokens launched through Coorwa. The launch transaction was read back from the
  *    chain before that row was written, so it is as good as an on-chain fact.
  * 2. The mint's metadata update authority, from the Cookie Chain registry, for everything else.
  *
  * The second is worth being careful about. Across the whole registry it is not much use: 4,449 of
  * the 5,088 tokens carrying one point at a single shared launchpad key, so whoever holds that key
  * would count as the creator of thousands of tokens. Across the tokens that actually have liquidity
- * and appear in Corwa, none of them do - every one resolves to its own wallet. So the shared key is
+ * and appear in Coorwa, none of them do - every one resolves to its own wallet. So the shared key is
  * refused by name and the rest are trusted, which is right for the set this is asked about.
  */
 import { fetchTokens } from "./cookiescan";

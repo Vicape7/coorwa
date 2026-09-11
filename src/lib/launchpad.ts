@@ -3,17 +3,17 @@
  *
  * Its API serves the pool reads and BUILDS every launchpad transaction: it leases a pre-ground
  * `momo`-suffixed mint (the program enforces that suffix on-chain), pins metadata to IPFS, and
- * returns an unsigned, partially-signed transaction. Corwa simulates and the user's wallet signs,
+ * returns an unsigned, partially-signed transaction. Coorwa simulates and the user's wallet signs,
  * so the flow stays non-custodial.
  *
- * Why Corwa cares: the launchpad splits its 1% trade fee, and 20% of that goes to whoever is named
- * as referrer. With no referrer the programme keeps that share itself - so naming Corwa costs the
+ * Why Coorwa cares: the launchpad splits its 1% trade fee, and 20% of that goes to whoever is named
+ * as referrer. With no referrer the programme keeps that share itself - so naming Coorwa costs the
  * trader nothing and is the honest source of the launchpad half of cashback.
  */
 import { createPublicKey, verify } from "node:crypto";
 import bs58 from "bs58";
-import { MOMOSWAP_API, CORWA_REFERRER } from "./config";
-import { fetchJson, cachedStale, CorwaError } from "./http";
+import { MOMOSWAP_API, COORWA_REFERRER } from "./config";
+import { fetchJson, cachedStale, CoorwaError } from "./http";
 import { uiToRaw } from "./format";
 
 const LP = `${MOMOSWAP_API}/v1/launchpad`;
@@ -102,7 +102,7 @@ type Envelope<T> = T & { success?: boolean; error?: string };
 
 function unwrap<T>(res: Envelope<T>, what: string): T {
   if (res.success === false) {
-    throw new CorwaError(res.error ?? `${what} failed`, "check the inputs and retry");
+    throw new CoorwaError(res.error ?? `${what} failed`, "check the inputs and retry");
   }
   return res;
 }
@@ -211,7 +211,7 @@ export async function fetchLoginNonce(): Promise<{ nonce: string; ttlSecs?: numb
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 /**
- * Check the wallet signed the message Corwa handed it, before spending an upstream call on it.
+ * Check the wallet signed the message Coorwa handed it, before spending an upstream call on it.
  *
  * MomoSwap answers anything it does not like with a flat `401 Invalid signature`, which covers at
  * least three different mistakes: a wallet that signed with a different account than the one it
@@ -274,7 +274,7 @@ export async function uploadImage(imageBase64: string, contentType: string): Pro
     "token image upload",
   );
   if (!res.url) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "the launchpad did not return an image URL",
       "retry, or supply an already-hosted image URL instead",
     );
@@ -298,10 +298,10 @@ export async function buildBuyTx(body: {
   paymentAmount: string;
   referrer?: string | null;
 }): Promise<BuiltTx> {
-  // Leaving `referrer` out means "use Corwa's". Passing null means "deliberately none" - which is
+  // Leaving `referrer` out means "use Coorwa's". Passing null means "deliberately none" - which is
   // how a creator buying their own curve gets through, since the programme rejects self-referral.
   const referrer =
-    body.referrer === undefined ? CORWA_REFERRER || undefined : (body.referrer ?? undefined);
+    body.referrer === undefined ? COORWA_REFERRER || undefined : (body.referrer ?? undefined);
   return post("/tx/buy", { ...body, referrer }, "buy build");
 }
 

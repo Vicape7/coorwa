@@ -9,7 +9,7 @@ const Body = z.object({ signature: z.string().min(64).max(128) });
 /**
  * Mark a draft published, given the transaction that published it.
  *
- * The signature is the whole argument. Corwa reads it back from the chain, decodes the publish
+ * The signature is the whole argument. Coorwa reads it back from the chain, decodes the publish
  * instruction out of it and compares the root with the draft's, so this endpoint needs no key, no
  * token and no session: a caller who has not actually landed a publish transaction signed by the
  * vault's authority has nothing to send here that would work.

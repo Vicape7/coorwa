@@ -34,9 +34,9 @@ interface ChainStatus {
 }
 
 /**
- * What Corwa depends on and whether it is up.
+ * What Coorwa depends on and whether it is up.
  *
- * Worth a page of its own: Corwa is a thin, honest layer over other people's infrastructure, so
+ * Worth a page of its own: Coorwa is a thin, honest layer over other people's infrastructure, so
  * when something is wrong it is usually one of these, and naming them is more useful than a
  * generic error.
  */
@@ -48,10 +48,10 @@ export function StatusView() {
       <div className="max-w-2xl">
         <span className="label text-[12px]">Status</span>
         <h1 className="display mt-3 text-[clamp(2rem,4.5vw,3.25rem)] text-primary">
-          What Corwa runs on.
+          What Coorwa runs on.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Corwa holds nothing and operates nothing. Every number in the app comes from one of the
+          Coorwa holds nothing and operates nothing. Every number in the app comes from one of the
           services below, and every transaction is built by one of these programs and signed by your
           wallet.
         </p>
@@ -90,7 +90,7 @@ export function StatusView() {
         <div className="card p-8">
           <h2 className="title text-primary">Services</h2>
           <p className="mt-1.5 text-[13px] text-muted">
-            Read paths and transaction builders Corwa calls.
+            Read paths and transaction builders Coorwa calls.
           </p>
           <dl className="mt-5 divide-y divide-[color:var(--divider)]">
             <Row label="RPC" value={COOKIE_RPC_URL} note="Chain reads, simulation, sending" />
@@ -105,7 +105,7 @@ export function StatusView() {
         <div className="card p-8">
           <h2 className="title text-primary">Programs</h2>
           <p className="mt-1.5 text-[13px] text-muted">
-            On-chain code Corwa builds instructions against.
+            On-chain code Coorwa builds instructions against.
           </p>
           <dl className="mt-5 divide-y divide-[color:var(--divider)]">
             <Row label="Cookiebox DAMM v2" value={PROGRAM_IDS.cookieboxDamm} note="LP positions" />
@@ -130,7 +130,7 @@ export function StatusView() {
         <h2 className="title text-primary">Cross-chain capacity</h2>
         <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-muted">
           A cross-chain settle ends by swapping bridged COOK into an xStock on Solana, so the depth
-          of COOK there is the real ceiling on trade size - not anything in Corwa. It is shown here
+          of COOK there is the real ceiling on trade size - not anything in Coorwa. It is shown here
           rather than discovered as slippage.
         </p>
         <div className="mt-6 grid gap-6 sm:grid-cols-3">

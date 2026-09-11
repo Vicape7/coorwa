@@ -1,7 +1,7 @@
 /**
  * The bonding-curve quote.
  *
- * MomoSwap has no quote endpoint, so Corwa prices a curve trade itself before showing a number to
+ * MomoSwap has no quote endpoint, so Coorwa prices a curve trade itself before showing a number to
  * anyone. That makes the arithmetic worth pinning against reality rather than against itself: the
  * first two cases replay a buy and the sell that followed it on pool `FvrW6Wkn...` on Cookie Chain,
  * with the reserves the pool actually had at each moment, and assert the raw units the programme

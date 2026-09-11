@@ -15,11 +15,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Corwa - trade Cookie Chain in shares",
+  title: "Coorwa - trade Cookie Chain in RWAs",
   description:
     "Terminal, launchpad and LP maker for Cookie Chain. Price every token in NVDA, TSLA or SPY, route cross-chain into real xStocks, and earn fee cashback on every trade.",
   openGraph: {
-    title: "Corwa - trade Cookie Chain in shares",
+    title: "Coorwa - trade Cookie Chain in RWAs",
     description:
       "Price every Cookie Chain token in real-world shares, settle cross-chain into real xStocks, and earn cashback from the fees you generate.",
     type: "website",

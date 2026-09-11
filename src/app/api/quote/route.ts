@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bestQuote } from "@/lib/swap";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 import { DEFAULT_SLIPPAGE_BPS } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     const { best, all } = await bestQuote(parsed.data);
     return NextResponse.json({ best, all });
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "quote failed", hint: err?.hint },
       { status: err?.status === 404 ? 404 : 502 },

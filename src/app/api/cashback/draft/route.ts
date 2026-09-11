@@ -20,7 +20,7 @@ const PREVIEW = 25;
  *
  * Deliberately unauthenticated. A draft moves no money and names nobody who is not already owed
  * something by arithmetic anyone can redo from the public fills, and the call is idempotent, so
- * the worst a stranger achieves is making Corwa compute the same answer twice. The step that does
+ * the worst a stranger achieves is making Coorwa compute the same answer twice. The step that does
  * move money is the publish transaction, and only the vault's authority can sign that - the
  * program checks, not this endpoint.
  */

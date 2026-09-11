@@ -3,9 +3,9 @@
 /**
  * Client-side transaction execution.
  *
- * Corwa is non-custodial by construction: aggregators build an unsigned transaction server-side,
+ * Coorwa is non-custodial by construction: aggregators build an unsigned transaction server-side,
  * the user's wallet signs it in their own browser, and it is sent from there. No key, and no
- * co-signature, ever reaches Corwa. Every send is simulated first so a doomed transaction fails
+ * co-signature, ever reaches Coorwa. Every send is simulated first so a doomed transaction fails
  * for free instead of on-chain.
  */
 import {

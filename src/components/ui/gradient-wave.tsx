@@ -1,6 +1,6 @@
 "use client";
 
-// GradientWave - the Stripe mesh-gradient field, recoloured for Corwa. Zero dependencies: one
+// GradientWave - the Stripe mesh-gradient field, recoloured for Coorwa. Zero dependencies: one
 // WebGL canvas that fills its parent, the same contract as ShaderBackground.
 //
 // A deformed plane is drawn once per frame. Its vertices ride a simplex-noise wave, and each
@@ -8,7 +8,7 @@
 // read as folded sheets rather than as a blur.
 //
 // Four changes on the way into this project:
-//   1. The colours are Corwa's, taken from the tokens in globals.css - see WAVE.
+//   1. The colours are Coorwa's, taken from the tokens in globals.css - see WAVE.
 //   2. It measures its own container, not the window. The hero is an 980px band, so a field sized
 //      to window.innerHeight would be cropped at the top and stretched everywhere else.
 //   3. It honours prefers-reduced-motion, and it stops when the tab is hidden or the field is

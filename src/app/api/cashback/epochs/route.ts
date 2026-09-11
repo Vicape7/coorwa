@@ -4,10 +4,10 @@ import { EpochError, overview } from "@/lib/epochs";
 export const dynamic = "force-dynamic";
 
 /**
- * Every epoch Corwa knows about, each one crossed with what the chain says about it.
+ * Every epoch Coorwa knows about, each one crossed with what the chain says about it.
  *
  * Public, because the whole point of publishing a root is that anybody can audit it: the totals
- * here can be checked against the epoch accounts without asking Corwa for anything.
+ * here can be checked against the epoch accounts without asking Coorwa for anything.
  */
 export async function GET() {
   try {

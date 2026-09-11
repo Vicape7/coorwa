@@ -108,13 +108,13 @@ export async function POST(req: Request) {
 
     // Only the token's creator may benchmark it. They are the one who earns the creator share of
     // every fee the pair goes on to generate, so letting a stranger choose it would be handing away
-    // somebody else's position. Proved against the launch when Corwa made the token, and against
+    // somebody else's position. Proved against the launch when Coorwa made the token, and against
     // the mint's own metadata authority otherwise.
     const creator = await tokenCreator(b.mint);
     if (!creator) {
       return NextResponse.json(
         {
-          error: "this token has no creator Corwa can verify",
+          error: "this token has no creator Coorwa can verify",
           hint: "its mint names no metadata authority, so there is nobody to prove a claim against",
           recorded: 0,
         },

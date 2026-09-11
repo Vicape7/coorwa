@@ -68,7 +68,7 @@ export function RewardsView() {
    * Claim every open epoch, one transaction each.
    *
    * One per epoch rather than all in one, because a proof grows with the size of the tree and a
-   * batch would silently stop fitting in a transaction as Corwa gets busier. Each claim stands on
+   * batch would silently stop fitting in a transaction as Coorwa gets busier. Each claim stands on
    * its own, so a wallet that rejects the second signature keeps the first.
    */
   const onClaim = useCallback(async () => {
@@ -121,9 +121,9 @@ export function RewardsView() {
           The fees you generate, returned.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Corwa rebates the fees it earns rather than keeping them. Today that means the launchpad
+          Coorwa rebates the fees it earns rather than keeping them. Today that means the launchpad
           referral share: MomoSwap pays a referrer 20% of its 1% curve fee, out of the same fee
-          either way - with nobody named, the programme keeps that slice itself. So naming Corwa
+          either way - with nobody named, the programme keeps that slice itself. So naming Coorwa
           costs a trader nothing and is what funds the rebate.
         </p>
       </div>
@@ -217,7 +217,7 @@ export function RewardsView() {
 
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
               {blocked ??
-                "The claim is yours to sign. Corwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
+                "The claim is yours to sign. Coorwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
             </p>
 
             {vault && vault.lines.length > 0 && <EpochLines lines={vault.lines} />}
@@ -236,7 +236,7 @@ export function RewardsView() {
           </div>
           {data.recent.length === 0 ? (
             <p className="px-6 pb-6 text-[14px] text-muted">
-              Nothing routed through Corwa from this wallet yet.
+              Nothing routed through Coorwa from this wallet yet.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -295,19 +295,19 @@ export function RewardsView() {
             label="Launchpad fills"
             state="Live"
             tone="up"
-            body="Every buy Corwa routes on a MomoSwap curve names Corwa as referrer, which pays 20% of the 1% trade fee. That is real revenue and it is what the balance above is built from."
+            body="Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. That is real revenue and it is what the balance above is built from."
           />
           <Source
             label="Swap fills"
             state="No fee yet"
             tone="muted"
-            body="Neither Cookie Chain router - Cookiebox or Candy Shop - exposes a platform-fee or referral parameter, so a swap routed through Corwa earns Corwa nothing. Those fills are recorded at zero rather than credited with a rebate no fee is backing. When a router adds one, this turns on with no change to how you trade."
+            body="Neither Cookie Chain router - Cookiebox or Candy Shop - exposes a platform-fee or referral parameter, so a swap routed through Coorwa earns Coorwa nothing. Those fills are recorded at zero rather than credited with a rebate no fee is backing. When a router adds one, this turns on with no change to how you trade."
           />
           <Source
             label="LP fees"
             state="Yours already"
             tone="muted"
-            body="Fees on a position you own are paid to you by the pool directly. Corwa never sits between you and them - it just builds the claim."
+            body="Fees on a position you own are paid to you by the pool directly. Coorwa never sits between you and them - it just builds the claim."
           />
         </dl>
       </div>

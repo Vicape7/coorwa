@@ -10,12 +10,12 @@ import { RecentTrades } from "./recent-trades";
 import { TokenMark } from "./token-mark";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
 import { cookieAccountUrl, COOKIE_EXPLORER } from "@/lib/config";
-import type { CorwaPair } from "@/lib/pairs";
+import type { CoorwaPair } from "@/lib/pairs";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
-export function PairView({ initial }: { initial: CorwaPair }) {
-  const { data } = useSWR<CorwaPair>(`/api/pair/${initial.slug}`, fetcher, {
+export function PairView({ initial }: { initial: CoorwaPair }) {
+  const { data } = useSWR<CoorwaPair>(`/api/pair/${initial.slug}`, fetcher, {
     refreshInterval: 15_000,
     fallbackData: initial,
     keepPreviousData: true,
@@ -139,12 +139,12 @@ function Metric({
   );
 }
 
-function PairFacts({ pair }: { pair: CorwaPair }) {
+function PairFacts({ pair }: { pair: CoorwaPair }) {
   return (
     <div className="card p-5">
       <div className="label">How this pair is priced</div>
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
-        There is no {pair.base.symbol}/{pair.quote.ticker} pool anywhere, and Corwa does not pretend
+        There is no {pair.base.symbol}/{pair.quote.ticker} pool anywhere, and Coorwa does not pretend
         otherwise. The price is <span className="num text-primary">USD({pair.base.symbol})</span>{" "}
         &divide; <span className="num text-primary">USD({pair.quote.symbol})</span> - the first from
         real reserves in the {pair.venue ?? "Cookie Chain"} pool, the second from real Solana

@@ -2,7 +2,7 @@
  * The launchpad login.
  *
  * MomoSwap gates the launch path behind a signed message and rejects everything it dislikes with
- * the same `401 Invalid signature`, which tells a user nothing. Corwa verifies the signature itself
+ * the same `401 Invalid signature`, which tells a user nothing. Coorwa verifies the signature itself
  * first so the page can name the cause, and these cases pin the two mistakes worth separating: a
  * wallet signing with a different account than it reports, and a message that drifted from the one
  * the server issued. The message format itself is part of the upstream contract, so it is asserted
@@ -59,7 +59,7 @@ test("any drift in the signed message is caught", () => {
   for (const [what, message] of [
     ["a changed nonce", loginMessage(w.address, TS, "0000")],
     ["a changed timestamp", loginMessage(w.address, TS + 1, NONCE)],
-    ["a wallet prefix the wallet added itself", `Corwa: ${loginMessage(w.address, TS, NONCE)}`],
+    ["a wallet prefix the wallet added itself", `Coorwa: ${loginMessage(w.address, TS, NONCE)}`],
     [
       "fields in another order",
       `MOMO Login\ndomain: momoswap.fun\nwallet: ${w.address}\nnonce: ${NONCE}\nts: ${TS}`,

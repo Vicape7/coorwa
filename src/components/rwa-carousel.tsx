@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { RWA_ASSETS } from "@/lib/rwa";
 
 /**
- * The benchmarks Corwa actually carries, as tiles on a slowly turning ring.
+ * The benchmarks Coorwa actually carries, as tiles on a slowly turning ring.
  *
  * The projection is the one from the 21st.dev orbit slider: every tile sits on a circle that is
  * tilted almost flat and drawn through a pinhole camera, so a tile at the back is higher, smaller
@@ -239,7 +239,7 @@ export function RwaCarousel() {
   }, []);
 
   return (
-    <div className="rwa-orbit" aria-label="Benchmarks available on Corwa">
+    <div className="rwa-orbit" aria-label="Benchmarks available on Coorwa">
       <div ref={trackRef} className="rwa-orbit-track">
         {RWA_ASSETS.map((asset) => (
           <div

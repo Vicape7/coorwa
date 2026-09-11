@@ -1,12 +1,12 @@
 #![allow(unexpected_cfgs)]
-//! Corwa cashback vault.
+//! Coorwa cashback vault.
 //!
-//! Corwa earns real revenue in exactly one place: MomoSwap pays a named referrer 20% of its 1%
+//! Coorwa earns real revenue in exactly one place: MomoSwap pays a named referrer 20% of its 1%
 //! curve fee. Accrual against that revenue is computed off chain, because it depends on prices and
 //! on which wallet generated which fill. Custody of the money is not, because "trust our payout
 //! wallet" is the part a user cannot check.
 //!
-//! So the split is deliberate. Corwa decides *who is owed what* and publishes it as a merkle root.
+//! So the split is deliberate. Coorwa decides *who is owed what* and publishes it as a merkle root.
 //! The chain decides *whether the money moves*, and it only ever moves to a wallet named in a
 //! published root, signed for by that wallet itself.
 //!

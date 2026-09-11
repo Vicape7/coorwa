@@ -207,9 +207,9 @@ function displacementMap({ x, y }: { x: number; y: number }): string {
  * the page actually scrolls past.
  */
 const LENSES = [
-  { id: "corwa-lens-soft", band: { x: 0.12, y: 0.12 }, scale: 34 },
-  { id: "corwa-lens-deep", band: { x: 0.18, y: 0.18 }, scale: 52 },
-  { id: "corwa-lens-bar", band: { x: 0.04, y: 0.34 }, scale: 30 },
+  { id: "coorwa-lens-soft", band: { x: 0.12, y: 0.12 }, scale: 34 },
+  { id: "coorwa-lens-deep", band: { x: 0.18, y: 0.18 }, scale: 52 },
+  { id: "coorwa-lens-bar", band: { x: 0.04, y: 0.34 }, scale: 30 },
 ] as const;
 
 /**

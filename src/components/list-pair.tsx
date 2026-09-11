@@ -10,8 +10,8 @@
  *
  * Where the money goes is the point. The payment is a plain `fund` call on the cashback vault,
  * which the programme lets anyone make, so a listing fee lands in the same account the rebate is
- * paid out of and Corwa never holds it. What backs the pair is still the token's real COOK pool on
- * this page - a TOKEN/xStock pool cannot exist on Cookie Chain, and Corwa does not pretend one
+ * paid out of and Coorwa never holds it. What backs the pair is still the token's real COOK pool on
+ * this page - a TOKEN/xStock pool cannot exist on Cookie Chain, and Coorwa does not pretend one
  * does. The benchmark is what the price is quoted and charted in.
  */
 import { useCallback, useMemo, useState } from "react";
@@ -126,7 +126,7 @@ export function ListPair() {
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
         Every token is priced against one asset for nothing. Its creator can add more at{" "}
         {usd(quote?.pricePerPairUsd ?? 1)} a pair, paid in COOK straight into the cashback vault -
-        not to Corwa, which cannot touch it. Worth doing: once a pair exists, the creator earns a
+        not to Coorwa, which cannot touch it. Worth doing: once a pair exists, the creator earns a
         share of the fee on every trade against it. Liquidity is still this token&apos;s COOK pool;
         the benchmark is what the price is quoted and charted in.
       </p>
@@ -153,7 +153,7 @@ export function ListPair() {
           <Notice tone="note">
             {creator == null ? (
               <>
-                Corwa cannot tell who made this token, so there is nobody to prove a claim against.
+                Coorwa cannot tell who made this token, so there is nobody to prove a claim against.
                 Its mint names no metadata authority.
               </>
             ) : (

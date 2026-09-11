@@ -1,10 +1,10 @@
-# Corwa
+# Coorwa
 
 Trade Cookie Chain in shares.
 
-Corwa prices every token on [Cookie Chain](https://www.cookiechain.wtf) against real equities -
+Coorwa prices every token on [Cookie Chain](https://www.cookiechain.wtf) against real equities -
 NVDA, TSLA, SPY - so a trader can see the number no COOK-denominated terminal shows: **is this
-beating the stock?** When they want actual exposure rather than a unit of account, Corwa routes
+beating the stock?** When they want actual exposure rather than a unit of account, Coorwa routes
 them cross-chain into the real xStock on Solana.
 
 Three tools, one fee loop: a **terminal**, a **launchpad**, and an **LP maker**.
@@ -13,10 +13,10 @@ Three tools, one fee loop: a **terminal**, a **launchpad**, and an **LP maker**.
 
 ## The honest part
 
-**There is no TOKEN/NVDA pool anywhere, and Corwa does not pretend there is.**
+**There is no TOKEN/NVDA pool anywhere, and Coorwa does not pretend there is.**
 
 NVDAx, TSLAx and the rest are Backed Finance xStocks that live only on Solana, and Cookie Chain's
-Hyperlane bridge carries COOK alone. So a Corwa pair is a *denomination*, built by dividing two
+Hyperlane bridge carries COOK alone. So a Coorwa pair is a *denomination*, built by dividing two
 independently verifiable live prices:
 
 ```
@@ -39,7 +39,7 @@ Because reading the mint account says not to. Every xStock is Token-2022 and car
 | `scaledUiAmountConfig` | live multiplier | **The token rebases.** A wrapper locking raw units and minting fixed supply drifts off its backing |
 | `transferHook` | `programId: null` | Inactive today, but the authority exists - switching it on would break any pool holding it |
 
-So Corwa never escrows an xStock. It routes the user into one, and the share lands in their own
+So Coorwa never escrows an xStock. It routes the user into one, and the share lands in their own
 Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ---
@@ -48,7 +48,7 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### Terminal
 - **A list of pairs somebody chose, not a cross product.** Every token with real pool depth carries
-  one benchmark for free. A token launched through Corwa carries the one its creator picked at
+  one benchmark for free. A token launched through Coorwa carries the one its creator picked at
   launch and nothing else. Any other pair has to be bought, a dollar a time, on the pools page.
   Crossing 23 tokens with 16 assets produced 368 rows of arithmetic; this produces a market list.
 - **Candles built from executed fills**, not standing pool quotes - and the pair chart is the ratio
@@ -61,23 +61,23 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   measured slippage. A pair you can only enter is a price; a pair you can leave is a market.
 - **A stopped route can be resumed from the middle.** The bridge leg is asynchronous, so a failure
   after it dispatches is not a failed trade - it is a half-finished one, with your COOK on the other
-  chain. Corwa writes each leg to storage as it confirms and picks up where it stopped, after a
+  chain. Coorwa writes each leg to storage as it confirms and picks up where it stopped, after a
   rejected signature, a closed tab or a browser restart.
 
 ### Launchpad
 - Launch on a COOK bonding curve through [MomoSwap](https://momoswap.fun): sign a login message,
-  Corwa builds, your wallet signs.
+  Coorwa builds, your wallet signs.
 - **The creator picks the RWA the token is benchmarked against**, once, at launch. That is what
-  makes a Corwa launch a TOKEN/RWA instrument rather than one more row in a cross product. It is
+  makes a Coorwa launch a TOKEN/RWA instrument rather than one more row in a cross product. It is
   recorded only after the launch transaction has been read back from the chain and found to name
   that mint, so nobody can pin a token they did not create. Liquidity is still the COOK curve, as
   it is for everything on this chain; the benchmark is what the price is quoted and charted in.
 - **Buy and sell on any curve**, priced before you sign. The launchpad publishes no quote endpoint,
-  so Corwa reconstructs the curve from the reserves the pool itself reports. Replayed against fills
+  so Coorwa reconstructs the curve from the reserves the pool itself reports. Replayed against fills
   that already settled on chain it reproduces both legs to the raw unit.
 - **Creators see and claim their own fees.** MomoSwap pays the creator 0.35% of every trade on
   their curve; it accrues on the pool and is claimed with the creator's own key.
-- Every buy names Corwa as referrer, which is the one place a fee reaches Corwa at all, and the
+- Every buy names Coorwa as referrer, which is the one place a fee reaches Coorwa at all, and the
   fill is reported for cashback with the token's creator attached so both sides accrue.
 - The real fee split is read from the launchpad config at load time, not hardcoded, and the trade
   panel reads it per pool rather than assuming the current default.
@@ -86,13 +86,13 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - Every pool on the chain, with depth also expressed in shares.
 - **A token's creator can add benchmarks to it, for a dollar a pair.** Only the creator: they earn
   the creator share of every fee the pair goes on to generate, so letting a stranger pick it would
-  be handing away somebody else's position. Proved against the launch for tokens Corwa made, and
+  be handing away somebody else's position. Proved against the launch for tokens Coorwa made, and
   against the mint's metadata authority otherwise - which is worth nothing across the registry at
   large, where 4,449 of 5,088 tokens share one launchpad key, and works for every token that
   actually has liquidity here, where each resolves to its own wallet. That shared key is refused by
   name.
 - The fee is paid in COOK by calling `fund` on the cashback vault, which the program lets anyone
-  call, so it lands in the account the rebate is paid out of and Corwa never holds it. Nothing is
+  call, so it lands in the account the rebate is paid out of and Coorwa never holds it. Nothing is
   credited on the client's word: the payment is read back from the chain, and the amount that
   actually reached the vault decides how many pairs it bought. One transaction buys one batch.
 - What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
@@ -100,28 +100,28 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   charted in rather than what it trades against.
 - **Cookiebox DAMM v2 positions managed natively** - deposit, claim fees, withdraw - with
   instructions built against the fork's own program and IDL.
-- Positions are found by scanning the Token-2022 NFTs you hold, so Corwa keeps no records of its
+- Positions are found by scanning the Token-2022 NFTs you hold, so Coorwa keeps no records of its
   own.
 
 ### Cashback
-- Corwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
+- Coorwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
 - Split 50 / 30 / 20 between trader, creator and liquidity.
 - **Nothing is credited on the client's word.** A reported fill is re-read on chain before it is
   written: the transaction has to exist, to have succeeded, and to have been signed by the wallet
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
-  moved, and the referral fee is credited only when Corwa's referrer address is named on the
+  moved, and the referral fee is credited only when Coorwa's referrer address is named on the
   transaction itself. No referrer on chain, no revenue, so nothing to rebate.
-- **Terminal swaps carry Corwa's own 0.10% fee**, because neither Cookie Chain router will pay a
+- **Terminal swaps carry Coorwa's own 0.10% fee**, because neither Cookie Chain router will pay a
   referrer. Six plausible parameter names were tried on both aggregators and every quote came back
-  identical, so there is nothing to collect unless Corwa asks. It asks in the open: two extra
+  identical, so there is nothing to collect unless Coorwa asks. It asks in the open: two extra
   instructions on the aggregator's own transaction, shown on the panel before anything is signed,
-  paying the cashback vault rather than Corwa. **All of it is returned** - 62.5% to the trader,
-  37.5% to the token's creator - because a fee out of the trader's own pocket that Corwa kept any
+  paying the cashback vault rather than Coorwa. **All of it is returned** - 62.5% to the trader,
+  37.5% to the token's creator - because a fee out of the trader's own pocket that Coorwa kept any
   of would be a toll, not a rebate. A route too long to carry the two instructions inside the
   1,232-byte limit goes through unpriced rather than being refused.
-- Payouts go through Corwa's own program on Cookie Chain rather than a payout wallet. Who is owed
+- Payouts go through Coorwa's own program on Cookie Chain rather than a payout wallet. Who is owed
   what is worked out off chain, because it depends on prices and on which wallet generated which
   fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.
 - Balances accrue in USD and are converted to COOK once, at the rate recorded on the epoch that
@@ -131,14 +131,14 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ## Non-custodial by construction
 
-Corwa never holds a key, never co-signs, and never takes custody. Every transaction is built either
-by an upstream service or by Corwa's own instruction builders, then **simulated**, then signed by
+Coorwa never holds a key, never co-signs, and never takes custody. Every transaction is built either
+by an upstream service or by Coorwa's own instruction builders, then **simulated**, then signed by
 the user's wallet in their browser, then sent from there.
 
 ### The cashback vault
 
-Cashback is the one place Corwa touches money at all, so it is the one place that needed a program
-rather than a promise. `programs/corwa-vault` is an epoch merkle distributor: Corwa funds it,
+Cashback is the one place Coorwa touches money at all, so it is the one place that needed a program
+rather than a promise. `programs/corwa-vault` is an epoch merkle distributor: Coorwa funds it,
 publishes a root naming who is owed what, and each claimant proves their own line and takes it.
 
 What holds it up is what the program cannot do:
@@ -166,17 +166,17 @@ user, signed by the user.
 
 ### How an epoch is run
 
-The vault holds the money and knows nothing about who is owed it. Corwa knows exactly who is owed
+The vault holds the money and knows nothing about who is owed it. Coorwa knows exactly who is owed
 what and holds none of the money. The two halves meet at a merkle root and nowhere else.
 
 1. **Build.** `POST /api/cashback/draft` sums every confirmed fill up to a cutoff, applies the
    split, subtracts anything already committed to an earlier epoch, drops balances under the claim
    floor, converts USD to COOK at a single rate recorded on the epoch, and freezes the result as a
    draft. It is deterministic on the cutoff, so rebuilding lands on the same root.
-2. **Publish.** The authority signs `publish_epoch` in their own browser. Corwa then reads that
+2. **Publish.** The authority signs `publish_epoch` in their own browser. Coorwa then reads that
    transaction back off the chain, decodes the instruction out of it, and marks the epoch published
    only if the root it carries matches the draft byte for byte. No key ever reaches the server, and
-   Corwa cannot talk an epoch into existing.
+   Coorwa cannot talk an epoch into existing.
 3. **Claim.** The rewards page hands a wallet the proof for its own line. One transaction, signed
    by the claimant, and the program pays them. The proof is not a secret: it opens the leaf naming
    that wallet and no other.
@@ -267,7 +267,7 @@ src/
     launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
     listings.ts     Benchmarks bought for tokens launched elsewhere, priced and proved
     creators.ts     Who made a token, from the launch record or the mint's metadata authority
-    swap-fee.ts     Corwa's fee, appended to the aggregator's transaction or dropped if it will not fit
+    swap-fee.ts     Coorwa's fee, appended to the aggregator's transaction or dropped if it will not fit
     onchain.ts      Proving a reported transaction really happened before anything is written down
     cashback.ts     Fee accrual and the split
     epochs.ts       Epoch accounting: who is owed what, and what has already been committed
@@ -295,7 +295,7 @@ tests/            Unit tests, offline and instant
 2. **Recipient token account.** On delivery the warp program creates the recipient's COOK account
    and pays rent from its own `ata_payer` PDA. That PDA is funded once at deploy and never topped
    up; when it runs dry the relayer's own simulation fails, nothing lands on chain, nothing errors,
-   and the transfer simply hangs. Corwa does not depend on it - it creates the account itself first,
+   and the transfer simply hangs. Coorwa does not depend on it - it creates the account itself first,
    and only then dispatches.
 
 ---
@@ -336,6 +336,6 @@ Reference implementations for several on-chain flows come from
 
 ## Disclaimer
 
-Corwa is a non-custodial interface. It never holds your assets and never signs for you. Tokens on
+Coorwa is a non-custodial interface. It never holds your assets and never signs for you. Tokens on
 Cookie Chain are volatile and can lose all value; tokenised equities carry issuer and
 transfer-restriction risk of their own. Nothing here is investment advice.

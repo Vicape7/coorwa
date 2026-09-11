@@ -1,7 +1,7 @@
 /**
  * Cashback epochs: the off-chain half of `programs/corwa-vault`.
  *
- * The split the whole design rests on is that Corwa works out *who is owed what* and the chain
+ * The split the whole design rests on is that Coorwa works out *who is owed what* and the chain
  * decides *whether money moves*. This file is the first half. It reads confirmed fills, works out
  * every wallet's balance, freezes that list as a merkle tree, and hands out one proof at a time.
  * The vault itself never learns a single name.
@@ -15,7 +15,7 @@
  *      returns that reserve to the vault when the epoch is closed. It rolls into a later epoch
  *      rather than being lost.
  *   3. An epoch row is only marked published after its transaction has been read back from the
- *      chain and its root compared byte for byte. Corwa cannot talk an epoch into existing.
+ *      chain and its root compared byte for byte. Coorwa cannot talk an epoch into existing.
  *
  * Everything is recorded in USD and converted to COOK once, at publish time, at a rate written
  * onto the epoch row. A fee is earned in USD terms, and a balance carried as "0.4 COOK" would
@@ -102,7 +102,7 @@ export interface Accrual {
    *
    * Split at the source rather than here, because the two sources do not share one. A launchpad
    * referral is somebody else's money and holds a fifth back for liquidity; a swap fee comes out of
-   * the trader's own pocket, so all of it goes back and keeping any would make Corwa a toll.
+   * the trader's own pocket, so all of it goes back and keeping any would make Coorwa a toll.
    */
   traderUsd: Map<string, number>;
   /** The creator's share of the fees earned on tokens the wallet launched, after its split. */
@@ -400,7 +400,7 @@ function decodePublish(tx: VersionedTransactionResponse): { index: bigint; root:
     keys = message.getAccountKeys();
   } catch {
     // A message that loads its addresses from a lookup table cannot be read without them, and the
-    // publish transaction Corwa builds never uses one.
+    // publish transaction Coorwa builds never uses one.
     return null;
   }
 
@@ -424,7 +424,7 @@ function decodePublish(tx: VersionedTransactionResponse): { index: bigint; root:
  * Nothing here trusts the caller. The signature is read back from the chain, the publish
  * instruction is decoded out of it, and the root it carries is compared with the draft's. A
  * mismatch means the draft was rebuilt after the authority signed, and it is refused rather than
- * papered over: an epoch whose leaves Corwa cannot reproduce is an epoch nobody can claim.
+ * papered over: an epoch whose leaves Coorwa cannot reproduce is an epoch nobody can claim.
  */
 export async function publishFromChain(signature: string): Promise<EpochRow> {
   const conn = requireDb();
@@ -445,7 +445,7 @@ export async function publishFromChain(signature: string): Promise<EpochRow> {
   const draft = stored[0];
   if (!draft) {
     throw new EpochError(
-      `epoch ${published.index} is live on chain but Corwa holds no leaves for it, so no proof can be produced`,
+      `epoch ${published.index} is live on chain but Coorwa holds no leaves for it, so no proof can be produced`,
       409,
     );
   }

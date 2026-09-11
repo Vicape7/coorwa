@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { planCrossChainBuy } from "@/lib/crosschain";
 import { fetchRwaPrices, type RwaQuote } from "@/lib/jupiter";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 import { DEFAULT_SLIPPAGE_BPS } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       solanaQuote: undefined,
     });
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "could not plan route", hint: err?.hint },
       { status: 502 },

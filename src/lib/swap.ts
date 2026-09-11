@@ -1,12 +1,12 @@
 /**
  * Cookie Chain swap routing.
  *
- * Two independent aggregators cover the same liquidity, so Corwa quotes both and takes the better
- * fill. Both hand back an UNSIGNED transaction that the user's wallet signs locally - Corwa never
+ * Two independent aggregators cover the same liquidity, so Coorwa quotes both and takes the better
+ * fill. Both hand back an UNSIGNED transaction that the user's wallet signs locally - Coorwa never
  * touches a key, and never holds funds.
  */
 import { COOKIEBOX_AGG_API, CANDYSHOP_API, DEFAULT_SLIPPAGE_BPS } from "./config";
-import { fetchJson, CorwaError } from "./http";
+import { fetchJson, CoorwaError } from "./http";
 
 export type Aggregator = "cookiebox" | "candyshop";
 
@@ -96,7 +96,7 @@ async function quoteCookiebox(
       raw: { inputMint, outputMint, amount, slippageBps },
     };
   } catch (e) {
-    if (e instanceof CorwaError && (e.status === 404 || /no route/i.test(e.message))) return null;
+    if (e instanceof CoorwaError && (e.status === 404 || /no route/i.test(e.message))) return null;
     throw e;
   }
 }
@@ -177,7 +177,7 @@ async function quoteCandyshop(
       raw: multiRoute,
     };
   } catch (e) {
-    if (e instanceof CorwaError && (e.status === 404 || /no route/i.test(e.message))) return null;
+    if (e instanceof CoorwaError && (e.status === 404 || /no route/i.test(e.message))) return null;
     throw e;
   }
 }
@@ -213,7 +213,7 @@ export async function bestQuote(args: {
 }): Promise<{ best: SwapRoute; all: SwapRoute[] }> {
   const slippageBps = args.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
   if (args.inputMint === args.outputMint) {
-    throw new CorwaError("input and output mint must differ");
+    throw new CoorwaError("input and output mint must differ");
   }
 
   const settled = await Promise.allSettled([
@@ -230,7 +230,7 @@ export async function bestQuote(args: {
     const reasons = settled
       .filter((r): r is PromiseRejectedResult => r.status === "rejected")
       .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
-    throw new CorwaError(
+    throw new CoorwaError(
       "no route found on Cookie Chain",
       reasons[0] ?? "neither aggregator could price this pair - the pool may be too thin",
     );

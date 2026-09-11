@@ -1,12 +1,12 @@
 /**
- * Paid benchmarks: extra RWA pairs bought for a token that was not launched through Corwa.
+ * Paid benchmarks: extra RWA pairs bought for a token that was not launched through Coorwa.
  *
  * The terminal used to be every token crossed with every asset, which is sixteen rows per token and
  * mostly noise. A token now carries one benchmark for nothing, and anything past that is bought at
  * `PAIR_LISTING_USD` a pair. The fee is the filter: a dollar is nothing to somebody who means it,
  * and enough that nobody lists sixteen dead pairs for the sake of it.
  *
- * The money never touches Corwa. It is paid by calling `fund` on the cashback vault, which the
+ * The money never touches Coorwa. It is paid by calling `fund` on the cashback vault, which the
  * program lets anyone call, so it lands in the same account the rebate is paid out of. That is what
  * makes this a listing fee rather than a toll: it goes back to the people trading.
  *

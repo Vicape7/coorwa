@@ -1,5 +1,5 @@
 /**
- * The RWA side of Corwa: Backed Finance xStocks on Solana mainnet.
+ * The RWA side of Coorwa: Backed Finance xStocks on Solana mainnet.
  *
  * Every mint below was read from its own account on mainnet, not from a token list. They are all
  * Token-2022 with 8 decimals and share a set of extensions that matter to us:
@@ -7,7 +7,7 @@
  *   - `scaledUiAmountConfig` - these tokens REBASE. The real balance is raw x multiplier, and the
  *     multiplier changes on a schedule (dividends, splits). Never treat raw units as a price basis.
  *   - `permanentDelegate` / `pausableConfig` / `freezeAuthority` - Backed can claw back, pause or
- *     freeze. This is precisely why Corwa never escrows an xStock: we route through Jupiter into
+ *     freeze. This is precisely why Coorwa never escrows an xStock: we route through Jupiter into
  *     the user's own wallet instead of wrapping a bridged representation.
  *   - `transferHook` - authority set, program currently null. It can be switched on at any time,
  *     which would break any pool holding these as a quote asset.
@@ -19,7 +19,7 @@ export const RWA_DECIMALS = 8;
 export interface RwaAsset {
   /** xStock ticker, e.g. "NVDAx". */
   symbol: string;
-  /** The underlying equity ticker Corwa denominates in, e.g. "NVDA". */
+  /** The underlying equity ticker Coorwa denominates in, e.g. "NVDA". */
   ticker: string;
   name: string;
   mint: string;

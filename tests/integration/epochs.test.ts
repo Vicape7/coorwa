@@ -43,7 +43,7 @@ import { claimInstructions, fetchVault, fundIx, initializeIx, publishEpochIx } f
 import { fetchCookPriceUsd } from "../../src/lib/cookiescan";
 import { CASHBACK_SPLIT, COOK_DECIMALS, VAULT_MINT } from "../../src/lib/config";
 
-const RPC = process.env.CORWA_TEST_RPC ?? "http://127.0.0.1:8899";
+const RPC = process.env.COORWA_TEST_RPC ?? "http://127.0.0.1:8899";
 const skip = process.env.DATABASE_URL?.trim()
   ? false
   : "needs DATABASE_URL - npm run program:test starts one";

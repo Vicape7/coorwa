@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildCookieboxTx, buildCandyshopTx } from "@/lib/swap";
 import { attachSwapFee, cookLeg } from "@/lib/swap-fee";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +22,11 @@ const Body = z.object({
 /**
  * Build an unsigned swap transaction.
  *
- * Both aggregators re-quote server-side and return a transaction the user's wallet signs. Corwa
+ * Both aggregators re-quote server-side and return a transaction the user's wallet signs. Coorwa
  * never sees a private key and never co-signs - this route is a proxy that keeps the upstream
  * call server-side, where rate limits and CORS are not the browser's problem.
  *
- * Corwa's own fee is appended here rather than in the browser, so it cannot be dropped by editing
+ * Coorwa's own fee is appended here rather than in the browser, so it cannot be dropped by editing
  * the client. It is a visible instruction paying the cashback vault, and the amount charged is
  * returned alongside the transaction so the panel can show it before anybody signs.
  */
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       ...attachSwapFee(tx.transactionBase64, b.owner, leg),
     });
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "build failed", hint: err?.hint },
       { status: 502 },

@@ -52,7 +52,7 @@ import {
   vaultPda,
 } from "../../src/lib/vault";
 
-const RPC = process.env.CORWA_TEST_RPC ?? "http://127.0.0.1:8899";
+const RPC = process.env.COORWA_TEST_RPC ?? "http://127.0.0.1:8899";
 const DECIMALS = 9;
 const DAY = 24 * 60 * 60;
 

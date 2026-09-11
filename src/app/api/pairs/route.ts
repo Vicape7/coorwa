@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildUniverse } from "@/lib/pairs";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
       headers: { "cache-control": "public, s-maxage=15, stale-while-revalidate=60" },
     });
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "failed to build universe", hint: err?.hint },
       { status: 502 },

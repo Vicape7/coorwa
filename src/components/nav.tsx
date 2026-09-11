@@ -65,9 +65,9 @@ function Brand() {
   return (
     // The mark alone, no wordmark beside it. The full logo now carries the name in the hero, and
     // repeating it 40px above that read as two logos rather than one brand.
-    <Link href="/" className="flex shrink-0 items-center" aria-label="Corwa home">
+    <Link href="/" className="flex shrink-0 items-center" aria-label="Coorwa home">
       <Image
-        src="/corwa.png"
+        src="/coorwa.png"
         alt=""
         width={512}
         height={512}

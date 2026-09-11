@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 /*
- * Corwa design system.
+ * Coorwa design system.
  *
  * It comes from two sources, kept separate on purpose.
  *
  * COLOUR comes from the logo, measured out of the file instead of picked by eye. The cookie C in
- * public/corwa.png is 12% #f0b860 by pixel count, runs #e8a850 to #f8d080 through its highlights,
+ * public/coorwa.png is 12% #f0b860 by pixel count, runs #e8a850 to #f8d080 through its highlights,
  * and has chocolate chips at #784018. So the product uses one hue, amber at 37°, with cocoa as its
  * only dark. There is no navy and no second accent.
  *
@@ -330,11 +330,11 @@ body {
 
 @supports (backdrop-filter: url("#lens")) {
   .glass-pane::before {
-    backdrop-filter: url(#corwa-lens-soft) saturate(170%) blur(var(--pane-blur));
+    backdrop-filter: url(#coorwa-lens-soft) saturate(170%) blur(var(--pane-blur));
   }
 
   .glass-pane[data-refract="deep"]::before {
-    backdrop-filter: url(#corwa-lens-deep) saturate(170%) blur(var(--pane-blur));
+    backdrop-filter: url(#coorwa-lens-deep) saturate(170%) blur(var(--pane-blur));
   }
 
   /*
@@ -344,7 +344,7 @@ body {
    * for. Its lens is the short-axis one, and its blur is lighter still.
    */
   .glass-bar {
-    backdrop-filter: url(#corwa-lens-bar) saturate(170%) blur(var(--bar-blur));
+    backdrop-filter: url(#coorwa-lens-bar) saturate(170%) blur(var(--bar-blur));
   }
 }
 
@@ -684,7 +684,7 @@ body {
 
 /* --- Motion ------------------------------------------------------------------------------------ */
 
-@keyframes corwa-pulse {
+@keyframes coorwa-pulse {
   0%,
   100% {
     opacity: 1;
@@ -694,10 +694,10 @@ body {
   }
 }
 .live-dot {
-  animation: corwa-pulse 2s var(--ease-out) infinite;
+  animation: coorwa-pulse 2s var(--ease-out) infinite;
 }
 
-@keyframes corwa-shimmer {
+@keyframes coorwa-shimmer {
   0% {
     background-position: -320px 0;
   }
@@ -713,11 +713,11 @@ body {
     var(--surface-raised)
   );
   background-size: 320px 100%;
-  animation: corwa-shimmer 1.5s linear infinite;
+  animation: coorwa-shimmer 1.5s linear infinite;
   border-radius: 8px;
 }
 
-@keyframes corwa-rise {
+@keyframes coorwa-rise {
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -728,7 +728,7 @@ body {
   }
 }
 .rise {
-  animation: corwa-rise 0.55s var(--ease-out) both;
+  animation: coorwa-rise 0.55s var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

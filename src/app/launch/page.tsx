@@ -2,7 +2,7 @@ import { SiteShell } from "@/components/site-shell";
 import { LaunchView } from "@/components/launch-view";
 
 export const metadata = {
-  title: "Launch · Corwa",
+  title: "Launch · Coorwa",
   description: "Launch a token on a COOK bonding curve and keep your share of every trade fee.",
 };
 

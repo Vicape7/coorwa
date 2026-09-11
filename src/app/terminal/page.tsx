@@ -1,7 +1,7 @@
 import { PairList } from "@/components/pair-list";
 
 export const metadata = {
-  title: "Terminal · Corwa",
+  title: "Terminal · Coorwa",
   description: "Every Cookie Chain token priced in real-world shares.",
 };
 

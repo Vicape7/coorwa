@@ -3,7 +3,7 @@ import { z } from "zod";
 import { buildCreatePoolTx, uploadImage, fetchConfig } from "@/lib/launchpad";
 import { COOK_DECIMALS } from "@/lib/config";
 import { uiToRaw } from "@/lib/format";
-import { CorwaError } from "@/lib/http";
+import { CoorwaError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(built);
   } catch (e) {
-    const err = e instanceof CorwaError ? e : null;
+    const err = e instanceof CoorwaError ? e : null;
     const unauthorized = /401|session/i.test(e instanceof Error ? e.message : "");
     return NextResponse.json(
       {

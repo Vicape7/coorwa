@@ -37,7 +37,7 @@ export default function Home() {
       <section className="mx-auto w-full max-w-[1160px] px-5 pb-20 pt-10 text-center sm:pt-14">
         <Image
           src="/coorwa-logo-word.png"
-          alt="Corwa"
+          alt="Coorwa"
           width={2000}
           height={666}
           priority
@@ -105,7 +105,7 @@ export default function Home() {
             There is no TOKEN/NVDA pool.
           </h2>
           <p className="mt-5 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
-            And Corwa will not pretend there is. xStocks live only on Solana, and Cookie
+            And Coorwa will not pretend there is. xStocks live only on Solana, and Cookie
             Chain&apos;s bridge carries COOK alone. So a pair here is a{" "}
             <span className="text-primary">denomination</span> - two live market prices divided:
           </p>
@@ -117,8 +117,8 @@ export default function Home() {
           <p className="mt-6 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
             The numerator is real reserves in a Cookie Chain pool; the denominator is real Solana
             liquidity. Neither is modelled, so the ratio is exact - a change of units, not a
-            synthetic instrument. Want the actual share instead? Corwa routes you cross-chain and it
-            lands in <span className="text-primary">your own Solana wallet</span>.
+            synthetic instrument. Want the actual share instead? Coorwa routes you cross-chain and
+            it lands in <span className="text-primary">your own Solana wallet</span>.
           </p>
         </GlassEffect>
       </Section>
@@ -132,9 +132,9 @@ export default function Home() {
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
           <span className="text-primary">Where the money is from.</span> MomoSwap pays a referrer
           20% of its 1% curve fee, out of the same fee either way - with nobody named, the programme
-          keeps that slice itself. So Corwa naming itself costs a trader nothing. Swaps are a
+          keeps that slice itself. So Coorwa naming itself costs a trader nothing. Swaps are a
           different story: neither Cookie Chain router exposes a platform fee yet, so those fills
-          earn Corwa nothing and are recorded at zero rather than credited with a rebate no fee is
+          earn Coorwa nothing and are recorded at zero rather than credited with a rebate no fee is
           backing.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">
             See your cashback
@@ -145,7 +145,7 @@ export default function Home() {
 
       <footer className="mx-auto mt-auto w-full max-w-[1160px] px-5 pb-12 pt-6">
         <div className="flex flex-wrap items-center gap-x-7 gap-y-3 text-[14px] text-muted">
-          <span className="title text-primary">corwa</span>
+          <span className="title text-primary">coorwa</span>
           <span>Built on Cookie Chain.</span>
           <div className="ml-auto flex flex-wrap gap-6">
             <FooterLink href="https://www.cookiechain.wtf">Cookie Chain</FooterLink>
@@ -159,7 +159,7 @@ export default function Home() {
           </div>
         </div>
         <p className="mt-5 max-w-[80ch] text-[12px] leading-[1.7] text-subtle">
-          Corwa is a non-custodial interface. It never holds your assets and never signs for you.
+          Coorwa is a non-custodial interface. It never holds your assets and never signs for you.
           Tokens on Cookie Chain are volatile and can lose all value; tokenised equities carry
           issuer and transfer-restriction risk of their own. Nothing here is investment advice.
         </p>

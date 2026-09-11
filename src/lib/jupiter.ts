@@ -1,7 +1,7 @@
 /**
- * Jupiter client - the Solana-mainnet half of Corwa.
+ * Jupiter client - the Solana-mainnet half of Coorwa.
  *
- * Two jobs: price the RWA assets that Corwa denominates pairs in, and quote/build the final leg of
+ * Two jobs: price the RWA assets that Coorwa denominates pairs in, and quote/build the final leg of
  * a cross-chain route (bridged COOK -> xStock). The keyless tier allows 0.5 req/s, so every call
  * here is cached and callers must go through our API routes rather than hitting it from a browser.
  */

@@ -6,7 +6,7 @@ import { fetchCookPriceUsd } from "@/lib/cookiescan";
 import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
 import { vaultFundsAccount } from "@/lib/swap-fee";
 import { tokenCreator } from "@/lib/creators";
-import { COOK_DECIMALS, COOK_MINT, CORWA_REFERRER } from "@/lib/config";
+import { COOK_DECIMALS, COOK_MINT, COORWA_REFERRER } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
       // MomoSwap pays the referral share only to an address named on the transaction, and it names
       // it as an account. Not there, no revenue, so nothing to rebate.
       feeUsd =
-        CORWA_REFERRER && proof.accounts.has(CORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
+        COORWA_REFERRER && proof.accounts.has(COORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
     } else {
       // A swap earns only what the transaction actually paid the vault. A route too long to carry
       // the fee instruction goes through without one, and that fill is worth exactly zero here.

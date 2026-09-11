@@ -1,5 +1,5 @@
 /**
- * Chart data for a Corwa pair.
+ * Chart data for a Coorwa pair.
  *
  * A TOKEN/NVDA chart is the ratio of two independently sourced USD series:
  *

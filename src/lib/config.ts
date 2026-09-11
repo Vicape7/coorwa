@@ -1,5 +1,5 @@
 /**
- * Corwa - single source of truth for chain, program and API constants.
+ * Coorwa - single source of truth for chain, program and API constants.
  *
  * Everything here was verified against the live network rather than copied from docs:
  * the RPC answers `getVersion` as solana-core 4.1.2, the aggregator and registry endpoints
@@ -50,7 +50,7 @@ export const SOLANA_RPC_URL =
  *
  * The fallback is not merely throttled. api.mainnet-beta.solana.com answers a server happily but
  * returns 403 to any request carrying a browser origin, so the Solana legs of a cross-chain route
- * cannot run from the user's browser at all. Reads that Corwa can do on their behalf go through
+ * cannot run from the user's browser at all. Reads that Coorwa can do on their behalf go through
  * its own API routes; signing and sending cannot, so the panel says so up front rather than
  * failing at the first signature.
  */
@@ -98,14 +98,14 @@ export const BRIDGE = {
 export const SPL_NOOP_PROGRAM_ID = "noopb9bkMVfRPU8AsbpTUg8AQkHtKwMYZiFUjNRtMmV";
 export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 
-// --- Corwa economics ---------------------------------------------------------------------------
+// --- Coorwa economics ---------------------------------------------------------------------------
 
 /**
  * MomoSwap pays the referrer 20% of its 1% curve trade fee, out of the same fee either way - with
- * no referrer the program folds that share into its treasury instead. So naming Corwa costs the
+ * no referrer the program folds that share into its treasury instead. So naming Coorwa costs the
  * trader nothing and is the honest source of launchpad-side cashback.
  */
-export const CORWA_REFERRER = process.env.CORWA_REFERRER?.trim() || "";
+export const COORWA_REFERRER = process.env.COORWA_REFERRER?.trim() || "";
 export const MOMOSWAP_TRADE_FEE_BPS = 100;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
@@ -117,7 +117,7 @@ export const MOMOSWAP_REFERRAL_SHARE = 0.2;
  * the only thing keeping the list honest: a dollar is nothing to someone who means it and enough to
  * stop a bot listing sixteen pairs on a dead token.
  *
- * The money is not Corwa's. It goes into the same vault the cashback is paid out of, through the
+ * The money is not Coorwa's. It goes into the same vault the cashback is paid out of, through the
  * same permissionless `fund` instruction anyone can call, so a listing fee ends up back with the
  * people trading rather than with whoever runs this.
  */
@@ -131,25 +131,25 @@ export const CASHBACK_SPLIT = {
 } as const;
 
 /**
- * Corwa's own fee on a terminal swap, in basis points of the COOK leg.
+ * Coorwa's own fee on a terminal swap, in basis points of the COOK leg.
  *
  * Neither Cookie Chain aggregator will pay a referrer - six plausible parameter names were tried on
- * both and every quote came back identical - so a swap routed through Corwa earned nothing at all
+ * both and every quote came back identical - so a swap routed through Coorwa earned nothing at all
  * and every fill was recorded at zero. This is the only way the terminal can fund anything.
  *
  * It is charged honestly rather than hidden: the instruction is appended to the aggregator's own
- * transaction, in plain sight, paying into the cashback vault rather than to Corwa. Say plainly on
- * the panel that it is charged, because a trader can always route around Corwa and should be able
+ * transaction, in plain sight, paying into the cashback vault rather than to Coorwa. Say plainly on
+ * the panel that it is charged, because a trader can always route around Coorwa and should be able
  * to see what routing through it costs.
  */
-export const CORWA_SWAP_FEE_BPS = 10;
+export const COORWA_SWAP_FEE_BPS = 10;
 
 /**
  * Where a swap fee goes back to. Must sum to 1: all of it is returned, none of it kept.
  *
  * The launchpad split holds a fifth back for liquidity because that revenue is a referral share
  * somebody else pays. This one comes out of the trader's own pocket, so keeping any of it would
- * make Corwa a toll rather than a rebate. The 50:30 weighting between trader and creator is the
+ * make Coorwa a toll rather than a rebate. The 50:30 weighting between trader and creator is the
  * same as the launchpad's, with the liquidity slice removed and the rest scaled back up.
  */
 export const SWAP_CASHBACK_SPLIT = {
@@ -162,7 +162,7 @@ export const DEFAULT_SLIPPAGE_BPS = 500;
 // --- Cashback vault ----------------------------------------------------------------------------
 
 /**
- * Corwa's own program on Cookie Chain, in `programs/corwa-vault`. It holds the cashback float and
+ * Coorwa's own program on Cookie Chain, in `programs/corwa-vault`. It holds the cashback float and
  * pays it out against published merkle roots, so accrual can be worked out off chain while custody
  * stays on it. See the module docs in `src/lib/vault.ts` and the program itself.
  *

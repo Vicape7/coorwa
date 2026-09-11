@@ -52,9 +52,9 @@ export function LaunchView() {
           Launch a token on a COOK curve.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Corwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades
+          Coorwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades
           on the curve until it hits the graduation target, then moves to a real DEX pool - where it
-          becomes a Corwa pair you can price against any stock.
+          becomes a Coorwa pair you can price against any stock.
         </p>
       </div>
 
@@ -386,7 +386,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
 
         <p className="text-[12px] leading-relaxed text-subtle">
           Two signatures: one message to prove the wallet consented, one transaction to create the
-          pool. Corwa never holds your key and never co-signs.
+          pool. Coorwa never holds your key and never co-signs.
         </p>
       </div>
     </div>
@@ -430,7 +430,7 @@ function ImagePicker({ preview, onFile }: { preview: string | null; onFile: (f: 
 function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdown }) {
   const rows: [string, string, string][] = [
     ["Creator", `${fees.creatorPct.toFixed(2)}%`, "Yours, claimable at any time"],
-    ["Corwa cashback", `${fees.referralPct.toFixed(2)}%`, "Referral share, rebated to users"],
+    ["Coorwa cashback", `${fees.referralPct.toFixed(2)}%`, "Referral share, rebated to users"],
     ["Treasury", `${fees.treasuryPct.toFixed(2)}%`, "MomoSwap protocol"],
     ["Buyback", `${fees.buybackPct.toFixed(2)}%`, "COOK bought back and burned"],
   ];
@@ -441,7 +441,7 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         Percentages are of the trade, not of the fee. The referral slice is paid out of the same fee
         whether or not anyone is named - with no referrer, MomoSwap keeps it - so routing through
-        Corwa costs a trader nothing and funds the rebate.
+        Coorwa costs a trader nothing and funds the rebate.
       </p>
 
       <dl className="mt-5 divide-y divide-[color:var(--divider)]">

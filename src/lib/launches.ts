@@ -1,5 +1,5 @@
 /**
- * Tokens launched through Corwa, and the RWA each creator benchmarked theirs against.
+ * Tokens launched through Coorwa, and the RWA each creator benchmarked theirs against.
  *
  * A token launched here is meant to be a TOKEN/RWA instrument: the creator picks one real-world
  * asset at launch and that is the token's pair from then on. Tokens that already existed on Cookie
@@ -58,7 +58,7 @@ export async function recordLaunch(row: {
  * Every pinned mint, as mint -> ticker.
  *
  * Read on every universe build, so it is cached briefly. The map is small by construction: it only
- * ever holds tokens launched through Corwa.
+ * ever holds tokens launched through Coorwa.
  */
 export async function benchmarks(): Promise<Map<string, string>> {
   if (!dbEnabled || !db) return new Map();

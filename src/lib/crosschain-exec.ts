@@ -33,7 +33,7 @@ import { COOK_DECIMALS, COOK_MINT, COOK_SOLANA_DECIMALS, COOK_SOLANA_MINT } from
 import { buildBridgeTransfer, messageIdFromLogs } from "./bridge";
 import { decodeTx, simulate, explainError, type SignerFn } from "./tx";
 import { amount as fmtAmount, rawToUi, shortAddr, uiToRaw } from "./format";
-import { CorwaError } from "./http";
+import { CoorwaError } from "./http";
 import type { Journey, JourneyStep } from "./journey";
 
 /**
@@ -153,7 +153,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
   const parsed = await fetchParsed(ctx.cookieConn, signature);
   const gained = cookieNativeDelta(parsed, ctx.owner);
   if (gained === null) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "The swap landed, but its result could not be read back.",
       "Nothing is lost and nothing was sent twice. Your COOK is in your Cookie Chain wallet. " +
         "Resume the route and it will read the amount again without re-signing this leg.",
@@ -162,7 +162,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
 
   const toBridge = round(gained - COOKIE_GAS_RESERVE, COOK_DECIMALS);
   if (toBridge <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "The swap produced no spendable COOK to bridge.",
       `About ${COOKIE_GAS_RESERVE} COOK has to stay behind to pay the bridge transaction's own fee.`,
     );
@@ -182,7 +182,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
 const sellRwaForCook: LegRunner = async (ctl, ctx, i) => {
   const j = ctl.get();
   if (!j.input.amountRaw) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "This sale has no raw amount recorded.",
       "Nothing has been signed. Discard the route and enter the size again - a rebasing token can " +
         "only be spent in the raw units its own account reports.",
@@ -223,7 +223,7 @@ const sellRwaForCook: LegRunner = async (ctl, ctx, i) => {
   const measured = delta && delta.ui > 0 ? delta.ui : quoted;
 
   if (!measured || measured <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "The sale landed, but the COOK it produced could not be read back.",
       "Nothing is lost and nothing was sent twice. Your COOK is in your Solana wallet. Resume the " +
         "route and it will read the amount again without re-signing this leg.",
@@ -251,7 +251,7 @@ const bridgeLeg: LegRunner = async (ctl, ctx, i) => {
 
   const toBridge = ctl.get().bridgeAmount;
   if (!toBridge || toBridge <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "There is no measured amount to bridge.",
       "The leg before this one has to confirm first. Nothing has been signed.",
     );
@@ -386,7 +386,7 @@ const deliverThenBuyToken: LegRunner = async (ctl, ctx, i) => {
   // COOK is the gas token on this side, so the swap cannot spend the whole delivery.
   const spendable = round(delivered - COOKIE_GAS_RESERVE, COOK_DECIMALS);
   if (spendable <= 0) {
-    throw new CorwaError(
+    throw new CoorwaError(
       `Only ${fmtAmount(delivered)} COOK arrived, which is not enough to pay for the final swap.`,
       `About ${COOKIE_GAS_RESERVE} COOK has to stay behind for the transaction fee. The COOK is in ` +
         "your Cookie Chain wallet and can be spent by hand.",
@@ -488,7 +488,7 @@ async function awaitDelivery(ctl: Ctl, ctx: RunContext, i: number, buy: boolean)
     await sleep(DELIVERY_POLL_MS);
   }
 
-  throw new CorwaError(
+  throw new CoorwaError(
     `The bridge has not delivered on ${destLabel} within 15 minutes.`,
     "Your COOK is not lost. It is locked in the warp route and will be released when a relayer " +
       "picks the message up. Come back to this panel and press Resume - it remembers where the " +
@@ -549,7 +549,7 @@ async function confirm(conn: Connection, signature: string): Promise<void> {
     "confirmed",
   );
   if (res.value.err) {
-    throw new CorwaError(`The transaction failed on chain: ${JSON.stringify(res.value.err)}`);
+    throw new CoorwaError(`The transaction failed on chain: ${JSON.stringify(res.value.err)}`);
   }
 }
 
@@ -600,7 +600,7 @@ async function landedSignature(
   if (status === "landed") return signature;
   if (status === "missing") return null;
 
-  throw new CorwaError(
+  throw new CoorwaError(
     "This leg was already signed once and its outcome cannot be read back yet.",
     "Nothing has been sent a second time. The transaction is either still in flight or the RPC is " +
       "not answering. Wait a few seconds and press Resume again - re-sending blind could execute " +
@@ -687,13 +687,13 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const json = await res.json();
-  if (json?.error) throw new CorwaError(json.error, json.hint);
+  if (json?.error) throw new CoorwaError(json.error, json.hint);
   return json as T;
 }
 
 /** The message the user reads after a failure: the reason, plus what to do about it. */
 function describe(e: unknown): string {
-  const hint = e instanceof CorwaError ? e.hint : undefined;
+  const hint = e instanceof CoorwaError ? e.hint : undefined;
   const message = explainError(e);
   return hint ? `${message} ${hint}` : message;
 }

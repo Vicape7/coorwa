@@ -4,7 +4,7 @@
  * LP maker.
  *
  * Reads every pool on Cookie Chain and manages Cookiebox DAMM v2 positions natively - add, claim
- * fees, withdraw - with instructions built against the fork's own program. The wallet signs; Corwa
+ * fees, withdraw - with instructions built against the fork's own program. The wallet signs; Coorwa
  * only builds.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -62,7 +62,7 @@ export function PoolsView() {
           Provide the liquidity the pairs run on.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Every share-denominated pair in the terminal is backed by a real Cookie Chain pool. Corwa
+          Every share-denominated pair in the terminal is backed by a real Cookie Chain pool. Coorwa
           manages Cookiebox DAMM v2 positions directly - deposit, claim fees, withdraw - and shows
           your position sized in shares, not just dollars.
         </p>
@@ -142,7 +142,7 @@ export function PoolsView() {
                     ) : (
                       <span
                         className="label text-[12px]"
-                        title="Corwa builds positions against Cookiebox DAMM v2. Other venues are shown for context but managed in their own app."
+                        title="Coorwa builds positions against Cookiebox DAMM v2. Other venues are shown for context but managed in their own app."
                       >
                         View only
                       </span>
@@ -157,7 +157,7 @@ export function PoolsView() {
 
       {data && (
         <p className="mt-4 text-[12px] text-subtle">
-          {data.count} pools · {data.manageableCount} manageable from Corwa (Cookiebox DAMM v2).
+          {data.count} pools · {data.manageableCount} manageable from Coorwa (Cookiebox DAMM v2).
           Other venues are read-only here and managed in their own app.
         </p>
       )}
@@ -345,8 +345,8 @@ function MyPositions() {
 
       {positions !== null && positions.length === 0 && (
         <p className="mt-4 text-[14px] leading-relaxed text-muted">
-          No DAMM v2 positions in this wallet. Positions are held as Token-2022 NFTs, so Corwa finds
-          them by scanning what you own rather than by keeping its own records.
+          No DAMM v2 positions in this wallet. Positions are held as Token-2022 NFTs, so Coorwa
+          finds them by scanning what you own rather than by keeping its own records.
         </p>
       )}
 
@@ -539,7 +539,7 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
 
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
               A deposit takes both sides at the pool&apos;s current ratio; the other side is derived
-              from what you enter here. The position is minted as a Token-2022 NFT you hold - Corwa
+              from what you enter here. The position is minted as a Token-2022 NFT you hold - Coorwa
               keeps no record of it.
             </p>
           </>

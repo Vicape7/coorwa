@@ -2,8 +2,8 @@ import { SiteShell } from "@/components/site-shell";
 import { StatusView } from "@/components/status-view";
 
 export const metadata = {
-  title: "Status · Corwa",
-  description: "The chain, services and programs Corwa depends on, and whether they are up.",
+  title: "Status · Coorwa",
+  description: "The chain, services and programs Coorwa depends on, and whether they are up.",
 };
 
 export default function StatusPage() {

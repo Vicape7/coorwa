@@ -11,10 +11,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Fills Corwa routed.
+ * Fills Coorwa routed.
  *
  * A row is only ever written after a transaction has confirmed on-chain, and the signature is
- * unique - so this table is an index of things that provably happened, not a ledger Corwa controls.
+ * unique - so this table is an index of things that provably happened, not a ledger Coorwa controls.
  * Anyone can verify a row against the explorer.
  */
 export const fills = pgTable(
@@ -32,7 +32,7 @@ export const fills = pgTable(
     side: text("side").notNull(),
     /** Notional of the fill in USD, as priced at the time. */
     valueUsd: doublePrecision("value_usd").notNull(),
-    /** The slice of fee Corwa actually earned on this fill, in USD. */
+    /** The slice of fee Coorwa actually earned on this fill, in USD. */
     feeUsd: doublePrecision("fee_usd").notNull(),
     /** Who launched the token, when known - this is what makes creator cashback payable. */
     creator: text("creator"),
@@ -48,9 +48,9 @@ export const fills = pgTable(
 );
 
 /**
- * A token launched through Corwa, and the RWA its creator benchmarked it against.
+ * A token launched through Coorwa, and the RWA its creator benchmarked it against.
  *
- * This is what makes a Corwa-launched token a TOKEN/RWA instrument rather than one more row in a
+ * This is what makes a Coorwa-launched token a TOKEN/RWA instrument rather than one more row in a
  * cross product. Without it every token on the chain is quotable against all sixteen xStocks, which
  * is right for tokens that already existed and had nobody to choose, and wrong for a token launched
  * here on purpose. The choice is made once, at launch, and never edited: a benchmark that moved
@@ -86,7 +86,7 @@ export const launches = pgTable(
  *
  * The terminal used to cross every token with every asset, which made most of it noise. Now a token
  * carries one benchmark for free and anything beyond it is bought, one dollar's worth of COOK per
- * pair, paid into the cashback vault rather than to Corwa.
+ * pair, paid into the cashback vault rather than to Coorwa.
  *
  * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
  * only written once that transaction has been read back from the chain: it has to have funded the

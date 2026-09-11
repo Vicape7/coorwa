@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: PageProps<"/terminal/[slug]">) {
   const { slug } = await params;
   const pair = await findPair(slug).catch(() => null);
-  if (!pair) return { title: "Pair not found · Corwa" };
+  if (!pair) return { title: "Pair not found · Coorwa" };
   return {
-    title: `${pair.base.symbol}/${pair.quote.ticker} · Corwa`,
+    title: `${pair.base.symbol}/${pair.quote.ticker} · Coorwa`,
     description: `${pair.base.name} priced in ${pair.quote.name} shares, on Cookie Chain.`,
   };
 }

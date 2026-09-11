@@ -1,7 +1,7 @@
 /**
  * The Hyperlane COOK warp route, Cookie Chain <-> Solana mainnet.
  *
- * This is leg 2 of a Corwa cross-chain trade. The Cookie side is a `native` warp (it locks native
+ * This is leg 2 of a Coorwa cross-chain trade. The Cookie side is a `native` warp (it locks native
  * COOK in a PDA); the Solana side is a `collateral` warp (it locks SPL COOK in an escrow token
  * account). Neither side mints - a transfer is RELEASED from the destination's collateral - which
  * drives the two preflight checks below.
@@ -20,7 +20,7 @@
  *     if it does not exist the warp program creates it from its own `ata_payer` PDA. That PDA is
  *     funded once at deploy time and never topped up, so when it runs dry the relayer's own
  *     simulation fails, nothing lands on chain, nothing errors, and the transfer simply hangs.
- *     Corwa does not depend on it: if the recipient has no COOK account, we create it ourselves on
+ *     Coorwa does not depend on it: if the recipient has no COOK account, we create it ourselves on
  *     Solana first, and only dispatch on Cookie Chain once that has confirmed.
  */
 import {
@@ -43,7 +43,7 @@ import {
   SPL_NOOP_PROGRAM_ID,
 } from "./config";
 import { rawToUi } from "./format";
-import { CorwaError } from "./http";
+import { CoorwaError } from "./http";
 
 export type BridgeDirection = "cookie-to-solana" | "solana-to-cookie";
 
@@ -59,7 +59,7 @@ export function encodeTransferRemoteIxData(
   amount: bigint,
 ): Buffer {
   if (recipient32.length !== 32) {
-    throw new CorwaError(`recipient must be 32 bytes, got ${recipient32.length}`);
+    throw new CoorwaError(`recipient must be 32 bytes, got ${recipient32.length}`);
   }
   const buf = Buffer.alloc(8 + 1 + 4 + 32 + 32);
   DISCRIMINATOR.copy(buf, 0);
@@ -71,7 +71,7 @@ export function encodeTransferRemoteIxData(
     buf[45 + i] = Number(a & 0xffn);
     a >>= 8n;
   }
-  if (a !== 0n) throw new CorwaError("amount exceeds u256");
+  if (a !== 0n) throw new CoorwaError("amount exceeds u256");
   return buf;
 }
 
@@ -106,7 +106,7 @@ const deriveGasPayment = (igp: PublicKey, uniqueMsg: PublicKey) =>
 async function readOverheadIgpInner(conn: Connection, account: PublicKey): Promise<PublicKey> {
   const info = await conn.getAccountInfo(account, "confirmed");
   if (!info) {
-    throw new CorwaError(
+    throw new CoorwaError(
       `Hyperlane OverheadIgp account not found: ${account.toBase58()}`,
       "the bridge IGP address looks wrong for this network",
     );
@@ -117,7 +117,7 @@ async function readOverheadIgpInner(conn: Connection, account: PublicKey): Promi
   if (ownerTag === 1) off += 32;
   const inner = info.data.subarray(off, off + 32);
   if (inner.length !== 32) {
-    throw new CorwaError(`could not read inner IGP pubkey from ${account.toBase58()}`);
+    throw new CoorwaError(`could not read inner IGP pubkey from ${account.toBase58()}`);
   }
   return new PublicKey(inner);
 }
@@ -231,7 +231,7 @@ export async function preflightBridge(
   const needed = scaleRaw(amountRaw, route.sourceDecimals, route.destDecimals);
 
   if (available !== null && available < needed) {
-    throw new CorwaError(
+    throw new CoorwaError(
       `the warp route can only release ${rawToUi(available, route.destDecimals)} COOK on ` +
         `${route.destChainLabel}, but this transfer needs ${rawToUi(needed, route.destDecimals)}`,
       "Nothing has been signed. The route releases from a fixed collateral account, so a larger " +
@@ -301,7 +301,7 @@ async function buildTransferRemoteIx(
     // Read the token program off the mint owner - Solana COOK is Token-2022, so hardcoding the
     // classic program id would make the warp reject the transaction.
     const mintInfo = await sourceConn.getAccountInfo(mint, "confirmed");
-    if (!mintInfo) throw new CorwaError(`SPL COOK mint not found: ${mint.toBase58()}`);
+    if (!mintInfo) throw new CoorwaError(`SPL COOK mint not found: ${mint.toBase58()}`);
     const tokenProgram = mintInfo.owner;
     extraKeys = [
       { pubkey: tokenProgram, isSigner: false, isWritable: false },

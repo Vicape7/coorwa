@@ -1,7 +1,7 @@
 [package]
 name = "corwa-vault"
 version = "0.1.0"
-description = "Corwa cashback vault - epoch merkle distributor on Cookie Chain"
+description = "Coorwa cashback vault - epoch merkle distributor on Cookie Chain"
 edition = "2021"
 license = "MIT"
 # The floor the Solana platform-tools compiler sets. Dependency resolution reads it, so this one

@@ -84,7 +84,7 @@ export async function fetchCookPriceUsd(): Promise<number | null> {
 /**
  * Total USD liquidity per mint, summed across every pool it appears in.
  *
- * The registry's own `marketData.liquidity` is ambiguous about its unit, so Corwa derives depth
+ * The registry's own `marketData.liquidity` is ambiguous about its unit, so Coorwa derives depth
  * from the markets feed instead, where `liquidityUsd` is stated per pool.
  */
 export function liquidityByMint(markets: CookiescanMarket[]): Map<string, number> {

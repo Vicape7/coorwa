@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export interface PoolRow {
   poolId: string;
   venue: string;
-  /** True when Corwa can manage this position natively (Cookiebox DAMM v2). */
+  /** True when Coorwa can manage this position natively (Cookiebox DAMM v2). */
   manageable: boolean;
   base: { mint: string; symbol: string; logo: string | null; amount: number | null };
   quote: { mint: string; symbol: string; amount: number | null };
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     const rwaPrice = asset ? rwa[asset.ticker]?.priceUsd : undefined;
 
     const rows: PoolRow[] = markets.map((m) => {
-      // Corwa's LP tools build against the Cookiebox DAMM v2 program specifically.
+      // Coorwa's LP tools build against the Cookiebox DAMM v2 program specifically.
       const manageable = /COOKIEBOX DAMM/i.test(m.type);
       const baseSide = m.baseToken?.mint === COOK_MINT ? m.quoteToken : m.baseToken;
       const quoteSide = m.baseToken?.mint === COOK_MINT ? m.baseToken : m.quoteToken;

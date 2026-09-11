@@ -1,10 +1,10 @@
 /**
  * The merkle tree behind a cashback epoch.
  *
- * This is the off-chain half of `programs/corwa-vault`. Corwa works out who is owed what, commits
+ * This is the off-chain half of `programs/corwa-vault`. Coorwa works out who is owed what, commits
  * the whole list to a single root, and publishes only that root on chain. A claimant then proves
  * their own line of the list, and the program pays it. Nothing here is trusted: if this file built
- * a tree that disagreed with the amounts Corwa showed, the proof would simply fail on chain.
+ * a tree that disagreed with the amounts Coorwa showed, the proof would simply fail on chain.
  *
  * Three rules have to match `leaf_hash` and `root_from_proof` in the program exactly, byte for
  * byte, or every proof this file produces is worthless:

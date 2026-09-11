@@ -3,7 +3,7 @@
 /**
  * On-chain swap against real Cookie Chain liquidity.
  *
- * Corwa quotes both aggregators and takes the better fill. The transaction is built upstream,
+ * Coorwa quotes both aggregators and takes the better fill. The transaction is built upstream,
  * signed by the user's own wallet, simulated, then sent from their browser.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +13,7 @@ import { PublicKey } from "@solana/web3.js";
 import {
   COOK_MINT,
   COOK_DECIMALS,
-  CORWA_SWAP_FEE_BPS,
+  COORWA_SWAP_FEE_BPS,
   SWAP_CASHBACK_SPLIT,
   cookieTxUrl,
   DEFAULT_SLIPPAGE_BPS,
@@ -22,13 +22,13 @@ import { rawToUi, uiToRaw, amount, pct, shortAddr } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { Notice } from "./notice";
 import type { SwapRoute } from "@/lib/swap";
-import type { CorwaPair } from "@/lib/pairs";
+import type { CoorwaPair } from "@/lib/pairs";
 
 type Side = "buy" | "sell";
 
 const SLIPPAGE_CHOICES = [50, 100, 500, 1000];
 
-export function SwapPanel({ pair }: { pair: CorwaPair }) {
+export function SwapPanel({ pair }: { pair: CoorwaPair }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -146,11 +146,11 @@ export function SwapPanel({ pair }: { pair: CorwaPair }) {
   const feeCook =
     activeQuote == null
       ? null
-      : ((side === "buy" ? amountNum : (outAmount ?? 0)) * CORWA_SWAP_FEE_BPS) / 10_000;
+      : ((side === "buy" ? amountNum : (outAmount ?? 0)) * COORWA_SWAP_FEE_BPS) / 10_000;
   const minOut = activeQuote ? rawToUi(activeQuote.best.minOutAmount, outDecimals) : null;
 
   /**
-   * What you end up holding, expressed in shares of the pair's RWA - the whole point of Corwa.
+   * What you end up holding, expressed in shares of the pair's RWA - the whole point of Coorwa.
    *
    * COOK's own USD price is not passed into this component, but it is recoverable from the pair:
    * the base token's price is published both in USD and in COOK, and their ratio is COOK in USD.
@@ -397,7 +397,7 @@ function RouteDetail({
   quote: { best: SwapRoute; all: SwapRoute[] };
   minOut: number | null;
   outSymbol: string;
-  /** Corwa's own fee on this trade, in COOK. Shown before anybody signs, not after. */
+  /** Coorwa's own fee on this trade, in COOK. Shown before anybody signs, not after. */
   feeCook: number | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -439,7 +439,7 @@ function RouteDetail({
               <span className="num text-primary">{(best.feeBps / 100).toFixed(2)}%</span>
             </Line>
           )}
-          <Line label={`Corwa fee (${(CORWA_SWAP_FEE_BPS / 100).toFixed(2)}%)`}>
+          <Line label={`Coorwa fee (${(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}%)`}>
             <span className="num text-primary">
               {feeCook != null ? `${amount(feeCook)} COOK` : "—"}
             </span>
@@ -462,8 +462,8 @@ function RouteDetail({
           )}
           <p className="pt-1.5 text-[11px] leading-relaxed text-subtle">
             Both Cookie Chain routers were quoted; this is the better fill. The transaction is built
-            upstream and signed in your wallet - Corwa never holds your funds. Corwa&apos;s fee is a
-            visible instruction paying the cashback vault, and all of it is returned:{" "}
+            upstream and signed in your wallet - Coorwa never holds your funds. Coorwa&apos;s fee is
+            a visible instruction paying the cashback vault, and all of it is returned:{" "}
             {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
             {(SWAP_CASHBACK_SPLIT.trader * 100).toFixed(1)}% to whoever traded,{" "}
             {(SWAP_CASHBACK_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither

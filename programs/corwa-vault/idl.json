@@ -4,7 +4,7 @@
     "name": "corwa_vault",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Corwa cashback vault - epoch merkle distributor on Cookie Chain"
+    "description": "Coorwa cashback vault - epoch merkle distributor on Cookie Chain"
   },
   "instructions": [
     {

@@ -1,7 +1,7 @@
 /**
  * Proving that something a client claims actually happened.
  *
- * Two things Corwa writes down are reported by a browser after the fact: a fill, for cashback, and
+ * Two things Coorwa writes down are reported by a browser after the fact: a fill, for cashback, and
  * a launch, for the token's benchmark. A client could claim either without doing it, so neither is
  * written until the transaction behind it has been read back from the chain: it must exist, it must
  * have succeeded, and it must have been signed by the wallet asking for the credit. What is left

@@ -36,7 +36,7 @@ import BN from "bn.js";
 
 import cpAmmIdl from "@/idl/cp_amm.json";
 import { PROGRAM_IDS } from "./config";
-import { CorwaError } from "./http";
+import { CoorwaError } from "./http";
 
 export const CP_AMM_PROGRAM_ID = new PublicKey(PROGRAM_IDS.cookieboxDamm);
 
@@ -110,8 +110,8 @@ export interface CpAmmDeps {
  */
 function readOnlyWallet() {
   const refuse = (): never => {
-    throw new CorwaError(
-      "Corwa does not sign through Anchor",
+    throw new CoorwaError(
+      "Coorwa does not sign through Anchor",
       "this provider only builds instructions; the connected wallet signs them",
     );
   };
@@ -168,7 +168,7 @@ async function resolveMint(conn: Connection, mint: PublicKey) {
   const info = await conn.getParsedAccountInfo(mint);
   const data = info.value?.data;
   if (!info.value || !data || !("parsed" in data)) {
-    throw new CorwaError(`mint ${mint.toBase58()} not found on Cookie Chain`);
+    throw new CoorwaError(`mint ${mint.toBase58()} not found on Cookie Chain`);
   }
   return {
     decimals: (data.parsed as { info: { decimals: number } }).info.decimals,
@@ -205,15 +205,15 @@ export async function loadPool(deps: CpAmmDeps, poolStr: string): Promise<PoolCo
   try {
     pool = new PublicKey(poolStr);
   } catch {
-    throw new CorwaError(`invalid pool address: ${poolStr}`);
+    throw new CoorwaError(`invalid pool address: ${poolStr}`);
   }
 
   const info = await deps.connection.getAccountInfo(pool);
-  if (!info) throw new CorwaError(`pool ${poolStr} not found on Cookie Chain`);
+  if (!info) throw new CoorwaError(`pool ${poolStr} not found on Cookie Chain`);
   if (!info.owner.equals(CP_AMM_PROGRAM_ID)) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "that pool is not a Cookiebox DAMM v2 pool",
-      `it is owned by ${info.owner.toBase58()} - Corwa's LP tools cover DAMM v2 today`,
+      `it is owned by ${info.owner.toBase58()} - Coorwa's LP tools cover DAMM v2 today`,
     );
   }
 
@@ -335,7 +335,7 @@ export async function buildAddLiquidity(args: {
   const { program, poolAuthority } = ctx.deps;
 
   if (args.amountA == null && args.amountB == null) {
-    throw new CorwaError("supply an amount for at least one side");
+    throw new CoorwaError("supply an amount for at least one side");
   }
 
   const isA = args.amountA != null;
@@ -353,7 +353,7 @@ export async function buildAddLiquidity(args: {
   } as never) as BN;
 
   if (liquidityDelta.lten(0)) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "that amount is too small to mint any liquidity",
       "try a larger deposit - the pool's price range makes tiny deposits round to zero",
     );
@@ -452,7 +452,7 @@ export async function buildRemoveLiquidity(args: {
 
   const unlocked = position.unlockedLiquidity;
   if (unlocked.lten(0)) {
-    throw new CorwaError(
+    throw new CoorwaError(
       "this position has no unlocked liquidity to withdraw",
       "vested or permanently locked liquidity cannot be removed",
     );
