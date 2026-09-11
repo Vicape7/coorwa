@@ -26,6 +26,7 @@
  * never be offered to a different wallet than the one that signed it.
  */
 import type { RouteLeg } from "./crosschain";
+import type { PayoutClaim } from "./payout";
 
 export type JourneyDirection = "buy" | "sell";
 export type StepState = "idle" | "running" | "done" | "failed";
@@ -80,6 +81,14 @@ export interface Journey {
   destBaseline?: number;
   /** Hyperlane message id, so a stuck transfer can be looked up in the explorer. */
   messageId?: string;
+
+  /** Payout only: the epochs being claimed, with the proofs the vault checks them against. */
+  claims?: PayoutClaim[];
+  /**
+   * Payout only: native COOK, in lamports, before the first claim was sent. What the claims brought
+   * in is measured against it, for the same reason the bridge measures against `destBaseline`.
+   */
+  claimBaseline?: number;
 
   createdAt: number;
   updatedAt: number;
@@ -153,6 +162,7 @@ export function newJourney(args: {
   token: { mint: string; symbol: string; decimals: number };
   input: { amount: number; symbol: string; amountRaw?: string };
   legs: RouteLeg[];
+  claims?: PayoutClaim[];
 }): Journey {
   const now = Date.now();
   return {
@@ -173,6 +183,9 @@ export function newJourney(args: {
  * rather than by which error was thrown: the cursor is the only thing that tracks what confirmed.
  */
 export function fundsLocation(j: Journey): string {
+  if (j.legs[j.cursor]?.kind === "claim") {
+    return "Nothing has crossed yet. Whatever has been claimed is in your Cookie Chain wallet as COOK, and the rest is still in the vault.";
+  }
   const bridgeLeg = j.legs.findIndex((l) => l.kind === "bridge");
   const bridged = j.bridgeAmount ? `${j.bridgeAmount} COOK` : "your COOK";
 

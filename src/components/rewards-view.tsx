@@ -11,6 +11,7 @@ import { claimInstructions } from "@/lib/vault";
 import { signSendConfirm, explainError } from "@/lib/tx";
 import { Notice } from "./notice";
 import { VaultAdmin } from "./vault-admin";
+import { RwaPayout } from "./rwa-payout";
 import type { CashbackSummary } from "@/lib/cashback";
 import type { ClaimableReport } from "@/lib/epochs";
 
@@ -220,6 +221,8 @@ export function RewardsView() {
                 "The claim is yours to sign. Coorwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
             </p>
 
+            <RwaPayout open={open} onSettled={() => void Promise.all([refreshVault(), mutate()])} />
+
             {vault && vault.lines.length > 0 && <EpochLines lines={vault.lines} />}
           </>
         )}
@@ -320,7 +323,7 @@ export function RewardsView() {
             <Split
               pct={CASHBACK_SPLIT.trader}
               label="Trader"
-              body="Back to whoever generated the fee, claimable in COOK."
+              body="Back to whoever generated the fee, claimable in COOK or as an xStock on Solana."
             />
             <Split
               pct={CASHBACK_SPLIT.creator}

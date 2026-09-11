@@ -28,7 +28,8 @@ import { rawToUi, uiToRaw } from "./format";
 import { CoorwaError } from "./http";
 
 export interface RouteLeg {
-  kind: "cookie-swap" | "bridge" | "solana-swap";
+  /** "claim" only ever opens a cashback payout, which is this route with the vault in front. */
+  kind: "claim" | "cookie-swap" | "bridge" | "solana-swap";
   label: string;
   venue: string;
   inSymbol: string;
@@ -57,8 +58,12 @@ export interface CrossChainPlan {
   solanaQuote: JupQuote;
 }
 
-/** Bridge fee is paid in COOK for interchain gas; this is the observed order of magnitude. */
-const BRIDGE_GAS_COOK = 0.002;
+/**
+ * Interchain gas for a Cookie Chain dispatch, paid in COOK. Simulating a transfer on 2026-09-11
+ * showed the IGP charging 0.0041 COOK for 112,000 gas. Rounded up, because this only shapes the
+ * estimate: the executor bridges what it measured and the dispatch pays whatever gas really costs.
+ */
+const BRIDGE_GAS_COOK = 0.005;
 const BRIDGE_ETA_SECONDS = 180;
 
 /** Above this, the Solana leg is eating the trade and the user should be told, not just charged. */

@@ -184,8 +184,21 @@ The honest cost of that shape: there is no withdrawal path at all, so tokens sen
 only be routed back out by publishing an epoch that names the sender. And a program this young is
 unaudited, which is stated here rather than buried.
 
-The claim pays wrapped COOK. Turning that into an xStock is the cross-chain route above, run by the
-user, signed by the user.
+The claim pays wrapped COOK, and the rewards page offers to take it as an xStock instead. That is
+the cross-chain route above with the claim as its first leg: every open epoch is claimed and
+unwrapped in the same transaction, the COOK is bridged to Solana, and the chosen xStock is bought
+into the claimant's own wallet there. Every step is signed by the user, and a payout that stops
+after the bridge resumes from the middle like any route. Resuming the claim itself is safe because
+of the vault: an epoch that already paid has a claim record, so it is skipped, and a second attempt
+would fail on chain anyway. What the bridge carries is measured from the wallet's balance before
+and after the claims, capped at what the epochs owe.
+
+Two checks run before the first signature, because either failure would leave COOK on Solana
+halfway. A payout has to be worth at least $1 in the stock: the route loses about 1.4% to slippage
+at any size, but a first payout into an asset also opens two token accounts on Solana for about
+0.0038 SOL of rent. And the wallet has to hold the SOL for those accounts and the fees, which the
+page reads and states before anything is signed. The Solana legs need `NEXT_PUBLIC_SOLANA_RPC_URL`,
+because the public Solana RPC refuses requests from a browser.
 
 ### How an epoch is run
 

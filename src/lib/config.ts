@@ -196,6 +196,17 @@ export const CASHBACK_CLAIM_WINDOW_DAYS = 30;
  */
 export const CASHBACK_MIN_CLAIM_COOK = 0.05;
 
+/**
+ * The smallest cashback, in USD, that can be taken as an xStock rather than as COOK.
+ *
+ * Measured on 2026-09-11, the route loses about 1.4% to slippage at every size from $0.46 to $9, so
+ * the percentage cost is not what sets a floor. The fixed cost is: the first payout into an asset
+ * opens two token accounts on Solana for about 0.0038 SOL of rent, near $0.38, and every payout pays
+ * a bridge dispatch and two Solana fees on top. Under a dollar that is too large a share of what
+ * arrives, and COOK is the better way to take it.
+ */
+export const CASHBACK_RWA_MIN_USD = 1;
+
 // --- Misc --------------------------------------------------------------------------------------
 
 export const HTTP_TIMEOUT_MS = 12_000;
