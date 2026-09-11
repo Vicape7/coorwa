@@ -58,7 +58,7 @@ export function WalletButton() {
 
   if (!publicKey) {
     return (
-      <button onClick={onClick} disabled={connecting} className="btn btn-primary btn-sm">
+      <button onClick={onClick} disabled={connecting} className="btn btn-primary btn-nav">
         {connecting ? "Connecting" : "Connect"}
       </button>
     );
@@ -66,7 +66,7 @@ export function WalletButton() {
 
   return (
     <div className="relative" ref={holder}>
-      <button onClick={onClick} className="btn btn-ghost btn-sm">
+      <button onClick={onClick} className="btn btn-ghost btn-nav">
         <span className="num">{amount(shownBalance ?? 0, 2)} COOK</span>
         <span className="text-subtle">·</span>
         <span className="num">{shortAddr(publicKey.toBase58())}</span>

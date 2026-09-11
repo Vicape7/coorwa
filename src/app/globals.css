@@ -122,13 +122,38 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   --max-width: 1160px;
+
+  /*
+   * The channel the nav links sit in, and the chip on the current page. Film and rim only, with no
+   * backdrop-filter of their own: they sit inside the nav island, which already filters the page
+   * behind it, and a filter nested inside another one only ever sees the island.
+   */
+  --well-fill: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16));
+  --well-edge:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3), inset 6px 0 12px -10px rgba(255, 190, 90, 0.9),
+    inset -6px 0 12px -10px rgba(120, 190, 255, 0.7);
+  --chip-fill: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 253, 250, 0.72));
+  --chip-edge:
+    0 0 0 1px rgba(255, 255, 255, 0.7), inset 0 -1px 1px rgba(255, 255, 255, 0.6),
+    inset 4px 0 10px -8px rgba(255, 190, 90, 0.8), inset -4px 0 10px -8px rgba(120, 190, 255, 0.6),
+    0 2px 10px rgba(58, 30, 11, 0.1);
+  /* The RWA tiles. A white ring on paper, a faint warm one on the dark ground. */
+  --tile-edge:
+    0 0 0 1px rgba(255, 255, 255, 0.55), 0 1px 2px rgba(58, 30, 11, 0.06),
+    0 12px 28px rgba(58, 30, 11, 0.12);
+  --tile-edge-hover:
+    0 0 0 1px rgba(255, 255, 255, 0.7), 0 2px 4px rgba(58, 30, 11, 0.08),
+    0 18px 36px rgba(58, 30, 11, 0.18);
 }
 
 /*
- * The terminal runs dark, but it is the same cocoa hue turned down rather than a neutral black -
- * amber on a warm ground stays legible where amber on slate goes muddy.
+ * The dark theme, switched from the nav and remembered in localStorage (see lib/theme.ts). It is
+ * the same cocoa hue turned down rather than a neutral black: amber on a warm ground stays legible
+ * where amber on slate goes muddy. Only tokens change here, so every component renders in either
+ * theme without knowing which one it is in.
  */
-.terminal {
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   --text-primary: #f7f2e9;
@@ -163,8 +188,21 @@
   --aurora-b: rgba(216, 144, 56, 0.2);
   --aurora-c: rgba(120, 64, 24, 0.28);
 
-  background: var(--page);
-  color: var(--text-primary);
+  --well-fill: linear-gradient(180deg, rgba(255, 232, 196, 0.1), rgba(255, 232, 196, 0.03));
+  --well-edge:
+    inset 0 1px 0 rgba(255, 232, 196, 0.22), inset 0 -1px 0 rgba(255, 232, 196, 0.06),
+    inset 0 0 0 1px rgba(255, 232, 196, 0.07), inset 6px 0 12px -10px rgba(240, 184, 96, 0.6),
+    inset -6px 0 12px -10px rgba(120, 190, 255, 0.35);
+  --chip-fill: linear-gradient(180deg, rgba(255, 232, 196, 0.2), rgba(255, 232, 196, 0.09));
+  --chip-edge:
+    0 0 0 1px rgba(255, 232, 196, 0.14), inset 0 1px 0 rgba(255, 232, 196, 0.3),
+    inset 4px 0 10px -8px rgba(240, 184, 96, 0.6), inset -4px 0 10px -8px rgba(120, 190, 255, 0.3),
+    0 2px 10px rgba(0, 0, 0, 0.3);
+  --tile-edge:
+    0 0 0 1px rgba(255, 232, 196, 0.1), 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.4);
+  --tile-edge-hover:
+    0 0 0 1px rgba(255, 232, 196, 0.18), 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 18px 36px rgba(0, 0, 0, 0.5);
 }
 
 html {
@@ -372,7 +410,7 @@ body {
   opacity: 0.8;
 }
 
-.terminal .glass-pane::after {
+:root[data-theme="dark"] .glass-pane::after {
   background:
     linear-gradient(180deg, var(--glass-rim) 0%, transparent 38%),
     linear-gradient(105deg, transparent 36%, rgba(255, 240, 214, 0.1) 46%, transparent 60%);
@@ -506,6 +544,63 @@ body {
 .btn-sm {
   font-size: 13px;
   padding: 9px 15px;
+}
+
+/* The nav island's right-hand controls, at the height of the link well so the island reads as one
+ * row of objects. */
+.btn-nav {
+  height: 44px;
+  padding: 0 24px;
+  font-size: 15px;
+}
+
+/* The link well and the current-page chip in the nav. The tokens, and why neither blurs, are in
+ * :root. */
+.nav-well {
+  background: var(--well-fill);
+  box-shadow: var(--well-edge);
+}
+
+.nav-chip {
+  background: var(--chip-fill);
+  box-shadow: var(--chip-edge);
+}
+
+/* A round button in the same glass as the well: the theme switch. */
+.nav-round {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--well-fill);
+  box-shadow: var(--well-edge);
+  cursor: pointer;
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+.nav-round:hover {
+  background: var(--chip-fill);
+  box-shadow: var(--chip-edge);
+}
+.nav-round:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Which icon the switch shows is CSS, keyed off the same attribute the head script sets, so it is
+ * right on the first paint. Picked in React, it would show the moon for a frame on every dark load.
+ */
+.theme-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-sun {
+  display: block;
+}
+:root[data-theme="dark"] .theme-moon {
+  display: none;
 }
 
 .pill {
@@ -649,10 +744,7 @@ body {
   overflow: hidden;
   border-radius: 22px;
   background: var(--surface);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.55),
-    0 1px 2px rgba(58, 30, 11, 0.06),
-    0 12px 28px rgba(58, 30, 11, 0.12);
+  box-shadow: var(--tile-edge);
   transition:
     transform var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow var(--duration-normal) var(--ease-out);
@@ -662,10 +754,7 @@ body {
  * mirrored brand mark. */
 .rwa-orbit-card:hover .rwa-orbit-face {
   transform: perspective(520px) translateY(-10px) rotateY(-16deg);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.7),
-    0 2px 4px rgba(58, 30, 11, 0.08),
-    0 18px 36px rgba(58, 30, 11, 0.18);
+  box-shadow: var(--tile-edge-hover);
 }
 
 .rwa-orbit-face img {

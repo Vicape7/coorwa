@@ -213,9 +213,9 @@ const LENSES = [
 ] as const;
 
 /**
- * The lit surface every glass pane sits on. One per shell. It reads the `--aurora-*` tokens from
- * whichever surface contains it, so the same element renders amber on the light pages and a much
- * deeper ember inside `.terminal`, without either side needing to know about the other.
+ * The lit surface every glass pane sits on. One per shell. It reads the `--aurora-*` tokens, so the
+ * same element renders amber in the light theme and a much deeper ember in the dark one, without
+ * knowing which it is in.
  */
 export function AuroraField() {
   return <div aria-hidden className="aurora-field" />;

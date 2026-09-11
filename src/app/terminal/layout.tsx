@@ -1,17 +1,9 @@
-import { Nav } from "@/components/nav";
-import { AuroraField } from "@/components/ui/liquid-glass";
+import { SiteShell } from "@/components/site-shell";
 
 /**
- * The terminal runs on the dark surface. `.terminal` only redefines the shared design tokens, so
- * every component below renders correctly without knowing which surface it is on - including the
- * aurora field, which picks up the dark `--aurora-*` values from here.
+ * The terminal follows the reader's theme like every other page, so it is the same shell. The
+ * dark tokens it used to force through a `.terminal` class now live under `data-theme="dark"`.
  */
 export default function TerminalLayout({ children }: LayoutProps<"/terminal">) {
-  return (
-    <div className="terminal relative flex min-h-screen flex-col">
-      <AuroraField />
-      <Nav />
-      <main className="flex-1">{children}</main>
-    </div>
-  );
+  return <SiteShell>{children}</SiteShell>;
 }

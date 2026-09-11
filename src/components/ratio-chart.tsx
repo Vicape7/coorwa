@@ -16,8 +16,30 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle, Interval } from "@/lib/candles";
+import type { Theme } from "@/lib/theme";
+import { useTheme } from "@/lib/use-theme";
 
 const INTERVALS: Interval[] = ["5m", "15m", "1h", "4h", "1d"];
+
+/*
+ * The chart draws on a canvas, which cannot read CSS custom properties, so its chrome is written
+ * out per theme here. The values are the text and divider tokens from globals.css.
+ */
+const CHART_THEME: Record<Theme, { text: string; grid: string; crosshair: string; label: string }> =
+  {
+    light: {
+      text: "rgba(29,20,8,0.45)",
+      grid: "rgba(29,20,8,0.05)",
+      crosshair: "rgba(29,20,8,0.2)",
+      label: "#3a1e0b",
+    },
+    dark: {
+      text: "rgba(247,242,233,0.42)",
+      grid: "rgba(247,242,233,0.05)",
+      crosshair: "rgba(247,242,233,0.2)",
+      label: "#251f18",
+    },
+  };
 
 function formatRatio(v: number): string {
   if (!Number.isFinite(v) || v === 0) return "0";
@@ -35,6 +57,7 @@ export function RatioChart({
   ticker: string;
   baseSymbol: string;
 }) {
+  const theme = useTheme();
   const holder = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -61,28 +84,21 @@ export function RatioChart({
   useEffect(() => {
     if (!holder.current) return;
 
+    // Colours are left out here: the theme effect below runs straight after this one, in the same
+    // commit, and applies them before the first paint.
     const chart = createChart(holder.current, {
       layout: {
         background: { color: "transparent" },
-        textColor: "rgba(234,242,248,0.42)",
         fontFamily: "var(--font-inter), system-ui, sans-serif",
         fontSize: 11,
         attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: "rgba(234,242,248,0.05)" },
-        horzLines: { color: "rgba(234,242,248,0.05)" },
       },
       rightPriceScale: {
         borderVisible: false,
         scaleMargins: { top: 0.12, bottom: 0.26 },
       },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      crosshair: {
-        mode: 0,
-        vertLine: { color: "rgba(234,242,248,0.2)", labelBackgroundColor: "#172836" },
-        horzLine: { color: "rgba(234,242,248,0.2)", labelBackgroundColor: "#172836" },
-      },
+      crosshair: { mode: 0 },
       localization: { priceFormatter: formatRatio },
       autoSize: true,
     });
@@ -120,6 +136,18 @@ export function RatioChart({
       volRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const c = CHART_THEME[theme];
+    chartRef.current?.applyOptions({
+      layout: { textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      crosshair: {
+        vertLine: { color: c.crosshair, labelBackgroundColor: c.label },
+        horzLine: { color: c.crosshair, labelBackgroundColor: c.label },
+      },
+    });
+  }, [theme]);
 
   useEffect(() => {
     let alive = true;

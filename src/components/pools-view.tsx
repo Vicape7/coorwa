@@ -486,7 +486,7 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(17,26,38,0.45)] p-5"
+      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(29,20,8,0.45)] p-5"
       onClick={onClose}
     >
       <div

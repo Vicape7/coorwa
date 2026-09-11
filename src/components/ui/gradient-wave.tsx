@@ -17,6 +17,7 @@
 //      bounds - undefined behaviour in GLSL, and in practice a layer that flickers on some drivers.
 
 import { useEffect, useRef } from "react";
+import { useTheme } from "@/lib/use-theme";
 
 /*
  * The recipe. Everything tuneable lives here rather than in props, the way the mesh-drift shader
@@ -28,6 +29,12 @@ import { useEffect, useRef } from "react";
  */
 const WAVE = {
   colors: ["#f7f1e5", "#f0b860", "#f8d080", "#fdf4e6"],
+  /*
+   * The same recipe on the dark ground: the page's cocoa as the sheet, the two ambers turned down so
+   * cream headline text still reads over the brightest fold, and a dark sheet on top where the light
+   * palette has its near-white one, so the amber shows as seams between dark folds.
+   */
+  darkColors: ["#14100b", "#5a3514", "#a8692a", "#1c160f"],
   // Large, slow cells. Anything faster reads as a screensaver behind text.
   noiseFreq: [0.00024, 0.00052] as [number, number],
   noiseSpeed: 0.0000042,
@@ -533,6 +540,19 @@ class Gradient {
     }
   }
 
+  /*
+   * Colours are uniforms, uploaded on every frame, so a new palette needs no new program. It does
+   * need the same number of colours: the layer count is compiled into the shader, so extra colours
+   * are ignored and missing ones keep their old value.
+   */
+  setColors(colors: string[]) {
+    const [base, ...layers] = colors.slice(0, 4).map(normalizeColor);
+    if (base) this.uniforms.u_baseColor.value = base;
+    (this.uniforms.u_waveLayers.value as Uniform[]).forEach((layer, i) => {
+      if (layers[i]) (layer.value as Record<string, Uniform>).color.value = layers[i];
+    });
+  }
+
   // `width` and `height` are CSS pixels and drive the camera, the plane and the noise field, so
   // the field looks the same on a retina display. `scale` only sizes the framebuffer under it.
   resize(width: number, height: number, scale: number) {
@@ -578,10 +598,15 @@ const pendingContextReleases = new WeakMap<HTMLCanvasElement, number>();
 
 export function GradientWave({ className, colors }: { className?: string; colors?: string[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // The colour list arrives as a fresh array literal on every render, so the effect keys off the
-  // joined string instead: a parent re-render never tears down the GL context, and a real change
-  // of colour still rebuilds the program, which is the only way to change it.
-  const colorKey = (colors ?? WAVE.colors).join(",");
+  const theme = useTheme();
+  // The colour list arrives as a fresh array literal on every render, so everything keys off the
+  // joined string instead.
+  const colorKey = (colors ?? (theme === "dark" ? WAVE.darkColors : WAVE.colors)).join(",");
+  // What the GL effect starts from, and a handle on the running field, so a new palette reaches it
+  // without tearing down the context. A theme switch then recolours the waves mid-motion instead
+  // of restarting them from the first frame.
+  const colorKeyRef = useRef(colorKey);
+  const live = useRef<{ gradient: Gradient; redraw: () => void } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -594,7 +619,7 @@ export function GradientWave({ className, colors }: { className?: string; colors
 
     let gradient: Gradient;
     try {
-      gradient = new Gradient(gl, colorKey.split(","));
+      gradient = new Gradient(gl, colorKeyRef.current.split(","));
     } catch (error) {
       // A field that will not compile is not worth a blank hero. Leave the page's own background.
       console.error("GradientWave failed to initialise", error);
@@ -670,8 +695,17 @@ export function GradientWave({ className, colors }: { className?: string; colors
     document.addEventListener("visibilitychange", onVisibility);
     request();
 
+    // A running loop picks new colours up on its next frame; a held one has to be drawn again.
+    live.current = {
+      gradient,
+      redraw: () => {
+        if (calm && visible && inView) gradient.render(time);
+      },
+    };
+
     return () => {
       disposed = true;
+      live.current = null;
       pause();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
@@ -686,6 +720,12 @@ export function GradientWave({ className, colors }: { className?: string; colors
       }, 0);
       pendingContextReleases.set(canvas, release);
     };
+  }, []);
+
+  useEffect(() => {
+    colorKeyRef.current = colorKey;
+    live.current?.gradient.setColors(colorKey.split(","));
+    live.current?.redraw();
   }, [colorKey]);
 
   return (

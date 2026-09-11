@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProviders } from "@/components/wallet-providers";
 import { GlassFilter } from "@/components/ui/liquid-glass";
+import { THEME_SCRIPT } from "@/lib/theme";
 
 /**
  * One typeface for the whole product - headings, stat numbers and addresses alike. Inter's tabular
@@ -27,8 +28,13 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  // The head script may set data-theme on <html> before React hydrates, so that one element is
+  // allowed to differ from what the server rendered.
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         {/* Document-scoped, so it is declared once here rather than per glass surface. */}
         <GlassFilter />

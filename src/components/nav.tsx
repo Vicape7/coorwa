@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./theme-toggle";
 import { WalletButton } from "./wallet-button";
 
 const LINKS = [
@@ -20,6 +21,10 @@ const LINKS = [
  * nothing on a pill this shallow, but the bar lens does. This is the one surface with a whole page
  * scrolling underneath it, so it is where the refraction is actually visible - the pills below keep
  * plain `.glass`, since a lens on something 32px tall is cost without a picture.
+ *
+ * The links sit in `.nav-well`, a lighter film with its own rim, so they read as a channel in the
+ * glass rather than a grey tray laid on top of it. On the right, the theme switch and Connect, both
+ * at the height of the well.
  */
 export function Nav() {
   const pathname = usePathname();
@@ -29,14 +34,14 @@ export function Nav() {
       <div className="glass glass-bar mx-auto flex max-w-[1240px] items-center gap-3 rounded-full py-2 pl-3 pr-2 shadow-[var(--shadow-soft)] sm:pl-4">
         <Brand />
 
-        <nav className="ml-1 hidden items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_72%,transparent)] p-1 lg:flex">
+        <nav className="nav-well ml-1 hidden items-center gap-0.5 rounded-full p-1 lg:flex">
           {LINKS.map((l) => (
             <NavLink key={l.href} {...l} pathname={pathname} />
           ))}
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <ChainDot />
+          <ThemeToggle />
           <WalletButton />
         </div>
       </div>
@@ -86,24 +91,11 @@ function NavLink({ href, label, pathname }: { href: string; label: string; pathn
       aria-current={active ? "page" : undefined}
       className={
         active
-          ? "rounded-full bg-[var(--surface)] px-4 py-2 text-[13px] font-medium text-primary shadow-[var(--shadow-card)]"
+          ? "nav-chip rounded-full px-4 py-2 text-[13px] font-medium text-primary"
           : "rounded-full px-4 py-2 text-[13px] text-muted transition-colors hover:text-[color:var(--text-primary)]"
       }
     >
       {label}
-    </Link>
-  );
-}
-
-function ChainDot() {
-  return (
-    <Link
-      href="/status"
-      title="Cookie Chain status"
-      className="pill pill-quiet hidden transition-colors hover:text-[color:var(--text-primary)] sm:inline-flex"
-    >
-      <span className="live-dot h-1.5 w-1.5 rounded-full bg-[var(--color-up)]" />
-      Cookie Chain
     </Link>
   );
 }
