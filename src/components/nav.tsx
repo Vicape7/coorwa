@@ -63,16 +63,17 @@ export function Nav() {
 
 function Brand() {
   return (
-    <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Corwa home">
+    // The mark alone, no wordmark beside it. The full logo now carries the name in the hero, and
+    // repeating it 40px above that read as two logos rather than one brand.
+    <Link href="/" className="flex shrink-0 items-center" aria-label="Corwa home">
       <Image
         src="/corwa.png"
         alt=""
         width={512}
         height={512}
         priority
-        className="h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(120,64,24,0.28)]"
+        className="h-8 w-8 object-contain drop-shadow-[0_1px_3px_rgba(120,64,24,0.28)]"
       />
-      <span className="title text-primary">corwa</span>
     </Link>
   );
 }

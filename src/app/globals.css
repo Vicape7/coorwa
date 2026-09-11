@@ -596,6 +596,92 @@ body {
   background: var(--surface-raised);
 }
 
+/* --- RWA carousel ------------------------------------------------------------------------------
+ *
+ * Square xStock tiles on a ring that is tilted almost flat and turned by JavaScript, one frame at a
+ * time - see rwa-carousel.tsx for the projection. Everything positional is set from there, so what
+ * is left here is the band it lives in and what one tile looks like.
+ */
+.rwa-orbit {
+  /* The tile size the component measures. Change it here and the ring resizes around it. */
+  --rwa-tile: 104px;
+
+  /*
+   * The ring is wider and taller than the band it shows through, so three of its edges have to fade
+   * rather than stop: left and right where it runs off the column, and the bottom, where the near
+   * half of the ellipse is cut off. Two masks intersected, so a tile leaving at the bottom corner
+   * fades on both counts at once.
+   */
+  mask-image:
+    linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent),
+    linear-gradient(180deg, #000 62%, transparent 98%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent),
+    linear-gradient(180deg, #000 62%, transparent 98%);
+  -webkit-mask-composite: source-in;
+  overflow: hidden;
+}
+
+.rwa-orbit-track {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+
+/*
+ * Positioned from the top left corner and moved entirely by transform: the component writes one
+ * transform and one z-index per tile per frame, and neither touches layout.
+ */
+.rwa-orbit-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--rwa-tile);
+  height: var(--rwa-tile);
+  will-change: transform;
+}
+
+.rwa-orbit-face {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(58, 30, 11, 0.06),
+    0 12px 28px rgba(58, 30, 11, 0.12);
+  transition:
+    transform var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow var(--duration-normal) var(--ease-out);
+}
+
+/* Lifted and tipped, never flipped. A square logo has no back face, so a half turn would show a
+ * mirrored brand mark. */
+.rwa-orbit-card:hover .rwa-orbit-face {
+  transform: perspective(520px) translateY(-10px) rotateY(-16deg);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 2px 4px rgba(58, 30, 11, 0.08),
+    0 18px 36px rgba(58, 30, 11, 0.18);
+}
+
+.rwa-orbit-face img {
+  object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  .rwa-orbit {
+    --rwa-tile: 68px;
+  }
+
+  .rwa-orbit-track {
+    height: 220px;
+  }
+}
+
 /* --- Motion ------------------------------------------------------------------------------------ */
 
 @keyframes corwa-pulse {
@@ -651,6 +737,7 @@ body {
   .rise {
     animation: none;
   }
+  /* The orbit is turned from JavaScript, so it reads the same query itself and simply holds. */
   * {
     transition-duration: 0.01ms !important;
   }

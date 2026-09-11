@@ -57,28 +57,3 @@ export function LiveStats() {
     </div>
   );
 }
-
-export function ChainBadge() {
-  const { data } = useSWR<ChainStatus>("/api/chain", fetcher, {
-    refreshInterval: 10_000,
-  });
-
-  return (
-    <span className="pill pill-quiet">
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          data?.healthy
-            ? "live-dot bg-[var(--color-up)]"
-            : data
-              ? "bg-[var(--color-down)]"
-              : "bg-[color:var(--text-subtle)]"
-        }`}
-      />
-      {data
-        ? data.healthy
-          ? `Live · slot ${data.slot.toLocaleString("en-US")}`
-          : "Chain unreachable"
-        : "Connecting"}
-    </span>
-  );
-}

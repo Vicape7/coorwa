@@ -2,7 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { HeroSearch } from "@/components/hero-search";
-import { LiveStats, ChainBadge } from "@/components/live-stats";
+import { LiveStats } from "@/components/live-stats";
+import { RwaCarousel } from "@/components/rwa-carousel";
 import { AuroraField, GlassEffect } from "@/components/ui/liquid-glass";
 import { GradientWave } from "@/components/ui/gradient-wave";
 
@@ -33,22 +34,18 @@ export default function Home() {
 
       <Nav />
 
-      <section className="mx-auto w-full max-w-[1160px] px-5 pb-20 pt-14 text-center sm:pt-20">
-        <div className="rise flex justify-center">
-          <ChainBadge />
-        </div>
-
+      <section className="mx-auto w-full max-w-[1160px] px-5 pb-20 pt-10 text-center sm:pt-14">
         <Image
-          src="/corwa.png"
-          alt=""
-          width={512}
-          height={512}
+          src="/coorwa-logo-word.png"
+          alt="Corwa"
+          width={2000}
+          height={666}
           priority
-          className="rise mx-auto mt-9 h-[92px] w-[92px] object-contain drop-shadow-[0_8px_24px_rgba(120,64,24,0.22)] sm:h-[108px] sm:w-[108px]"
+          className="rise mx-auto h-auto w-[min(360px,74vw)] object-contain drop-shadow-[0_10px_28px_rgba(120,64,24,0.2)]"
         />
 
         <h1 className="display rise mx-auto mt-8 max-w-[15ch] text-[clamp(2.5rem,6.4vw,4.25rem)] text-primary">
-          Trade Cookie Chain in shares.
+          Trade Cookie Chain in RWAs.
         </h1>
 
         <p className="rise mx-auto mt-6 max-w-[46ch] text-[17px] leading-[1.6] text-muted">
@@ -70,7 +67,12 @@ export default function Home() {
           </Link>
         </div>
 
-        <div className="rise mt-16 text-left">
+        {/* The sixteen benchmarks, as objects rather than a list. This is the hero's argument. */}
+        <div className="rise mt-12">
+          <RwaCarousel />
+        </div>
+
+        <div className="rise mt-10 text-left">
           <LiveStats />
         </div>
       </section>
