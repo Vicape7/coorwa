@@ -16,16 +16,17 @@ const LINKS = [
  * A floating island rather than a full-width bar - the arrangement Pons uses, and the one that
  * lets the page tint run behind the header instead of stopping at it.
  *
- * Deliberately `.glass` and not `.glass-pane`: this element is sticky, and an SVG displacement
- * filter on something that repaints every scroll frame is the one place this material gets
- * expensive. Blur and the specular edge alone are indistinguishable at nav size.
+ * `.glass` plus `.glass-bar` rather than `.glass-pane`: the pane's pseudo-element machinery buys
+ * nothing on a pill this shallow, but the bar lens does. This is the one surface with a whole page
+ * scrolling underneath it, so it is where the refraction is actually visible - the pills below keep
+ * plain `.glass`, since a lens on something 32px tall is cost without a picture.
  */
 export function Nav() {
   const pathname = usePathname();
 
   return (
     <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
-      <div className="glass mx-auto flex max-w-[1240px] items-center gap-3 rounded-full py-2 pl-3 pr-2 shadow-[var(--shadow-soft)] sm:pl-4">
+      <div className="glass glass-bar mx-auto flex max-w-[1240px] items-center gap-3 rounded-full py-2 pl-3 pr-2 shadow-[var(--shadow-soft)] sm:pl-4">
         <Brand />
 
         <nav className="ml-1 hidden items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_72%,transparent)] p-1 lg:flex">

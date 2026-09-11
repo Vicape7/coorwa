@@ -92,6 +92,10 @@
   /* Moderate, not heavy. Blur above about 14px destroys the shapes the lens is meant to distort. */
   --glass-blur: 12px;
   --card-blur: 16px;
+  /* What a lensed surface uses instead. Blur runs after the bend and undoes it, so there is far
+   * less of it here; the film carries legibility. */
+  --pane-blur: 4px;
+  --bar-blur: 9px;
   /*
    * The edge does most of the work, and over the hero it does nearly all of it. Bending a smooth
    * gradient just gives you a smooth gradient, so refraction stays invisible until there is real
@@ -275,10 +279,17 @@ body {
  *   3. an inset highlight, bright on the top left and faint on the bottom right
  *   4. the content
  *
- * Only the bend in layer 1 is optional. Combining `filter: url()` with `backdrop-filter` works in
- * Chromium; Firefox and Safari drop the bend and keep the blur. That is why the film and the
- * highlight do the real work here. The bend is a bonus in browsers that support it, never the
- * thing the look depends on.
+ * The bend is an SVG displacement map used from inside `backdrop-filter`, which is the only way it
+ * reaches the page behind the pane. `filter: url()` was tried first and is what made every surface
+ * look like a flat frosted card: it bends what the element paints, and what a glass pane paints is
+ * one flat translucent colour, which comes out of any displacement unchanged.
+ *
+ * Chromium supports `url()` in `backdrop-filter`; Safari and Firefox do not and get blur alone.
+ * That is why the film and the highlight still do the real work, and the bend stays a bonus.
+ *
+ * How much blur goes with it matters. Blur runs after the displacement in the chain, so a heavy one
+ * erases the very shapes the lens just bent. Lensed surfaces use --pane-blur, which is deliberately
+ * a third of --glass-blur; the film is what keeps text readable, not the blur.
  */
 
 /* The cheap version. No SVG filter, so it is safe on anything that scrolls or repaints each frame. */
@@ -299,16 +310,12 @@ body {
 }
 
 /*
- * Sits exactly on the pane's edges and takes the same corner radius. Both matter. The lens filter
- * builds its displacement from this layer's own outline, so the edge it measures has to be the edge
- * you actually see.
+ * Sits exactly on the pane's edges and takes the same corner radius. Both matter: the filter region
+ * is this layer's box, so the ramps in the map land on the edge you actually see.
  *
- * An earlier version stretched this layer 24px outward to avoid the edge erosion that
- * feDisplacementMap causes. That put the whole lens outside the visible pane, which is the main
- * reason those surfaces looked like flat see-through cards.
- *
- * Erosion is handled by the shape of the ramp instead. Its gradient peaks about 12px inside the
- * edge and falls to zero at the edge itself, so nothing is pulled in at the boundary.
+ * The lens pulls the backdrop inward from every edge, never outward, so nothing is sampled from
+ * outside the pane and the rim stays clean. That is what an earlier version was working around when
+ * it stretched this layer 24px past the pane, which put the whole bend where nobody could see it.
  */
 .glass-pane::before {
   content: "";
@@ -319,20 +326,25 @@ body {
   background: var(--glass-fill);
   backdrop-filter: saturate(180%) blur(var(--glass-blur));
   -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  filter: url(#corwa-lens-soft);
 }
 
-.glass-pane[data-refract="deep"]::before {
-  filter: url(#corwa-lens-deep);
-}
-
-/*
- * Chromium composes `filter` over `backdrop-filter`; Firefox and Safari do not, and drop the lens.
- * They still get the film, the specular edge and the aberration split, which is most of the read.
- */
-@supports not (-webkit-backdrop-filter: blur(1px)) {
+@supports (backdrop-filter: url("#lens")) {
   .glass-pane::before {
-    filter: none;
+    backdrop-filter: url(#corwa-lens-soft) saturate(170%) blur(var(--pane-blur));
+  }
+
+  .glass-pane[data-refract="deep"]::before {
+    backdrop-filter: url(#corwa-lens-deep) saturate(170%) blur(var(--pane-blur));
+  }
+
+  /*
+   * The nav island. It was left on plain `.glass` for a long time because an SVG filter on a sticky
+   * element repaints every scroll frame, and that is still the expensive case - but it is also the
+   * one surface with a whole page moving underneath it, so it is where refraction is worth paying
+   * for. Its lens is the short-axis one, and its blur is lighter still.
+   */
+  .glass-bar {
+    backdrop-filter: url(#corwa-lens-bar) saturate(170%) blur(var(--bar-blur));
   }
 }
 

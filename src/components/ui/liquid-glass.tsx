@@ -12,7 +12,8 @@ import clsx from "clsx";
  *      does work. That also removes three divs per surface from the markup.
  *   2. The original displaces every pixel by the same amount, using turbulence at `scale="200"`.
  *      That smears rather than refracts. Real glass bends light at its edges and stays clear in the
- *      middle, so the filter below builds its displacement from the pane's own outline instead.
+ *      middle, so the filter below displaces from an edge ramp instead of from noise, and it does
+ *      it in `backdrop-filter`, where the thing being bent is the page behind the pane.
  *   3. `font-semibold` and `text-black` contradict the design system, which stops at weight 500 and
  *      contains no pure black.
  *   4. The original animates `padding` on hover, which reflows every sibling. Lift is a transform.
@@ -83,18 +84,23 @@ export function GlassEffect({
 }
 
 /**
- * The displacement maps that every `.glass-pane` points at. Mount this once, in the root layout.
- * An SVG filter belongs to the whole document, so repeating it per surface only creates duplicate
- * ids.
+ * The lenses every glass surface points at. Mount this once, in the root layout. An SVG filter
+ * belongs to the whole document, so repeating it per surface only creates duplicate ids.
  *
- * Combining `filter: url()` with `backdrop-filter` works in Chromium. Firefox and Safari keep the
- * blur and drop the bend, which is why the film and the highlight in globals.css have to carry the
- * look on their own.
+ * These are used from `backdrop-filter`, not `filter`, and that distinction is the whole effect.
+ * `filter` bends what the element paints, which for a glass pane is a flat translucent film -
+ * bending a flat colour produces the same flat colour, which is why the earlier version looked
+ * like a plain frosted card no matter how strong the displacement was. `backdrop-filter` bends
+ * what is *behind* the element, so text and images passing under the pane actually move.
+ *
+ * Chromium supports `url()` inside `backdrop-filter`; Safari and Firefox do not, and fall back in
+ * globals.css to blur alone. So the film and the specular edge still have to carry the look on
+ * their own, and the bend stays a bonus rather than the thing the material depends on.
  */
 export function GlassFilter() {
   return (
     <svg aria-hidden className="pointer-events-none absolute h-0 w-0" focusable="false">
-      {LENSES.map(({ id, ramp, lens, liquid }) => (
+      {LENSES.map(({ id, band, scale }) => (
         <filter
           key={id}
           id={id}
@@ -103,113 +109,30 @@ export function GlassFilter() {
           width="100%"
           height="100%"
           filterUnits="objectBoundingBox"
-          // linearRGB (the default) would bend the ramp before the convolution reads it, which
-          // skews the gradient towards the dark end and lands the lens off the edge.
+          // linearRGB (the default) would gamma-bend the map before the displacement reads it,
+          // which pulls the neutral grey off 0.5 and drifts the whole backdrop sideways.
           colorInterpolationFilters="sRGB"
         >
           {/*
-            1. The pane's own silhouette, blurred. The filter region is exactly the element, so
-               blurring its alpha yields a ramp climbing inward from all four edges - and around
-               the corners too, since the layer carries the border radius.
+            The map is a picture of the glass, not of the backdrop: a flat neutral middle with a
+            ramp at each edge. feDisplacementMap moves every pixel by `scale × (channel - 0.5)`,
+            so neutral means "show what is really there" and the ramps pull the backdrop inward
+            from the four edges. That is what a thick pane does to what is behind it - clear in
+            the middle, compressed at the rim.
           */}
-          <feGaussianBlur in="SourceAlpha" stdDeviation={ramp} result="ramp" />
-
-          {/*
-            2. Move that ramp out of alpha and into RGB, and force alpha to 1. Both matter: a
-               convolution only reads colour channels, and feConvolveMatrix adds `bias × alpha`,
-               so a varying alpha here would blow the neutral point out at the boundary.
-          */}
-          <feColorMatrix
-            in="ramp"
-            type="matrix"
-            values="0 0 0 1 0
-                    0 0 0 1 0
-                    0 0 0 1 0
-                    0 0 0 0 1"
-            result="rampRGB"
+          <feImage
+            href={displacementMap(band)}
+            x="0%"
+            y="0%"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="none"
+            result="map"
           />
-
-          {/*
-            3. Sobel. The gradient of the ramp points straight out of the nearest edge and is zero
-               in the flat middle, which is precisely the shape of refraction through a lens: the
-               centre of a pane of glass shows you what is behind it, the rim bends it.
-          */}
-          <feConvolveMatrix
-            in="rampRGB"
-            order="3 3"
-            preserveAlpha="true"
-            divisor="2"
-            bias="0.5"
-            kernelMatrix="1 0 -1 2 0 -2 1 0 -1"
-            result="gx"
-          />
-          <feConvolveMatrix
-            in="rampRGB"
-            order="3 3"
-            preserveAlpha="true"
-            divisor="2"
-            bias="0.5"
-            kernelMatrix="1 2 1 0 0 0 -1 -2 -1"
-            result="gy"
-          />
-
-          {/* 4. Horizontal slope into red, vertical into green - the channels the map is read from. */}
-          <feColorMatrix
-            in="gx"
-            type="matrix"
-            values="1 0 0 0 0
-                    0 0 0 0 0
-                    0 0 0 0 0
-                    0 0 0 0 1"
-            result="gxR"
-          />
-          <feColorMatrix
-            in="gy"
-            type="matrix"
-            values="0 0 0 0 0
-                    1 0 0 0 0
-                    0 0 0 0 0
-                    0 0 0 0 1"
-            result="gyG"
-          />
-          <feComposite
-            in="gxR"
-            in2="gyG"
-            operator="arithmetic"
-            k1="0"
-            k2="1"
-            k3="1"
-            k4="0"
-            result="normal"
-          />
-
-          {/* 5. Bend the backdrop along that normal. This is the lens. */}
           <feDisplacementMap
             in="SourceGraphic"
-            in2="normal"
-            scale={lens}
-            xChannelSelector="R"
-            yChannelSelector="G"
-            result="lensed"
-          />
-
-          {/*
-            6. A second, much smaller displacement from soft noise. The lens alone is geometric and
-               reads as a bevel; this is the part that makes it liquid - the edge wanders slightly
-               instead of following the rectangle exactly.
-          */}
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.004 0.011"
-            numOctaves="2"
-            seed="11"
-            result="noise"
-          />
-          <feGaussianBlur in="noise" stdDeviation="5" result="softNoise" />
-          <feDisplacementMap
-            in="lensed"
-            in2="softNoise"
-            scale={liquid}
+            in2="map"
+            scale={scale}
             xChannelSelector="R"
             yChannelSelector="G"
           />
@@ -220,16 +143,73 @@ export function GlassFilter() {
 }
 
 /**
- * `ramp` is how far in from the edge the bend reaches. `lens` is how hard it bends there. `liquid`
- * is how much the noise pass unsettles the result.
+ * The displacement map, as a data URI so it costs no request and cannot 404.
  *
- * feDisplacementMap moves each pixel by `scale * (channel - 0.5)`. A Sobel pass over a gently
- * sloped ramp comes out around 0.17 away from the neutral 0.5, so `lens: 60` works out at roughly
- * a 10px pull. That is enough to watch a shape move behind the rim without making text swim.
+ * Red carries horizontal displacement and green vertical, both neutral at 128. The ramp runs from
+ * full at the very edge to neutral `band` of the way in, with a knee partway so the bend is
+ * concentrated at the rim rather than spread evenly - a linear ramp reads as a lens the size of
+ * the whole pane. `screen` merges the two ramps because each one is zero in the other's channel,
+ * which makes the blend an exact addition.
+ *
+ * The bands are fractions rather than pixels because the map is stretched to whatever it is
+ * applied to. A pane twice as wide gets a bend twice as wide, which is why the bar lens below
+ * carries its own much narrower horizontal band.
+ */
+function displacementMap({ x, y }: { x: number; y: number }): string {
+  // Distance from the edge, and the channel value there. 128 is neutral, 255 is a full pull.
+  const RAMP: [number, number][] = [
+    [0, 255],
+    [0.35, 190],
+    [1, 128],
+  ];
+
+  const stops = (band: number, channel: "r" | "g") => {
+    const paint = (value: number) => (channel === "r" ? `rgb(${value},0,0)` : `rgb(0,${value},0)`);
+    const leading = RAMP.map(
+      ([at, value]) => `<stop offset="${(at * band).toFixed(4)}" stop-color="${paint(value)}"/>`,
+    );
+    // The far edge is the same ramp mirrored through neutral, so it pulls the other way.
+    const trailing = [...RAMP]
+      .reverse()
+      .map(
+        ([at, value]) =>
+          `<stop offset="${(1 - at * band).toFixed(4)}" stop-color="${paint(255 - value)}"/>`,
+      );
+    return leading.join("") + trailing.join("");
+  };
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" ` +
+    `viewBox="0 0 240 240" preserveAspectRatio="none">` +
+    `<defs>` +
+    `<linearGradient id="x" x1="0" y1="0" x2="1" y2="0">${stops(x, "r")}</linearGradient>` +
+    `<linearGradient id="y" x1="0" y1="0" x2="0" y2="1">${stops(y, "g")}</linearGradient>` +
+    `</defs>` +
+    `<rect width="240" height="240" fill="url(#x)"/>` +
+    `<rect width="240" height="240" fill="url(#y)" style="mix-blend-mode:screen"/>` +
+    `</svg>`;
+
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * `band` is how far in from each edge the bend reaches, as a fraction of that axis. `scale` is how
+ * hard it bends: the pull at the very rim is `scale / 2` pixels, falling to nothing at the band's
+ * inner edge.
+ *
+ * Measured rather than guessed. Past about 60 the compression at the rim folds a second copy of
+ * whatever is behind into view, which reads as a mirror rather than as glass. A chromatic split
+ * between the channels was tried and dropped: even a 5% spread fringed text across the whole pane
+ * instead of only at the rim, because the pull is vertical too and headline type is tall.
+ *
+ * `bar` is for the nav island, which is wide and short. An even band would put its horizontal bend
+ * 200px in from each end, so it gets a narrow one across and a deep one down the short axis, where
+ * the page actually scrolls past.
  */
 const LENSES = [
-  { id: "corwa-lens-soft", ramp: 12, lens: 60, liquid: 8 },
-  { id: "corwa-lens-deep", ramp: 20, lens: 110, liquid: 14 },
+  { id: "corwa-lens-soft", band: { x: 0.12, y: 0.12 }, scale: 34 },
+  { id: "corwa-lens-deep", band: { x: 0.18, y: 0.18 }, scale: 52 },
+  { id: "corwa-lens-bar", band: { x: 0.04, y: 0.34 }, scale: 30 },
 ] as const;
 
 /**
