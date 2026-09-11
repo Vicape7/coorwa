@@ -10,8 +10,9 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
-import { cookieTxUrl, COOKIE_EXPLORER } from "@/lib/config";
-import { shortAddr, amount, usd } from "@/lib/format";
+import { verifyLaunchpadBuild } from "@/lib/expectation";
+import { cookieTxUrl, COOKIE_EXPLORER, COOK_DECIMALS } from "@/lib/config";
+import { shortAddr, amount, usd, uiToRaw } from "@/lib/format";
 import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
 import { Notice } from "./notice";
 import { CurvePanel } from "./curve-panel";
@@ -181,7 +182,17 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
       }).then((r) => r.json());
       if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
 
-      // 3. Sign and send.
+      // 3. Check it is the launch asked for, with the same conversions the server made, then sign.
+      await verifyLaunchpadBuild(built, {
+        action: "create",
+        wallet: publicKey.toBase58(),
+        name,
+        symbol: symbol.toUpperCase(),
+        durationSecs: Math.round(durationHours * 3600),
+        expiryMode: "fair",
+        devBuyRaw: Number(devBuy) > 0 ? uiToRaw(Number(devBuy), COOK_DECIMALS) : null,
+      });
+
       setStep("Confirm the launch in your wallet");
       const sent = await signSendConfirm(
         connection,

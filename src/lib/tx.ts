@@ -14,6 +14,7 @@ import {
   Transaction,
   type SendOptions,
 } from "@solana/web3.js";
+import { BuildMismatchError } from "./expectation";
 
 export type SignerFn = <T extends Transaction | VersionedTransaction>(tx: T) => Promise<T>;
 
@@ -104,6 +105,8 @@ export async function signSendConfirm(
 
 export function explainError(e: unknown): string {
   if (e instanceof SimulationError) return e.message;
+  // Already written for the user, and it must not be mistaken for anything below.
+  if (e instanceof BuildMismatchError) return e.message;
   if (e instanceof Error) {
     const m = e.message;
     if (/User rejected|rejected the request/i.test(m)) return "You rejected the transaction.";

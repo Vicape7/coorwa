@@ -15,6 +15,7 @@ import bs58 from "bs58";
 import { MOMOSWAP_API, COORWA_REFERRER } from "./config";
 import { fetchJson, cachedStale, CoorwaError } from "./http";
 import { uiToRaw } from "./format";
+import type { Expectation } from "./expectation";
 
 const LP = `${MOMOSWAP_API}/v1/launchpad`;
 
@@ -96,6 +97,8 @@ export interface BuiltTx {
   mint?: string;
   /** create-pool only: the pool the curve will live at, known before the launch is even signed. */
   pool?: string;
+  /** What the launchpad says it built. `src/lib/expectation.ts` checks the bytes against it. */
+  expectation?: Expectation;
 }
 
 type Envelope<T> = T & { success?: boolean; error?: string };

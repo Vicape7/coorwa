@@ -18,6 +18,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { cookieTxUrl } from "@/lib/config";
 import { amount, usd, shortAddr } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
+import { verifyLaunchpadBuild } from "@/lib/expectation";
 import { Notice } from "./notice";
 import type { LaunchpadPool } from "@/lib/launchpad";
 
@@ -108,6 +109,12 @@ function LaunchRow({
         }),
       }).then((r) => r.json());
       if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
+
+      await verifyLaunchpadBuild(built, {
+        action: "claim-creator-fees",
+        wallet: publicKey.toBase58(),
+        pool: pool.pubkey,
+      });
 
       const sent = await signSendConfirm(
         connection,

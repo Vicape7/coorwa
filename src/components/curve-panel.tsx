@@ -19,6 +19,7 @@ import { COOK_DECIMALS, CASHBACK_SPLIT, cookieTxUrl } from "@/lib/config";
 import { quoteBuy, quoteSell, curvePrice } from "@/lib/curve";
 import { rawToUi, uiToRaw, amount, usd, shortAddr, pct } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
+import { verifyLaunchpadBuild } from "@/lib/expectation";
 import { Notice } from "./notice";
 import type { LaunchpadPool } from "@/lib/launchpad";
 
@@ -119,21 +120,35 @@ export function CurvePanel({
     setFilled(null);
 
     try {
+      const owner = publicKey.toBase58();
+      const shares = uiToRaw(amountNum, decimals);
       const built = await fetch("/api/launchpad/trade", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
           side === "buy"
-            ? { action: "buy", wallet: publicKey.toBase58(), pool: pool.pubkey, amount: amountNum }
-            : {
-                action: "sell",
-                wallet: publicKey.toBase58(),
-                pool: pool.pubkey,
-                shares: uiToRaw(amountNum, decimals),
-              },
+            ? { action: "buy", wallet: owner, pool: pool.pubkey, amount: amountNum }
+            : { action: "sell", wallet: owner, pool: pool.pubkey, shares },
         ),
       }).then((r) => r.json());
       if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
+
+      // MomoSwap built this, so check it is the trade asked for before the wallet is shown it. The
+      // server converts the buy amount with the same `uiToRaw`, so the raw figures agree exactly.
+      // Which referrer to name is the server's call; what is checked is that the transaction names
+      // exactly that one and pays nobody else.
+      await verifyLaunchpadBuild(
+        built,
+        side === "buy"
+          ? {
+              action: "buy",
+              wallet: owner,
+              pool: pool.pubkey,
+              paymentRaw: uiToRaw(amountNum, COOK_DECIMALS),
+              referrer: built.referrer ?? null,
+            }
+          : { action: "sell", wallet: owner, pool: pool.pubkey, sharesRaw: shares },
+      );
 
       const sent = await signSendConfirm(
         connection,

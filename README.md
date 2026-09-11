@@ -135,6 +135,29 @@ Coorwa never holds a key, never co-signs, and never takes custody. Every transac
 by an upstream service or by Coorwa's own instruction builders, then **simulated**, then signed by
 the user's wallet in their browser, then sent from there.
 
+### What the wallet is shown is what was asked for
+
+Every launchpad transaction (launch, buy, sell, creator-fee claim) is built by MomoSwap, so the page
+checks it in the browser before the wallet is asked to sign, on the exact bytes the wallet will
+sign (`src/lib/expectation.ts`).
+
+- **Against the builder's own declaration.** MomoSwap returns an `expectation` with every build: the
+  fee payer, and for each instruction its program, its accounts with their flags, a sha256 of its
+  data, and for a COOK transfer the exact recipient and amount. The bytes must match it exactly.
+- **Against what the user asked for.** A builder that declares exactly what it built can still have
+  built the wrong thing, so each instruction is also read for itself. Only five programs may
+  appear. COOK may only move into the wallet's own wrapped COOK account, and never more than the
+  trade spends. The token program may only sync or close that same account, so there is no room for
+  a transfer or a delegate approval. The launchpad instruction must carry the amount, the pool and
+  the referrer the user chose, and a launch must create the name, symbol and duration they typed.
+  A priority fee above 0.001 COOK is refused, because that is the one way to burn a wallet's COOK
+  without any instruction naming an amount.
+
+Anything that fails either check stops with a sentence saying what differed, and nothing is signed.
+The launchpad publishes no IDL, so the instruction layouts were read off real builds;
+`tests/expectation.test.ts` runs the check on six captured responses and on twenty ways of
+tampering with them.
+
 ### The cashback vault
 
 Cashback is the one place Coorwa touches money at all, so it is the one place that needed a program
@@ -263,6 +286,7 @@ src/
     bridge.ts       Hyperlane warp route, hand-encoded, with two preflight checks
     liquidity.ts    Cookiebox DAMM v2, built against the fork's IDL
     launchpad.ts    MomoSwap client
+    expectation.ts  A launchpad transaction checked against what was asked for, before signing
     curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
     launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
     listings.ts     Benchmarks bought for tokens launched elsewhere, priced and proved
