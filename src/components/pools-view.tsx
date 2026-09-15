@@ -3,9 +3,9 @@
 /**
  * LP maker.
  *
- * Reads every pool on Cookie Chain and manages Cookiebox DAMM v2 positions natively - add, claim
- * fees, withdraw - with instructions built against the fork's own program. The wallet signs; Coorwa
- * only builds.
+ * Lists the TOKEN/RWA pairs somebody chose, each with the real Cookie Chain pool behind it, and
+ * manages Cookiebox DAMM v2 positions natively - add, claim fees, withdraw - with instructions built
+ * against the fork's own program. The wallet signs; Coorwa only builds.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
@@ -23,12 +23,10 @@ import {
   type UserPosition,
 } from "@/lib/liquidity";
 import { signSendConfirm, explainError } from "@/lib/tx";
-import { usd, amount as fmt, shortAddr, rwaRatio } from "@/lib/format";
-import { cookieTxUrl, COOKIE_EXPLORER } from "@/lib/config";
-import { RWA_ASSETS } from "@/lib/rwa";
+import { usd, amount as fmt, shortAddr, rwaRatio, pct } from "@/lib/format";
+import { cookieTxUrl, COOKIE_EXPLORER, COOK_MINT } from "@/lib/config";
 import { TokenMark } from "./token-mark";
 import { Notice } from "./notice";
-import { PillSelect } from "./ui/pill-select";
 import { ListPair } from "./list-pair";
 import { LpPayout } from "./lp-payout";
 import { isResumable, loadJourney } from "@/lib/journey";
@@ -41,21 +39,19 @@ interface PoolsResponse {
   pools: PoolRow[];
   count: number;
   manageableCount: number;
-  ticker: string | null;
-  rwaPriceUsd: number | null;
   error?: string;
 }
 
 export function PoolsView() {
-  const [ticker, setTicker] = useState("NVDA");
   const [selected, setSelected] = useState<PoolRow | null>(null);
 
-  const { data } = useSWR<PoolsResponse>(`/api/pools?ticker=${ticker}`, fetcher, {
+  const { data, mutate } = useSWR<PoolsResponse>("/api/pools", fetcher, {
     refreshInterval: 30_000,
     keepPreviousData: true,
   });
 
   const pools = data?.pools ?? [];
+  const loading = !data;
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
@@ -65,31 +61,19 @@ export function PoolsView() {
           Provide the liquidity the pairs run on.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Every share-denominated pair in the terminal is backed by a real Cookie Chain pool. Coorwa
-          manages Cookiebox DAMM v2 positions directly - deposit, claim fees, withdraw - and shows
-          your position sized in shares, not just dollars.
+          A pair is a token priced in a real stock. It exists once somebody adds it, and every trade
+          on it goes through the token&apos;s real Cookie Chain pool, which is what you provide.
+          Coorwa manages Cookiebox DAMM v2 positions directly - deposit, claim fees, withdraw - and
+          can pay your fees out as a stock.
         </p>
       </div>
 
-      <ListPair />
+      <ListPair onListed={() => void mutate()} />
 
       <MyPositions pools={pools} />
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
-        <h2 className="title text-primary">All pools</h2>
-        {/* Six of the sixteen assets used to sit here as buttons. Same control, all sixteen, no row. */}
-        <PillSelect
-          id="pools-depth"
-          label="Depth in"
-          prefix="Depth"
-          value={ticker}
-          onChange={setTicker}
-          options={RWA_ASSETS.map((a) => ({
-            value: a.ticker,
-            label: a.ticker,
-          }))}
-          className="ml-auto"
-        />
+        <h2 className="title text-primary">Pairs</h2>
       </div>
 
       <div className="card mt-4 overflow-hidden">
@@ -97,42 +81,61 @@ export function PoolsView() {
           <table className="w-full min-w-[820px] text-[14px]">
             <thead>
               <tr>
-                <Th>Pool</Th>
-                <Th>Venue</Th>
+                <Th>Pair</Th>
+                <Th>Pool behind it</Th>
                 <Th align="right">Liquidity</Th>
-                <Th align="right">in {ticker}</Th>
+                <Th align="right">in shares</Th>
+                <Th align="right">vs asset 24h</Th>
                 <Th align="right">Volume 24h</Th>
                 <Th align="right" />
               </tr>
             </thead>
             <tbody>
-              {pools.length === 0 &&
+              {loading &&
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 6 }).map((__, j) => (
+                    {Array.from({ length: 7 }).map((__, j) => (
                       <td key={j} className="px-5 py-4">
                         <div className="skeleton h-4 w-full" />
                       </td>
                     ))}
                   </tr>
                 ))}
-              {pools.slice(0, 60).map((p) => (
-                <tr key={p.poolId} className="row-hover">
+              {pools.map((p) => (
+                <tr key={p.slug} className="row-hover">
                   <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
+                    <a href={`/terminal/${p.slug}`} className="flex items-center gap-3">
                       <TokenMark logo={p.base.logo} symbol={p.base.symbol} size={28} />
                       <span className="text-primary">
                         {p.base.symbol}
-                        <span className="text-subtle"> / {p.quote.symbol}</span>
+                        <span className="text-subtle"> / {p.rwa.ticker}</span>
                       </span>
-                    </div>
+                    </a>
                   </td>
                   <td className="px-5 py-3">
-                    <span className="pill pill-quiet text-[11px]">{p.venue}</span>
+                    <span className="text-[13px] text-muted">
+                      {p.base.symbol} / {p.quote.symbol}
+                    </span>{" "}
+                    <span className="pill pill-quiet ml-1 text-[11px]">{p.venue}</span>
                   </td>
                   <td className="num px-5 py-3 text-right text-primary">{usd(p.liquidityUsd)}</td>
                   <td className="num px-5 py-3 text-right text-muted">
-                    {p.liquidityShares == null ? "—" : rwaRatio(p.liquidityShares)}
+                    {p.liquidityShares == null
+                      ? "—"
+                      : `${rwaRatio(p.liquidityShares)} ${p.rwa.symbol}`}
+                  </td>
+                  <td
+                    className="num px-5 py-3 text-right"
+                    style={{
+                      color:
+                        p.change24h == null
+                          ? "var(--text-subtle)"
+                          : p.change24h >= 0
+                            ? "var(--color-up)"
+                            : "var(--color-down)",
+                    }}
+                  >
+                    {p.change24h == null ? "—" : pct(p.change24h)}
                   </td>
                   <td className="num px-5 py-3 text-right text-muted">
                     {p.volume24h ? usd(p.volume24h) : "—"}
@@ -156,12 +159,20 @@ export function PoolsView() {
             </tbody>
           </table>
         </div>
+
+        {data && pools.length === 0 && (
+          <p className="p-10 text-center text-[14px] text-muted">
+            No pairs yet. Add the first one above: pick a token with a pool and the stock it should be
+            priced in.
+          </p>
+        )}
       </div>
 
-      {data && (
+      {data && pools.length > 0 && (
         <p className="mt-4 text-[12px] text-subtle">
-          {data.count} pools · {data.manageableCount} manageable from Coorwa (Cookiebox DAMM v2).
-          Other venues are read-only here and managed in their own app.
+          {data.count} pairs · {data.manageableCount} backed by a Cookiebox DAMM v2 pool Coorwa can
+          manage. A token with more than one pair shares one pool between them. Other venues are
+          read-only here and managed in their own app.
         </p>
       )}
 
@@ -211,6 +222,7 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
       known.set(p.base.mint, p.base.symbol);
       known.set(p.quote.mint, p.quote.symbol);
     }
+    known.set(COOK_MINT, known.get(COOK_MINT) ?? "wCOOK");
     return (mint: string) => known.get(mint) ?? shortAddr(mint, 4);
   }, [pools]);
 
@@ -403,20 +415,21 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
                   </div>
 
                   <div className="flex shrink-0 gap-2">
+                    {/* The stock payout comes first: settling into a real asset is what Coorwa is for. */}
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={(!hasFees && payoutFor !== id) || busy !== null}
+                      onClick={() => setPayoutFor((open) => (open === id ? null : id))}
+                      aria-expanded={payoutFor === id}
+                    >
+                      {payoutFor === id ? "Hide" : "Take fees as stock"}
+                    </button>
                     <button
                       className="btn btn-ghost btn-sm"
                       disabled={!hasFees || busy !== null}
                       onClick={() => act(p, "claim")}
                     >
-                      {busy === `${id}:claim` ? "Claiming" : "Claim fees"}
-                    </button>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      disabled={(!hasFees && payoutFor !== id) || busy !== null}
-                      onClick={() => setPayoutFor((open) => (open === id ? null : id))}
-                      aria-expanded={payoutFor === id}
-                    >
-                      {payoutFor === id ? "Hide" : "Take as stock"}
+                      {busy === `${id}:claim` ? "Claiming" : "Claim as tokens"}
                     </button>
                     <button
                       className="btn btn-quiet btn-sm"
@@ -553,9 +566,11 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
           <TokenMark logo={pool.base.logo} symbol={pool.base.symbol} size={40} />
           <div className="min-w-0 flex-1">
             <h3 className="title text-primary">
-              {pool.base.symbol} / {pool.quote.symbol}
+              {pool.base.symbol} / {pool.rwa.ticker}
             </h3>
-            <p className="text-[13px] text-muted">{pool.venue}</p>
+            <p className="text-[13px] text-muted">
+              Deposits into the {pool.base.symbol} / {pool.quote.symbol} pool on {pool.venue}
+            </p>
           </div>
           <button className="btn btn-quiet btn-sm" onClick={onClose}>
             Close

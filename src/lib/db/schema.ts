@@ -57,11 +57,9 @@ export const fills = pgTable(
 /**
  * A token launched through Coorwa, and the RWA its creator benchmarked it against.
  *
- * This is what makes a Coorwa-launched token a TOKEN/RWA instrument rather than one more row in a
- * cross product. Without it every token on the chain is quotable against all sixteen xStocks, which
- * is right for tokens that already existed and had nobody to choose, and wrong for a token launched
- * here on purpose. The choice is made once, at launch, and never edited: a benchmark that moved
- * would silently rewrite every chart and every ratio ever shown for that token.
+ * This is a Coorwa-launched token's first pair, free and picked at launch. The choice is made once
+ * and never edited: a benchmark that moved would silently rewrite every chart and every ratio ever
+ * shown for that token. Further pairs are bought, see `listings`.
  *
  * A row is only written after the launch transaction has been read back from the chain and found to
  * name this mint, so a wallet cannot claim a benchmark on a token it did not launch.
@@ -89,11 +87,11 @@ export const launches = pgTable(
 );
 
 /**
- * A benchmark somebody paid to add to a token that was not launched here.
+ * A TOKEN/RWA pair somebody paid for. Anyone may buy one, for any token with a pool.
  *
- * The terminal used to cross every token with every asset, which made most of it noise. Now a token
- * carries one benchmark for free and anything beyond it is bought, one dollar's worth of COOK per
- * pair, paid into the cashback vault rather than to Coorwa, and paid back out to that pair's traders.
+ * A token is only in the terminal once it has a pair: its launch benchmark if it was launched here,
+ * otherwise one of these. Each costs one dollar's worth of COOK, paid into the cashback vault rather
+ * than to Coorwa, and paid back out to that pair's traders.
  *
  * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
  * only written once that transaction has been read back from the chain: it has to have funded the

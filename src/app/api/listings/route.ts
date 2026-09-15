@@ -3,18 +3,18 @@ import { z } from "zod";
 import { PublicKey } from "@solana/web3.js";
 import {
   billableTickers,
+  carriedFor,
   cookToUsd,
-  listedFor,
   listingQuote,
   listingsFor,
   pairsPaidFor,
   recordListings,
   signatureSpent,
-  FREE_TICKER,
 } from "@/lib/listings";
 import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
 import { tokenCreator } from "@/lib/creators";
-import { fetchCookPriceUsd } from "@/lib/cookiescan";
+import { fetchCookPriceUsd, fetchMarkets, liquidityByMint } from "@/lib/cookiescan";
+import { benchmarks } from "@/lib/launches";
 import { fundsPda, vaultPda } from "@/lib/vault";
 import { COOK_MINT, VAULT_MINT } from "@/lib/config";
 
@@ -25,11 +25,17 @@ function vaultFunds(): string {
   return fundsPda(vaultPda(new PublicKey(VAULT_MINT))).toBase58();
 }
 
+/** The same floor `buildUniverse` applies, so a pair that is paid for actually appears. */
+const MIN_LIQUIDITY_USD = 1;
+
 /**
  * What a token already carries, and what more would cost.
  *
  * Quoting is a read, so it needs no wallet. The COOK figure is deliberately a little above the
  * strict price: it is signed now and confirms later, and COOK moves in between.
+ *
+ * `liquidityUsd` is said here so the panel can refuse to take money for a token with no pool: a pair
+ * on a token nobody can trade would never appear in the terminal, and the dollar would buy nothing.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -42,20 +48,26 @@ export async function GET(req: Request) {
     .filter(Boolean);
 
   try {
-    const [listed, cookPriceUsd, history, creator] = await Promise.all([
-      listedFor(mint),
+    const [carried, pin, cookPriceUsd, history, creator, markets] = await Promise.all([
+      carriedFor(mint),
+      benchmarks().then((b) => b.get(mint) ?? null),
       fetchCookPriceUsd(),
       listingsFor(mint),
       tokenCreator(mint),
+      fetchMarkets(),
     ]);
-    const billable = billableTickers(wanted, listed);
+    const billable = billableTickers(wanted, carried);
+    const liquidityUsd = liquidityByMint(markets).get(mint) ?? 0;
 
     return NextResponse.json({
       mint,
-      free: FREE_TICKER,
-      listed,
+      /** The benchmark picked at launch, when the token was launched here. */
+      pin,
+      carried,
       billable,
-      // Named so the panel can say whose wallet has to be connected rather than just refusing.
+      liquidityUsd,
+      tradeable: liquidityUsd >= MIN_LIQUIDITY_USD,
+      // Said so the panel can name who earns the creator share, not to gate anything.
       creator: creator?.wallet ?? null,
       creatorSource: creator?.source ?? null,
       cookPriceUsd,
@@ -82,6 +94,9 @@ const Body = z.object({
 /**
  * Turn a payment into listings.
  *
+ * Anyone may pay for a pair on any token. The payer gains nothing by it: the dollar goes to the
+ * pair's traders, and the fees the pair generates go to its traders and the token's creator.
+ *
  * Nothing here is taken on the client's word. The transaction is read back from the chain, has to
  * have been signed by the payer, and has to have actually credited the vault's funds account - the
  * amount that landed there is what decides how many pairs it bought, priced at the time it is read
@@ -103,32 +118,6 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "that payment has already bought its pairs", recorded: 0 },
         { status: 409 },
-      );
-    }
-
-    // Only the token's creator may benchmark it. They are the one who earns the creator share of
-    // every fee the pair goes on to generate, so letting a stranger choose it would be handing away
-    // somebody else's position. Proved against the launch when Coorwa made the token, and against
-    // the mint's own metadata authority otherwise.
-    const creator = await tokenCreator(b.mint);
-    if (!creator) {
-      return NextResponse.json(
-        {
-          error: "this token has no creator Coorwa can verify",
-          hint: "its mint names no metadata authority, so there is nobody to prove a claim against",
-          recorded: 0,
-        },
-        { status: 403 },
-      );
-    }
-    if (creator.wallet !== b.payer) {
-      return NextResponse.json(
-        {
-          error: "only this token's creator can add a benchmark to it",
-          hint: `connect ${creator.wallet} and try again`,
-          recorded: 0,
-        },
-        { status: 403 },
       );
     }
 
@@ -158,9 +147,8 @@ export async function POST(req: Request) {
     }
 
     const paidUsd = cookToUsd(paidRaw, cookPriceUsd);
-    const listed = await listedFor(b.mint);
     // Billable first, so a payment is never spent on a pair the token already carries.
-    const billable = billableTickers(b.tickers, listed);
+    const billable = billableTickers(b.tickers, await carriedFor(b.mint));
     const affordable = billable.slice(0, pairsPaidFor(paidUsd));
 
     const { recorded } = await recordListings({

@@ -17,11 +17,12 @@ import { PillSelect } from "./ui/pill-select";
 export function HeroSearch() {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [quote, setQuote] = useState("NVDA");
+  const [quote, setQuote] = useState("ALL");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const params = new URLSearchParams({ quote });
+    const params = new URLSearchParams();
+    if (quote !== "ALL") params.set("quote", quote);
     if (query.trim()) params.set("q", query.trim());
     router.push(`/terminal?${params}`);
   }
@@ -37,7 +38,7 @@ export function HeroSearch() {
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search any Cookie Chain token"
+        placeholder="Search a token"
         aria-label="Search Cookie Chain tokens"
         className="min-w-0 flex-1 bg-transparent text-[15px] text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
       />
@@ -47,7 +48,10 @@ export function HeroSearch() {
         label="Quote in"
         value={quote}
         onChange={setQuote}
-        options={RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.ticker }))}
+        options={[
+          { value: "ALL", label: "All" },
+          ...RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.ticker })),
+        ]}
       />
 
       <button type="submit" className="btn btn-primary btn-sm shrink-0">

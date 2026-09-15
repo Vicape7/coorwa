@@ -1,9 +1,8 @@
 /**
  * Who created a token.
  *
- * Two things need this and both are about money, so it cannot be a guess. Creator cashback pays a
- * share of every fee earned on a token to whoever made it, and only a token's creator may buy it a
- * benchmark, so a wrong answer either pays a stranger or locks out the person entitled.
+ * Creator cashback pays a share of every fee earned on a token to whoever made it, so this cannot be
+ * a guess: a wrong answer pays a stranger. (Anyone may buy a token a pair; that is not gated on it.)
  *
  * There are two sources and they are checked in that order:
  *
@@ -61,7 +60,7 @@ export async function tokenCreator(mint: string): Promise<Creator | null> {
   return authority ? { wallet: authority, source: "authority" } : null;
 }
 
-/** Whether a wallet may act for a token: buy it a benchmark, and be paid the creator's share. */
+/** Whether a wallet is the one paid the creator's share of a token's fees. */
 export async function isCreator(mint: string, wallet: string): Promise<boolean> {
   const creator = await tokenCreator(mint);
   return creator?.wallet === wallet;

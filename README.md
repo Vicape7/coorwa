@@ -47,10 +47,10 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ## What it does
 
 ### Terminal
-- **A list of pairs somebody chose, not a cross product.** Every token with real pool depth carries
-  one benchmark for free. A token launched through Coorwa carries the one its creator picked at
-  launch and nothing else. Any other pair has to be bought, a dollar a time, on the pools page.
-  Crossing 23 tokens with 16 assets produced 368 rows of arithmetic; this produces a market list.
+- **A list of pairs somebody chose, not a cross product.** A token is only in the terminal once it
+  has a pair. A token launched through Coorwa starts with the one its creator picked at launch, for
+  free. Every other pair, on any token, is bought for a dollar on the pools page, by anyone. Crossing
+  23 tokens with 16 assets produced 368 rows of arithmetic; this produces a market list.
 - **Candles built from executed fills**, not standing pool quotes - and the pair chart is the ratio
   of two real series, so it shows genuine relative performance against the stock.
 - A pair that has not traded in 24h shows `—`, never a phantom return from a flat price against a
@@ -84,13 +84,15 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
-- **A token's creator can add benchmarks to it, for a dollar a pair.** Only the creator: they earn
-  the creator share of every fee the pair goes on to generate, so letting a stranger pick it would
-  be handing away somebody else's position. Proved against the launch for tokens Coorwa made, and
-  against the mint's metadata authority otherwise - which is worth nothing across the registry at
-  large, where 4,449 of 5,088 tokens share one launchpad key, and works for every token that
-  actually has liquidity here, where each resolves to its own wallet. That shared key is refused by
-  name.
+- **The pools page lists pairs, not raw pools.** Each TOKEN/RWA pair is shown with the real
+  TOKEN/COOK pool behind it, which is where a deposit goes. A token with two pairs shares one pool.
+- **Anyone can add a pair to any token with a pool, for a dollar a pair.** The payer gains nothing by
+  it: the dollar goes to the pair's traders, and the fees the pair then earns go to its traders and
+  to the token's creator, whoever listed it. The creator is proved against the launch for tokens
+  Coorwa made, and against the mint's metadata authority otherwise - which is worth nothing across
+  the registry at large, where 4,449 of 5,088 tokens share one launchpad key, and works for every
+  token that actually has liquidity here, where each resolves to its own wallet. That shared key is
+  refused by name.
 - The fee is paid in COOK by calling `fund` on the cashback vault, which the program lets anyone
   call, so it lands in the account the rebate is paid out of and Coorwa never holds it. Nothing is
   credited on the client's word: the payment is read back from the chain, and the amount that
@@ -112,7 +114,7 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - Coorwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
-- Split 50 / 30 / 20 between trader, creator and liquidity.
+- Split 62.5 / 37.5 between trader and creator, the same as the swap fee. Coorwa keeps none of it.
 - **Nothing is credited on the client's word.** A reported fill is re-read on chain before it is
   written: the transaction has to exist, to have succeeded, and to have been signed by the wallet
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
@@ -190,7 +192,8 @@ The honest cost of that shape: there is no withdrawal path at all, so tokens sen
 only be routed back out by publishing an epoch that names the sender. And a program this young is
 unaudited, which is stated here rather than buried.
 
-The claim pays wrapped COOK, and the rewards page offers to take it as an xStock instead. That is
+The rewards page offers the payout as an xStock first and as wrapped COOK second, because settling
+into a real asset is the point of Coorwa. The stock payout is
 the cross-chain route above with the claim as its first leg: every open epoch is claimed and
 unwrapped in the same transaction, the COOK is bridged to Solana, and the chosen xStock is bought
 into the claimant's own wallet there. Every step is signed by the user, and a payout that stops

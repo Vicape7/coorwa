@@ -1,10 +1,15 @@
 /**
- * Paid benchmarks: extra RWA pairs bought for a token that was not launched through Coorwa.
+ * Paid pairs: TOKEN/RWA pairs somebody bought for a token.
  *
- * The terminal used to be every token crossed with every asset, which is sixteen rows per token and
- * mostly noise. A token now carries one benchmark for nothing, and anything past that is bought at
- * `PAIR_LISTING_USD` a pair. The fee is the filter: a dollar is nothing to somebody who means it,
- * and enough that nobody lists sixteen dead pairs for the sake of it.
+ * A pair only exists because somebody chose it. A token launched through Coorwa starts with the one
+ * benchmark its creator picked at launch; any other token starts with none and is not in the
+ * terminal at all. Every pair past that is bought at `PAIR_LISTING_USD`, by anyone, for any token
+ * with a real pool. The fee is the filter: a dollar is nothing to somebody who means it, and enough
+ * that nobody lists sixteen dead pairs for the sake of it.
+ *
+ * Anyone may pay, not only the token's creator, because the payer gains nothing from it. The dollar
+ * goes to the pair's traders, and the fees the pair then generates go to its traders and to the
+ * token's creator, whoever listed it.
  *
  * The money never touches Coorwa. It is paid by calling `fund` on the cashback vault, which the
  * program lets anyone call, so it lands in the same account the rebate is paid out of. It belongs to
@@ -12,14 +17,14 @@
  * fees they paid on it (see `listingSharesFrom` in `epochs.ts`). That is what makes this a listing
  * fee rather than a toll: it goes back to the people trading.
  *
- * Optional like the rest of the database. With no DATABASE_URL nothing is listed, nothing can be
- * bought, and every token falls back to its one free benchmark.
+ * Optional like the rest of the database. With no DATABASE_URL nothing is listed and nothing can be
+ * bought.
  */
 import { desc, eq, inArray } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
 import { cached } from "./http";
 import { COOK_DECIMALS, PAIR_LISTING_USD } from "./config";
-import { rwaByTicker, DEFAULT_RWA } from "./rwa";
+import { rwaByTicker } from "./rwa";
 import { rawToUi } from "./format";
 import { benchmarks } from "./launches";
 
@@ -33,19 +38,11 @@ export interface Listing {
 }
 
 /**
- * The benchmark every token has without paying anything.
- *
- * Charging for the first one would leave a token invisible until somebody spent money on it, which
- * would empty the terminal rather than tidy it.
+ * Which of these are worth paying for. `carried` is what the token already has: its launch
+ * benchmark, if it was launched here, and anything bought before.
  */
-export const FREE_TICKER = DEFAULT_RWA.ticker;
-
-/** Which of these are worth paying for: the free one is already there, and so is anything listed. */
-export function billableTickers(
-  wanted: readonly string[],
-  alreadyListed: readonly string[],
-): string[] {
-  const have = new Set<string>([FREE_TICKER, ...alreadyListed]);
+export function billableTickers(wanted: readonly string[], carried: readonly string[]): string[] {
+  const have = new Set<string>(carried);
   const out: string[] = [];
   for (const raw of wanted) {
     const asset = rwaByTicker(raw);
@@ -113,17 +110,22 @@ export async function listedByMint(): Promise<Map<string, string[]>> {
 }
 
 /**
- * Does this token actually carry this benchmark? The same three rules as `quotesFor` in `pairs.ts`:
- * a token launched here carries its pin and nothing else, any other token the free one plus what
- * was bought. Asked before a fill is attributed to a pair, because the pair decides who shares that
- * pair's listing fees.
+ * Everything a token carries: its launch benchmark, if it has one, then whatever was bought. The same
+ * set `quotesFor` in `pairs.ts` builds the terminal from.
+ */
+export async function carriedFor(mint: string): Promise<string[]> {
+  const [pin, listed] = await Promise.all([benchmarks().then((b) => b.get(mint)), listedFor(mint)]);
+  return pin ? [pin, ...listed.filter((t) => t !== pin)] : listed;
+}
+
+/**
+ * Does this token actually carry this benchmark? Asked before a fill is attributed to a pair,
+ * because the pair decides who shares that pair's listing fees.
  */
 export async function carriesBenchmark(mint: string, ticker: string): Promise<boolean> {
   const asset = rwaByTicker(ticker);
   if (!asset) return false;
-  const pin = (await benchmarks()).get(mint);
-  if (pin) return pin === asset.ticker;
-  return asset.ticker === FREE_TICKER || (await listedFor(mint)).includes(asset.ticker);
+  return (await carriedFor(mint)).includes(asset.ticker);
 }
 
 /** Has this payment already been spent on listings? One transaction buys one batch. */

@@ -16,11 +16,10 @@
  * the real TOKEN/wCOOK pool, and anyone wanting true RWA exposure exits through the cross-chain
  * route in `crosschain.ts`.
  *
- * There are two regimes, and the difference is who chose the benchmark. A token launched through
- * Coorwa has one: its creator picked an asset at launch, so it appears as that pair and no other,
- * the way a launchpad pair behaves anywhere else. A token that already existed on Cookie Chain had
- * nobody to choose, so it stays quotable against every asset and the trader picks. `launches.ts`
- * holds the first set; with no database there is no first set and everything crosses.
+ * A pair exists only because somebody chose it. A token launched through Coorwa starts with the
+ * benchmark its creator picked at launch (`launches.ts`); anyone can buy it more. Any other token
+ * starts with no pair and is not in the terminal until somebody buys one (`listings.ts`). With no
+ * database there are no pairs at all.
  */
 import { COOK_MINT } from "./config";
 import {
@@ -35,7 +34,7 @@ import {
 import { fetchRwaPrices, type RwaQuote } from "./jupiter";
 import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
 import { benchmarks } from "./launches";
-import { listedByMint, FREE_TICKER } from "./listings";
+import { listedByMint } from "./listings";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -68,10 +67,7 @@ export interface CoorwaPair {
     priceUsd: number;
     change24h: number | null;
   };
-  /**
-   * True when this token was launched through Coorwa and its creator picked this asset as the
-   * benchmark. Such a token has exactly one pair; everything else is quotable against all of them.
-   */
+  /** True when this token was launched through Coorwa and its creator picked this asset at launch. */
   pinned: boolean;
   /** How many RWA shares one base token is worth. Always tiny - render with `rwaRatio`. */
   price: number;
@@ -100,12 +96,9 @@ export interface PairUniverse {
 }
 
 /**
- * Which assets a token may be quoted against.
- *
- * Three cases, and the difference is who decided. A token launched through Coorwa has one benchmark
- * its creator chose at launch, and appears against that asset alone. Any other token carries one
- * free benchmark, plus whatever pairs somebody has paid to add. Nothing is crossed with everything
- * any more: sixteen rows per token was a list of arithmetic, not a list of markets.
+ * Which assets a token may be quoted against: the benchmark its creator picked at launch, if it was
+ * launched here, plus every pair somebody paid for. Nothing else, so a token nobody chose a pair for
+ * is not in the terminal.
  *
  * The narrowing matters: asking for one asset a token does not carry has to come back empty rather
  * than falling back to the full set, or `findPair("token-nvda")` would happily resolve a pair
@@ -116,9 +109,8 @@ export function quotesFor<T extends { ticker: string }>(
   listed: readonly string[] | undefined,
   requested: readonly T[],
 ): readonly T[] {
-  if (pin) return requested.filter((a) => a.ticker === pin);
-
-  const carried = new Set<string>([FREE_TICKER, ...(listed ?? [])]);
+  const carried = new Set<string>(listed ?? []);
+  if (pin) carried.add(pin);
   return requested.filter((a) => carried.has(a.ticker));
 }
 
@@ -147,8 +139,7 @@ function tokenUsd(t: CookiescanToken, cookUsd: number | null): number | null {
 }
 
 /**
- * Build the tradeable universe: every Cookie Chain token with real pool depth, crossed with every
- * RWA in the registry.
+ * Build the tradeable universe: every pair somebody chose, for tokens with real pool depth.
  */
 export async function buildUniverse(opts?: {
   quotes?: string[];

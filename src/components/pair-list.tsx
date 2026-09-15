@@ -14,6 +14,9 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 type SortKey = "liquidity" | "volume" | "change" | "price";
 
+/** Every listed pair, each in its own asset. The default: most tokens carry one pair or two. */
+const ALL = "ALL";
+
 const SORTS: [SortKey, string][] = [
   ["liquidity", "Liquidity"],
   ["volume", "Volume"],
@@ -29,15 +32,16 @@ export function PairList({
   initialQuote?: string;
 }) {
   const [ticker, setTicker] = useState(
-    () => RWA_ASSETS.find((a) => a.ticker === initialQuote)?.ticker ?? "NVDA",
+    () => RWA_ASSETS.find((a) => a.ticker === initialQuote)?.ticker ?? ALL,
   );
   const [query, setQuery] = useState(initialQuery);
   const [sort, setSort] = useState<SortKey>("liquidity");
 
-  const { data, error, isLoading } = useSWR<PairUniverse>(`/api/pairs?quote=${ticker}`, fetcher, {
-    refreshInterval: 20_000,
-    keepPreviousData: true,
-  });
+  const { data, error, isLoading } = useSWR<PairUniverse>(
+    ticker === ALL ? "/api/pairs" : `/api/pairs?quote=${ticker}`,
+    fetcher,
+    { refreshInterval: 20_000, keepPreviousData: true },
+  );
 
   const rows = useMemo(() => {
     const pairs = data?.pairs ?? [];
@@ -66,13 +70,14 @@ export function PairList({
     return [...filtered].sort((a, b) => key(b) - key(a));
   }, [data, query, sort]);
 
-  const quote = data?.rwa.find((r) => r.ticker === ticker);
+  const quote = ticker === ALL ? undefined : data?.rwa.find((r) => r.ticker === ticker);
+  const unit = ticker === ALL ? "asset" : ticker;
 
   return (
     <div className="mx-auto max-w-[1400px] px-5 py-8">
       <div className="flex flex-wrap items-end justify-between gap-5">
         <h1 className="display text-[30px] text-primary sm:text-[36px]">
-          Every token, priced in shares
+          Tokens, priced in shares
         </h1>
 
         {quote && (
@@ -105,10 +110,10 @@ export function PairList({
           label="Quote in"
           value={ticker}
           onChange={setTicker}
-          options={RWA_ASSETS.map((a) => ({
-            value: a.ticker,
-            label: a.ticker,
-          }))}
+          options={[
+            { value: ALL, label: "All" },
+            ...RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.ticker })),
+          ]}
         />
         <PillSelect
           id="terminal-sort"
@@ -132,9 +137,9 @@ export function PairList({
             <thead>
               <tr className="border-b border-hair">
                 <Th className="w-[28%]">Pair</Th>
-                <Th align="right">Price in {ticker}</Th>
-                <Th align="right">1 {ticker} buys</Th>
-                <Th align="right">vs {ticker} 24h</Th>
+                <Th align="right">Price in {unit}</Th>
+                <Th align="right">1 {unit} buys</Th>
+                <Th align="right">vs {unit} 24h</Th>
                 <Th align="right">Liquidity</Th>
                 <Th align="right">Volume 24h</Th>
                 <Th>Venue</Th>
@@ -143,14 +148,25 @@ export function PairList({
             <tbody>
               {isLoading && !data
                 ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-                : rows.map((p) => <Row key={p.slug} pair={p} ticker={ticker} />)}
+                : rows.map((p) => <Row key={p.slug} pair={p} />)}
             </tbody>
           </table>
         </div>
 
-        {!isLoading && rows.length === 0 && (
+        {!isLoading && data && rows.length === 0 && (
           <div className="p-10 text-center text-[14px] text-muted">
-            No token matches that search.
+            {query.trim() ? (
+              "No token matches that search."
+            ) : (
+              <>
+                No pairs {ticker === ALL ? "listed yet" : `in ${ticker} yet`}. A token appears here
+                once somebody gives it a pair, which anyone can do on{" "}
+                <Link href="/pools" className="text-primary underline underline-offset-4">
+                  Pools
+                </Link>
+                .
+              </>
+            )}
           </div>
         )}
       </div>
@@ -190,7 +206,8 @@ function toneClass(v: number | null | undefined) {
   return v >= 0 ? "text-[color:var(--color-up)]" : "text-[color:var(--color-down)]";
 }
 
-function Row({ pair, ticker }: { pair: CoorwaPair; ticker: string }) {
+function Row({ pair }: { pair: CoorwaPair }) {
+  const ticker = pair.quote.ticker;
   return (
     <tr className="row-hover border-b border-hair last:border-0">
       <td className="px-4 py-3">

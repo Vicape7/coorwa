@@ -10,46 +10,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { quotesFor } from "../src/lib/pairs";
-import { billableTickers, pairsPaidFor, listingQuote, FREE_TICKER } from "../src/lib/listings";
+import { billableTickers, pairsPaidFor, listingQuote } from "../src/lib/listings";
 import { PAIR_LISTING_USD } from "../src/lib/config";
 
-const ALL = [{ ticker: FREE_TICKER }, { ticker: "TSLA" }, { ticker: "SPY" }] as const;
-const other = ALL.filter((a) => a.ticker !== FREE_TICKER).map((a) => a.ticker);
+const ALL = [{ ticker: "NVDA" }, { ticker: "TSLA" }, { ticker: "SPY" }] as const;
+const [nvda, tsla, spy] = ALL.map((a) => a.ticker);
 
-test("a token nobody chose or paid for carries exactly one benchmark", () => {
-  assert.deepEqual(quotesFor(undefined, undefined, ALL), [{ ticker: FREE_TICKER }]);
-  assert.deepEqual(quotesFor(undefined, [], ALL), [{ ticker: FREE_TICKER }]);
+test("a token nobody chose a pair for carries none", () => {
+  // No free benchmark: a token is not in the terminal until somebody buys it a pair.
+  assert.deepEqual(quotesFor(undefined, undefined, ALL), []);
+  assert.deepEqual(quotesFor(undefined, [], ALL), []);
 });
 
-test("a paid pair is carried alongside the free one, never instead of it", () => {
-  const carried = quotesFor(undefined, [other[0]], ALL).map((a) => a.ticker);
-
-  assert.ok(carried.includes(FREE_TICKER), "paying must not cost a token its free benchmark");
-  assert.ok(carried.includes(other[0]));
-  assert.equal(carried.length, 2);
+test("a token carries exactly the pairs bought for it", () => {
+  assert.deepEqual(quotesFor(undefined, [tsla], ALL), [{ ticker: tsla }]);
+  assert.deepEqual(quotesFor(undefined, [tsla, spy], ALL), [{ ticker: tsla }, { ticker: spy }]);
 });
 
-test("a token launched here appears against its own benchmark and no other", () => {
-  assert.deepEqual(quotesFor(other[0], undefined, ALL), [{ ticker: other[0] }]);
-  // Even paid listings do not widen it: the creator chose, and that choice is the whole point.
-  assert.deepEqual(quotesFor(other[0], [other[1]], ALL), [{ ticker: other[0] }]);
+test("a token launched here carries its own benchmark, and can be bought more", () => {
+  assert.deepEqual(quotesFor(tsla, undefined, ALL), [{ ticker: tsla }]);
+  const carried = quotesFor(tsla, [spy], ALL).map((a) => a.ticker);
+  assert.deepEqual(carried.sort(), [spy, tsla].sort(), "a bought pair adds to the launch benchmark");
 });
 
 test("asking for an asset a token does not carry comes back empty", () => {
   // The fallback to be avoided: answering with the full set would resolve slugs nobody chose.
-  assert.deepEqual(quotesFor(undefined, undefined, [{ ticker: other[0] }]), []);
-  assert.deepEqual(quotesFor(other[0], undefined, [{ ticker: other[1] }]), []);
+  assert.deepEqual(quotesFor(undefined, [tsla], [{ ticker: nvda }]), []);
+  assert.deepEqual(quotesFor(tsla, undefined, [{ ticker: spy }]), []);
   assert.deepEqual(quotesFor("GONE", undefined, ALL), []);
 });
 
-test("nobody is charged for a pair they already have", () => {
-  assert.deepEqual(billableTickers([FREE_TICKER], []), [], "the free one is never billable");
-  assert.deepEqual(billableTickers([other[0]], [other[0]]), [], "already listed, already paid");
-  assert.deepEqual(billableTickers([other[0], other[1]], [other[0]]), [other[1]]);
+test("nobody is charged for a pair the token already has", () => {
+  assert.deepEqual(billableTickers([nvda], []), [nvda], "the first pair is paid for like any other");
+  assert.deepEqual(billableTickers([tsla], [tsla]), [], "a launch benchmark or a bought pair");
+  assert.deepEqual(billableTickers([tsla, spy], [tsla]), [spy]);
 });
 
 test("a repeated or unknown ticker cannot inflate the bill", () => {
-  assert.deepEqual(billableTickers([other[0], other[0], other[0]], []), [other[0]]);
+  assert.deepEqual(billableTickers([tsla, tsla, tsla], []), [tsla]);
   assert.deepEqual(billableTickers(["NOTATHING"], []), []);
   assert.deepEqual(billableTickers([], []), []);
 });

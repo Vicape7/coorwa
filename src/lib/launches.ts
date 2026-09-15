@@ -1,13 +1,12 @@
 /**
  * Tokens launched through Coorwa, and the RWA each creator benchmarked theirs against.
  *
- * A token launched here is meant to be a TOKEN/RWA instrument: the creator picks one real-world
- * asset at launch and that is the token's pair from then on. Tokens that already existed on Cookie
- * Chain had nobody to make that choice, so they keep being quotable against every asset, which is
- * what `buildUniverse` does by default. This module is the difference between the two.
+ * A token launched here is a TOKEN/RWA instrument from the start: the creator picks one real-world
+ * asset at launch, and that first pair is free and fixed. More can be bought later by anyone
+ * (`listings.ts`). A token from anywhere else has no pair until somebody buys one.
  *
  * Like the rest of the database, it is optional. With no DATABASE_URL every read here comes back
- * empty and the pair engine behaves exactly as it did before any of this existed.
+ * empty.
  */
 import { desc, eq } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
@@ -70,8 +69,7 @@ export async function benchmarks(): Promise<Map<string, string>> {
 
     const out = new Map<string, string>();
     for (const r of rows) {
-      // An asset that has since been dropped from RWA_ASSETS would pin a token to nothing at all,
-      // which would hide it from the terminal entirely. Falling back to the cross is the safer miss.
+      // An asset that has since been dropped from RWA_ASSETS cannot be priced, so it is left out.
       if (rwaByTicker(r.ticker)) out.set(r.mint, r.ticker.toUpperCase());
     }
     return out;

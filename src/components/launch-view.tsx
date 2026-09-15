@@ -54,8 +54,8 @@ export function LaunchView() {
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
           Coorwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades
-          on the curve until it hits the graduation target, then moves to a real DEX pool - where it
-          becomes a Coorwa pair you can price against any stock.
+          on the curve until it hits the graduation target, then moves to a real DEX pool. It is a
+          Coorwa pair from the start, priced in the stock you pick below.
         </p>
       </div>
 
@@ -309,10 +309,10 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             ))}
           </select>
           <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
-            Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark} and against
-            nothing else. Liquidity is still the COOK curve, the way it is everywhere on this chain;
-            the benchmark is what the price is quoted and charted in. Fixed at launch, like the
-            name.
+            Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark}, for free.
+            More pairs can be added later for $1 each, by anyone, on the pools page. Liquidity is
+            still the COOK curve, the way it is everywhere on this chain; the benchmark is what the
+            price is quoted and charted in. This first one is fixed at launch, like the name.
           </p>
         </Labeled>
 

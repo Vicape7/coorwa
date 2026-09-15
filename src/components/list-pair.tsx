@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Buying a benchmark for a token that was not launched here.
+ * Buying a TOKEN/RWA pair.
  *
- * The terminal used to show every token against all sixteen assets, which is arithmetic rather than
- * a market. Every token now carries one benchmark for nothing, and more are bought a dollar at a
- * time. The dollar is the filter: trivial for somebody who means it, and enough that nobody lists
- * sixteen pairs on a dead token for the sake of it.
+ * A pair exists only because somebody chose it. A token launched here starts with the benchmark its
+ * creator picked; any other token starts with none and is not in the terminal. Anyone can buy a
+ * token a pair, a dollar at a time. The dollar is the filter: trivial for somebody who means it, and
+ * enough that nobody lists sixteen pairs on a dead token for the sake of it.
  *
  * Where the money goes is the point. The payment is a plain `fund` call on the cashback vault,
  * which the programme lets anyone make, so a listing fee lands in the same account the rebate is
@@ -30,21 +30,24 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 interface Quote {
   mint: string;
-  free: string;
-  listed: string[];
+  /** The benchmark picked at launch, when the token was launched here. */
+  pin: string | null;
+  carried: string[];
   billable: string[];
+  tradeable: boolean;
+  liquidityUsd: number;
   pairs: number;
   usd: number;
   cook: number | null;
   pricePerPairUsd: number;
   cookPriceUsd: number | null;
-  /** Whose wallet has to be connected. Only a token's creator may benchmark it. */
+  /** Who earns the creator share of the pair's fees. Named, not a gate: anyone can pay. */
   creator: string | null;
   creatorSource: "launch" | "authority" | null;
   error?: string;
 }
 
-export function ListPair() {
+export function ListPair({ onListed }: { onListed?: () => void }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -71,10 +74,9 @@ export function ListPair() {
     fetcher,
   );
 
-  const free = quote?.free;
-  const listed = quote?.listed ?? [];
+  const carried = quote?.carried ?? [];
   const creator = quote?.creator ?? null;
-  const mine = creator != null && creator === publicKey?.toBase58();
+  const tradeable = quote?.tradeable ?? false;
   // The server decides what is billable, not this side: it knows what has already been paid for.
   const billable = useMemo(() => quote?.billable ?? [], [quote?.billable]);
 
@@ -85,7 +87,7 @@ export function ListPair() {
   }, []);
 
   const pay = useCallback(async () => {
-    if (!publicKey || !signTransaction || !validMint || !quote?.cook) return;
+    if (!publicKey || !signTransaction || !validMint || !quote?.cook || !quote.tradeable) return;
     setBusy(true);
     setError(null);
     setDone(null);
@@ -113,23 +115,24 @@ export function ListPair() {
       setDone({ signature: sent.signature, listed: res.listed ?? [], note: res.note });
       setWanted([]);
       mutate();
+      onListed?.();
     } catch (e) {
       setError(explainError(e));
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, validMint, quote, connection, billable, mutate]);
+  }, [publicKey, signTransaction, validMint, quote, connection, billable, mutate, onListed]);
 
   return (
     <div className="card mt-10 p-7">
-      <h2 className="title text-primary">Add a benchmark</h2>
+      <h2 className="title text-primary">Add a pair</h2>
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
-        Every token is priced against one asset for nothing. Its creator can add more at{" "}
+        A token is only in the terminal once somebody gives it a pair. Anyone can, for{" "}
         {usd(quote?.pricePerPairUsd ?? 1)} a pair, paid in COOK straight into the cashback vault -
-        not to Coorwa, which cannot touch it - and paid back as cashback to the people who trade
-        that pair. Worth doing: once a pair exists, the creator earns a share of the fee on every
-        trade against it. Liquidity is still this token&apos;s COOK pool; the benchmark is what the
-        price is quoted and charted in.
+        not to Coorwa, which cannot touch it. That dollar goes back to the people who trade the
+        pair, and every fee the pair earns after that goes to its traders and to the token&apos;s
+        creator. Liquidity is still the token&apos;s COOK pool; the asset is what the price is quoted
+        and charted in.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -150,34 +153,21 @@ export function ListPair() {
           <Notice tone="note">That does not look like a mint address.</Notice>
         )}
 
-        {validMint && quote && !mine && (
+        {validMint && quote && !quote.error && !tradeable && (
           <Notice tone="note">
-            {creator == null ? (
-              <>
-                Coorwa cannot tell who made this token, so there is nobody to prove a claim against.
-                Its mint names no metadata authority.
-              </>
-            ) : (
-              <>
-                Only this token&apos;s creator can benchmark it, because they earn the creator share
-                of every fee the pair goes on to generate. Connect{" "}
-                <span className="num">{shortAddr(creator, 6)}</span>
-                {quote.creatorSource === "launch" ? ", the wallet that launched it." : "."}
-              </>
-            )}
+            This token has no pool on Cookie Chain with real liquidity, so a pair on it could not be
+            traded or priced. Nothing can be bought for it until it has one.
           </Notice>
         )}
 
-        {validMint && (
+        {validMint && quote && tradeable && (
           <>
             <div>
               <span className="label mb-2 block text-[12px]">Assets</span>
               <div className="flex flex-wrap gap-2">
                 {RWA_ASSETS.map((a) => {
-                  const isFree = a.ticker === free;
-                  const already = listed.includes(a.ticker);
+                  const owned = carried.includes(a.ticker);
                   const picked = wanted.includes(a.ticker);
-                  const owned = isFree || already;
                   return (
                     <button
                       key={a.ticker}
@@ -191,10 +181,10 @@ export function ListPair() {
                       }
                       className="pill num pill-quiet disabled:opacity-45"
                       title={
-                        isFree
-                          ? "carried for free by every token"
-                          : already
-                            ? "already paid for"
+                        a.ticker === quote.pin
+                          ? "picked by its creator at launch"
+                          : owned
+                            ? "already listed"
                             : a.name
                       }
                     >
@@ -205,8 +195,15 @@ export function ListPair() {
                 })}
               </div>
               <p className="mt-2 text-[12px] text-subtle">
-                {free} is carried for free.
-                {listed.length > 0 && ` Already paid for: ${listed.join(", ")}.`}
+                {carried.length === 0
+                  ? "No pairs yet."
+                  : `Already listed: ${carried.join(", ")}${quote.pin ? ` (${quote.pin} picked at launch)` : ""}.`}
+                {creator && (
+                  <>
+                    {" "}
+                    The creator share goes to <span className="num">{shortAddr(creator, 5)}</span>.
+                  </>
+                )}
               </p>
             </div>
 
@@ -253,16 +250,14 @@ export function ListPair() {
         ) : (
           <button
             className="btn btn-primary"
-            disabled={busy || billable.length === 0 || !quote?.cook || !mine}
+            disabled={busy || billable.length === 0 || !quote?.cook || !tradeable}
             onClick={pay}
           >
             {busy
               ? "Confirm in your wallet"
-              : !mine
-                ? "Only the creator can list"
-                : billable.length === 0
-                  ? "Pick an asset"
-                  : `Pay ${usd(quote?.usd ?? 0)} into the vault`}
+              : billable.length === 0
+                ? "Pick an asset"
+                : `Pay ${usd(quote?.usd ?? 0)} into the vault`}
           </button>
         )}
       </div>
