@@ -7,6 +7,8 @@
  * the app means one place knows the rules, and this stays small enough to read at a glance.
  */
 interface Env {
+  /** The Coorwa app Worker, bound by name. */
+  APP: { fetch(input: string, init?: RequestInit): Promise<Response> };
   SAMPLE_URL: string;
   HOLDER_SAMPLE_SECRET: string;
 }
@@ -21,7 +23,9 @@ interface Context {
 }
 
 async function requestSample(env: Env): Promise<void> {
-  const res = await fetch(env.SAMPLE_URL, {
+  // Through the service binding, not the public internet: Cloudflare refuses a plain fetch from one
+  // Worker to another on the same account's workers.dev (error 1042), and the call never left.
+  const res = await env.APP.fetch(env.SAMPLE_URL, {
     method: "POST",
     headers: { authorization: `Bearer ${env.HOLDER_SAMPLE_SECRET}` },
   });

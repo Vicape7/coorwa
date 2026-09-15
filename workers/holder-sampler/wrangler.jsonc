@@ -13,8 +13,11 @@
     "crons": ["*/5 * * * *"]
   },
 
+  // The request goes to the app Worker through this binding, so the host in SAMPLE_URL only names the
+  // path for the app's router and never needs to follow the public domain.
+  "services": [{ "binding": "APP", "service": "coorwa" }],
+
   "vars": {
-    // The deployed Coorwa app. Switch to https://coorwa.fun once the domain is on Cloudflare.
     "SAMPLE_URL": "https://coorwa.coorwa.workers.dev/api/cashback/sample"
   },
 
