@@ -213,6 +213,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
           wallet: publicKey.toBase58(),
           source: "swap",
           mint: pair.base.mint,
+          ticker: pair.quote.ticker,
           symbol: pair.base.symbol,
           side,
           valueUsd: Number.isFinite(notional) ? Math.max(0, notional) : 0,

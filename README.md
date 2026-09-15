@@ -95,6 +95,11 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   call, so it lands in the account the rebate is paid out of and Coorwa never holds it. Nothing is
   credited on the client's word: the payment is read back from the chain, and the amount that
   actually reached the vault decides how many pairs it bought. One transaction buys one batch.
+- **A pair's listing fee is paid back to that pair's traders** as cashback. Each epoch shares it out
+  over the wallets that traded the pair since the previous epoch, in proportion to the Coorwa fee
+  each paid on it, and a pair nobody traded keeps its money for the next epoch. All of it goes to
+  traders and none to the creator, who is the one who paid it. Shares are weighted by the fee
+  rather than by a reported trade size because the fee is read off the chain.
 - What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
   Chain, for the reasons in the table above, and the benchmark is what the price is quoted and
   charted in rather than what it trades against.
@@ -120,7 +125,8 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   paying the cashback vault rather than Coorwa. **All of it is returned** - 62.5% to the trader,
   37.5% to the token's creator - because a fee out of the trader's own pocket that Coorwa kept any
   of would be a toll, not a rebate. A route too long to carry the two instructions inside the
-  1,232-byte limit goes through unpriced rather than being refused.
+  1,232-byte limit goes through unpriced rather than being refused. The same fee is charged on the
+  Cookie Chain swap inside a cross-chain settlement or payout, and returned the same way.
 - Payouts go through Coorwa's own program on Cookie Chain rather than a payout wallet. Who is owed
   what is worked out off chain, because it depends on prices and on which wallet generated which
   fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.

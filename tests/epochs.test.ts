@@ -11,7 +11,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
-import { entitlementsFrom, toCook, type Accrual } from "../src/lib/epochs";
+import {
+  entitlementsFrom,
+  listingSharesFrom,
+  listingsPerPair,
+  toCook,
+  type Accrual,
+} from "../src/lib/epochs";
 import { buildEpochTree, verifyProof } from "../src/lib/merkle";
 import {
   CASHBACK_MIN_CLAIM_COOK,
@@ -169,5 +175,82 @@ test("every split returns the whole fee, and the swap split holds nothing back",
     SWAP_CASHBACK_SPLIT.trader / SWAP_CASHBACK_SPLIT.creator,
     CASHBACK_SPLIT.trader / CASHBACK_SPLIT.creator,
     "the weighting between trader and creator should be the same either way",
+  );
+});
+
+// --- listing fees ----------------------------------------------------------------------------------
+
+const PAIR = "mintA|AAPL";
+const day = (n: number) => new Date(Date.UTC(2026, 8, n));
+
+test("a pair's listing fee goes to that pair's traders, in proportion to the fees they paid on it", () => {
+  const shares = listingSharesFrom({
+    listings: [{ pair: PAIR, paidUsd: 4, at: day(1) }],
+    fills: [
+      { pair: PAIR, wallet: "alice", feeUsd: 3, at: day(2) },
+      { pair: PAIR, wallet: "bob", feeUsd: 1, at: day(2) },
+      // Trading another pair earns nothing from this one's listing.
+      { pair: "mintB|NVDA", wallet: "carol", feeUsd: 50, at: day(2) },
+    ],
+    boundaries: [day(10)],
+  });
+  assert.equal(shares.get("alice"), 3);
+  assert.equal(shares.get("bob"), 1);
+  assert.equal(shares.has("carol"), false);
+});
+
+test("a window nobody traded the pair in carries its listing money into the next one", () => {
+  const listings = [{ pair: PAIR, paidUsd: 2, at: day(1) }];
+  const fills = [{ pair: PAIR, wallet: "bob", feeUsd: 0.01, at: day(12) }];
+
+  const first = listingSharesFrom({ listings, fills, boundaries: [day(10)] });
+  assert.equal(first.size, 0);
+
+  const second = listingSharesFrom({ listings, fills, boundaries: [day(10), day(20)] });
+  assert.equal(second.get("bob"), 2);
+});
+
+test("a later trader never shrinks what an earlier window already gave", () => {
+  const listings = [{ pair: PAIR, paidUsd: 1, at: day(1) }];
+  const early = [{ pair: PAIR, wallet: "alice", feeUsd: 1, at: day(2) }];
+  const late = [...early, { pair: PAIR, wallet: "bob", feeUsd: 99, at: day(12) }];
+
+  const epoch1 = listingSharesFrom({ listings, fills: early, boundaries: [day(10)] });
+  const epoch2 = listingSharesFrom({ listings, fills: late, boundaries: [day(10), day(20)] });
+  assert.equal(epoch1.get("alice"), 1);
+  assert.equal(epoch2.get("alice"), 1);
+  // Nothing new was listed in the second window, so there is nothing for bob, and in total the
+  // pair has paid out exactly what it brought in.
+  assert.equal(epoch2.has("bob"), false);
+});
+
+test("money listed after the cutoff, or fills without a fee, count for nothing yet", () => {
+  const shares = listingSharesFrom({
+    listings: [{ pair: PAIR, paidUsd: 5, at: day(11) }],
+    fills: [
+      { pair: PAIR, wallet: "alice", feeUsd: 1, at: day(2) },
+      { pair: PAIR, wallet: "bob", feeUsd: 0, at: day(2) },
+    ],
+    boundaries: [day(10)],
+  });
+  assert.equal(shares.size, 0);
+});
+
+test("one payment that bought three pairs is a third of the money per pair", () => {
+  const rows = ["AAPL", "TSLA", "SPY"].map((ticker) => ({
+    mint: "mintA",
+    ticker,
+    signature: "sig1",
+    paidUsd: 3.06,
+    at: day(1),
+  }));
+  const per = listingsPerPair(rows);
+  assert.deepEqual(
+    per.map((l) => [l.pair, Number(l.paidUsd.toFixed(2))]),
+    [
+      ["mintA|AAPL", 1.02],
+      ["mintA|TSLA", 1.02],
+      ["mintA|SPY", 1.02],
+    ],
   );
 });

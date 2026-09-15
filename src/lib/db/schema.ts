@@ -28,6 +28,12 @@ export const fills = pgTable(
     source: text("source").notNull(),
     /** The non-COOK side of the trade. */
     mint: text("mint").notNull(),
+    /**
+     * The benchmark of the pair the trade was made on, when it was made on one. Listing fees are
+     * paid per pair and returned to that pair's traders, so this is what decides who shares one.
+     * Only written after the server has checked that the token actually carries it.
+     */
+    ticker: text("ticker"),
     symbol: text("symbol"),
     side: text("side").notNull(),
     /** Notional of the fill in USD, as priced at the time. */
@@ -44,6 +50,7 @@ export const fills = pgTable(
     index("fills_wallet_idx").on(t.wallet),
     index("fills_creator_idx").on(t.creator),
     index("fills_created_idx").on(t.createdAt),
+    index("fills_pair_idx").on(t.mint, t.ticker),
   ],
 );
 
@@ -86,7 +93,7 @@ export const launches = pgTable(
  *
  * The terminal used to cross every token with every asset, which made most of it noise. Now a token
  * carries one benchmark for free and anything beyond it is bought, one dollar's worth of COOK per
- * pair, paid into the cashback vault rather than to Coorwa.
+ * pair, paid into the cashback vault rather than to Coorwa, and paid back out to that pair's traders.
  *
  * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
  * only written once that transaction has been read back from the chain: it has to have funded the

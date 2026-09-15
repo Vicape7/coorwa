@@ -6,7 +6,8 @@ import { fetchCookPriceUsd } from "@/lib/cookiescan";
 import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
 import { vaultFundsAccount } from "@/lib/swap-fee";
 import { tokenCreator } from "@/lib/creators";
-import { COOK_DECIMALS, COOK_MINT, COORWA_REFERRER } from "@/lib/config";
+import { carriesBenchmark } from "@/lib/listings";
+import { COOK_DECIMALS, COOK_MINT, COORWA_REFERRER, COORWA_SWAP_FEE_BPS } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ const Body = z.object({
   wallet: z.string().min(32).max(44),
   source: z.enum(["swap", "launchpad"]),
   mint: z.string().min(32).max(44),
+  /** The benchmark of the pair traded on, for a swap made on a pair. */
+  ticker: z.string().min(1).max(10).optional(),
   symbol: z.string().max(32).optional(),
   side: z.enum(["buy", "sell"]),
   valueUsd: z.number().nonnegative().max(1e9),
@@ -89,18 +92,34 @@ export async function POST(req: Request) {
       const paid = tokenCredited(proof, vaultFundsAccount().toBase58(), COOK_MINT);
       if (cookPriceUsd && paid != null && paid > 0n) {
         feeUsd = (Number(paid) / 10 ** COOK_DECIMALS) * cookPriceUsd;
+        // The fee is a fixed share of the COOK leg, so it also proves the size of the trade. Listing
+        // fees are shared out by what each wallet paid on a pair, and a size reported by the client
+        // would let anyone claim a bigger share than they traded for.
+        valueUsd = (feeUsd * 10_000) / COORWA_SWAP_FEE_BPS;
       }
     }
+
+    // A pair the token does not carry is dropped rather than refused: the fill still accrues its
+    // fee, it just does not count towards any pair's listing fees.
+    const ticker =
+      b.ticker && (await carriesBenchmark(b.mint, b.ticker)) ? b.ticker.toUpperCase() : null;
 
     // Resolved here rather than sent, so a client cannot name whoever it likes as the creator and
     // route somebody else's share to them.
     const creator = (await tokenCreator(b.mint))?.wallet ?? null;
 
-    const res = await recordFill({ ...b, valueUsd, feeUsd, creator: creator ?? undefined });
+    const res = await recordFill({
+      ...b,
+      ticker,
+      valueUsd,
+      feeUsd,
+      creator: creator ?? undefined,
+    });
     return NextResponse.json({
       ...res,
       valueUsd,
       feeUsd,
+      ticker,
       creator,
       note: res.recorded
         ? undefined

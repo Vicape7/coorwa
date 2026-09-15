@@ -118,8 +118,8 @@ export const MOMOSWAP_REFERRAL_SHARE = 0.2;
  * stop a bot listing sixteen pairs on a dead token.
  *
  * The money is not Coorwa's. It goes into the same vault the cashback is paid out of, through the
- * same permissionless `fund` instruction anyone can call, so a listing fee ends up back with the
- * people trading rather than with whoever runs this.
+ * same permissionless `fund` instruction anyone can call, and each epoch pays it back to the wallets
+ * that traded that pair (`listingSharesFrom` in `epochs.ts`), rather than to whoever runs this.
  */
 export const PAIR_LISTING_USD = 1;
 

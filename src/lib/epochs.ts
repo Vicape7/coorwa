@@ -24,7 +24,7 @@
  * Server only: the tree hashes with node:crypto and the browser never needs it. The browser is
  * handed a finished proof by the API.
  */
-import { and, asc, desc, eq, gt, isNotNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { Connection, PublicKey, type VersionedTransactionResponse } from "@solana/web3.js";
 import { db, dbEnabled, schema } from "./db";
 import { buildEpochTree, verifyProof, type Entitlement } from "./merkle";
@@ -144,12 +144,151 @@ export function entitlementsFrom(accrual: Accrual): EntitlementLine[] {
   return out.sort((a, b) => b.amountUsd - a.amountUsd);
 }
 
+// --- listing fees --------------------------------------------------------------------------------
+
+/** Fees one wallet paid trading one pair, identified as `mint|TICKER`. */
+export interface PairFill {
+  pair: string;
+  wallet: string;
+  feeUsd: number;
+  at: Date;
+}
+
+/** A listing fee paid for one pair. */
+export interface PairListing {
+  pair: string;
+  paidUsd: number;
+  at: Date;
+}
+
+/**
+ * What each wallet has earned from listing fees, cumulatively, up to the last boundary.
+ *
+ * A listing fee belongs to the pair it bought and goes to the people trading that pair. Each epoch
+ * is a window, from the cutoff of the published epoch before it to its own. A pair's listing money
+ * that arrived by the end of a window is shared out over the wallets that traded the pair inside
+ * it, in proportion to the Coorwa fee each paid there. The fee rather than a reported trade size,
+ * because the fee is read off the chain and a size is whatever a client says. A window in which
+ * nobody traded the pair shares out nothing, and the money waits for the next one.
+ *
+ * All of it goes to traders, none to the creator: the creator is the one who paid it.
+ *
+ * Cumulative on purpose, like the fee accrual beside it. The windows of published epochs never
+ * move, so what a wallet was given in them never shrinks, and `entitlementsFrom` can take what has
+ * already been committed straight back off. A share worked out over all time instead would fall
+ * for an early trader whenever somebody else traded later, and the epoch that had already paid them
+ * would then have paid out more than the pair ever brought in.
+ *
+ * `boundaries` are the cutoffs, oldest first; the last is the epoch being built. Anything after it
+ * belongs to a later epoch and is ignored.
+ */
+export function listingSharesFrom(args: {
+  fills: readonly PairFill[];
+  listings: readonly PairListing[];
+  boundaries: readonly Date[];
+}): Map<string, number> {
+  const out = new Map<string, number>();
+  const pairs = new Set([...args.listings.map((l) => l.pair)]);
+
+  for (const pair of pairs) {
+    let pool = 0;
+    let from = -Infinity;
+    for (const boundary of args.boundaries) {
+      const to = boundary.getTime();
+      const inWindow = (at: Date) => at.getTime() > from && at.getTime() <= to;
+
+      for (const l of args.listings) {
+        if (l.pair === pair && inWindow(l.at)) pool += l.paidUsd;
+      }
+
+      const paid = new Map<string, number>();
+      let total = 0;
+      for (const f of args.fills) {
+        if (f.pair !== pair || !(f.feeUsd > 0) || !inWindow(f.at)) continue;
+        paid.set(f.wallet, (paid.get(f.wallet) ?? 0) + f.feeUsd);
+        total += f.feeUsd;
+      }
+
+      if (pool > 0 && total > 0) {
+        for (const [wallet, fee] of paid) {
+          out.set(wallet, (out.get(wallet) ?? 0) + (pool * fee) / total);
+        }
+        pool = 0;
+      }
+      from = to;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * A listing payment is one transaction that may buy several pairs, and every row it bought carries
+ * the whole amount. Split evenly, so a batch of three dollars is a dollar a pair, not three each.
+ */
+export function listingsPerPair(
+  rows: readonly { mint: string; ticker: string; signature: string; paidUsd: number; at: Date }[],
+): PairListing[] {
+  const siblings = new Map<string, number>();
+  for (const r of rows) siblings.set(r.signature, (siblings.get(r.signature) ?? 0) + 1);
+  return rows.map((r) => ({
+    pair: `${r.mint}|${r.ticker}`,
+    paidUsd: r.paidUsd / (siblings.get(r.signature) ?? 1),
+    at: r.at,
+  }));
+}
+
+/** Every wallet's listing-fee share as of a cutoff, read from the database. */
+export async function listingAccrual(asOf: Date): Promise<Map<string, number>> {
+  const conn = requireDb();
+  const { fills, listings, epochs } = schema;
+
+  const [pairFills, listingRows, published] = await Promise.all([
+    conn
+      .select({
+        mint: fills.mint,
+        ticker: fills.ticker,
+        wallet: fills.wallet,
+        feeUsd: fills.feeUsd,
+        at: fills.createdAt,
+      })
+      .from(fills)
+      .where(and(isNotNull(fills.ticker), gt(fills.feeUsd, 0), lte(fills.createdAt, asOf))),
+    conn
+      .select({
+        mint: listings.mint,
+        ticker: listings.ticker,
+        signature: listings.signature,
+        paidUsd: listings.paidUsd,
+        at: listings.createdAt,
+      })
+      .from(listings)
+      .where(lte(listings.createdAt, asOf)),
+    conn
+      .select({ asOf: epochs.asOf })
+      .from(epochs)
+      .where(and(eq(epochs.status, "published"), lt(epochs.asOf, asOf)))
+      .orderBy(asc(epochs.asOf)),
+  ]);
+
+  return listingSharesFrom({
+    fills: pairFills.map((f) => ({
+      pair: `${f.mint}|${f.ticker}`,
+      wallet: f.wallet,
+      feeUsd: f.feeUsd,
+      at: f.at,
+    })),
+    listings: listingsPerPair(listingRows),
+    boundaries: [...published.map((e) => e.asOf), asOf],
+  });
+}
+
 /**
  * Every wallet's uncommitted balance as of a cutoff.
  *
- * Three sums and a subtraction: the trader's share of the fees they generated, the creator's share
- * of the fees earned on tokens they launched, and everything already committed to an epoch taken
- * back off. The cutoff is what makes this reproducible - `fills` is append-only, so the same cutoff
+ * Four sums and a subtraction: the trader's share of the fees they generated, their share of the
+ * listing fees of the pairs they traded, the creator's share of the fees earned on tokens they
+ * launched, and everything already committed to an epoch taken back off. The cutoff is what makes this reproducible - `fills` is append-only, so the same cutoff
  * always returns the same set, which is why rebuilding a draft lands on the same root.
  */
 export async function computeEntitlements(
@@ -161,12 +300,14 @@ export async function computeEntitlements(
 
   // The split is applied here, in the sum, because it belongs to where the fee came from. A
   // launchpad referral holds a fifth back for liquidity; a swap fee is returned whole.
+  // The shares go over the wire as bound parameters, which Postgres types as text, so they are cast.
+  // Without it every draft died on "operator does not exist: double precision * text".
   const traderShare = sql<number>`sum(${fills.feeUsd} * case when ${fills.source} = 'launchpad'
-    then ${CASHBACK_SPLIT.trader} else ${SWAP_CASHBACK_SPLIT.trader} end)`;
+    then ${CASHBACK_SPLIT.trader}::float8 else ${SWAP_CASHBACK_SPLIT.trader}::float8 end)`;
   const creatorShare = sql<number>`sum(${fills.feeUsd} * case when ${fills.source} = 'launchpad'
-    then ${CASHBACK_SPLIT.creator} else ${SWAP_CASHBACK_SPLIT.creator} end)`;
+    then ${CASHBACK_SPLIT.creator}::float8 else ${SWAP_CASHBACK_SPLIT.creator}::float8 end)`;
 
-  const [asTrader, asCreator, committed] = await Promise.all([
+  const [asTrader, asCreator, committed, listingShare] = await Promise.all([
     conn
       .select({ wallet: fills.wallet, feeUsd: traderShare })
       .from(fills)
@@ -193,6 +334,7 @@ export async function computeEntitlements(
         ),
       )
       .groupBy(claims.wallet),
+    listingAccrual(asOf),
   ]);
 
   const numbers = (rows: { wallet: string | null; value: unknown }[]) => {
@@ -201,8 +343,14 @@ export async function computeEntitlements(
     return m;
   };
 
+  // A pair's listing fees are the traders' cashback, so they join the trader's half of the line.
+  const traderUsd = numbers(asTrader.map((r) => ({ wallet: r.wallet, value: r.feeUsd })));
+  for (const [wallet, usd] of listingShare) {
+    traderUsd.set(wallet, (traderUsd.get(wallet) ?? 0) + usd);
+  }
+
   return entitlementsFrom({
-    traderUsd: numbers(asTrader.map((r) => ({ wallet: r.wallet, value: r.feeUsd }))),
+    traderUsd,
     creatorUsd: numbers(asCreator.map((r) => ({ wallet: r.wallet, value: r.feeUsd }))),
     committedUsd: numbers(committed.map((r) => ({ wallet: r.wallet, value: r.amountUsd }))),
     cookPriceUsd,

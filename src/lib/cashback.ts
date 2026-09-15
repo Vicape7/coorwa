@@ -14,6 +14,7 @@
 import { and, eq, sql, desc, gte } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
 import { CASHBACK_SPLIT, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
+import { listingAccrual } from "./epochs";
 
 export interface CashbackSummary {
   configured: boolean;
@@ -133,7 +134,9 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     .limit(20);
 
   const feesGeneratedUsd = Number(mine?.feeUsd ?? 0);
-  const traderAccruedUsd = feesGeneratedUsd * CASHBACK_SPLIT.trader;
+  // What the next epoch would give this wallet out of the listing fees of the pairs it traded.
+  const listingUsd = (await listingAccrual(new Date())).get(wallet) ?? 0;
+  const traderAccruedUsd = feesGeneratedUsd * CASHBACK_SPLIT.trader + listingUsd;
   const creatorAccruedUsd = Number(asCreator?.feeUsd ?? 0) * CASHBACK_SPLIT.creator;
   const paidUsd = Number(committed?.paidUsd ?? 0);
   const committedUsd = Number(committed?.committedUsd ?? 0);
@@ -166,6 +169,7 @@ export interface RecordFill {
   wallet: string;
   source: "swap" | "launchpad";
   mint: string;
+  ticker?: string | null;
   symbol?: string | null;
   side: string;
   valueUsd: number;
@@ -188,6 +192,7 @@ export async function recordFill(fill: RecordFill): Promise<{ recorded: boolean 
       wallet: fill.wallet,
       source: fill.source,
       mint: fill.mint,
+      ticker: fill.ticker ?? null,
       symbol: fill.symbol ?? null,
       side: fill.side,
       valueUsd: fill.valueUsd,

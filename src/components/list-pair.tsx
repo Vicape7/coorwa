@@ -126,9 +126,10 @@ export function ListPair() {
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
         Every token is priced against one asset for nothing. Its creator can add more at{" "}
         {usd(quote?.pricePerPairUsd ?? 1)} a pair, paid in COOK straight into the cashback vault -
-        not to Coorwa, which cannot touch it. Worth doing: once a pair exists, the creator earns a
-        share of the fee on every trade against it. Liquidity is still this token&apos;s COOK pool;
-        the benchmark is what the price is quoted and charted in.
+        not to Coorwa, which cannot touch it - and paid back as cashback to the people who trade
+        that pair. Worth doing: once a pair exists, the creator earns a share of the fee on every
+        trade against it. Liquidity is still this token&apos;s COOK pool; the benchmark is what the
+        price is quoted and charted in.
       </p>
 
       <div className="mt-6 space-y-4">

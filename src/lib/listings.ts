@@ -7,8 +7,10 @@
  * and enough that nobody lists sixteen dead pairs for the sake of it.
  *
  * The money never touches Coorwa. It is paid by calling `fund` on the cashback vault, which the
- * program lets anyone call, so it lands in the same account the rebate is paid out of. That is what
- * makes this a listing fee rather than a toll: it goes back to the people trading.
+ * program lets anyone call, so it lands in the same account the rebate is paid out of. It belongs to
+ * the pair it bought: each epoch hands it to the wallets that traded that pair, in proportion to the
+ * fees they paid on it (see `listingSharesFrom` in `epochs.ts`). That is what makes this a listing
+ * fee rather than a toll: it goes back to the people trading.
  *
  * Optional like the rest of the database. With no DATABASE_URL nothing is listed, nothing can be
  * bought, and every token falls back to its one free benchmark.
@@ -19,6 +21,7 @@ import { cached } from "./http";
 import { COOK_DECIMALS, PAIR_LISTING_USD } from "./config";
 import { rwaByTicker, DEFAULT_RWA } from "./rwa";
 import { rawToUi } from "./format";
+import { benchmarks } from "./launches";
 
 export interface Listing {
   mint: string;
@@ -107,6 +110,20 @@ export async function listedByMint(): Promise<Map<string, string[]>> {
     }
     return out;
   });
+}
+
+/**
+ * Does this token actually carry this benchmark? The same three rules as `quotesFor` in `pairs.ts`:
+ * a token launched here carries its pin and nothing else, any other token the free one plus what
+ * was bought. Asked before a fill is attributed to a pair, because the pair decides who shares that
+ * pair's listing fees.
+ */
+export async function carriesBenchmark(mint: string, ticker: string): Promise<boolean> {
+  const asset = rwaByTicker(ticker);
+  if (!asset) return false;
+  const pin = (await benchmarks()).get(mint);
+  if (pin) return pin === asset.ticker;
+  return asset.ticker === FREE_TICKER || (await listedFor(mint)).includes(asset.ticker);
 }
 
 /** Has this payment already been spent on listings? One transaction buys one batch. */

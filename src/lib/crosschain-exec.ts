@@ -160,6 +160,17 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
 
   let signature = await landedSignature(ctx.cookieConn, j.steps[i]?.signature);
   if (!signature) {
+    // A sale pays Coorwa's 0.10% on the COOK it produces, so the build needs the quoted output,
+    // exactly as the terminal's own swap panel sends it.
+    const quote = await getJson<{ all: { aggregator: string; outAmount: string }[] }>(
+      `/api/quote?${new URLSearchParams({
+        inputMint: j.token.mint,
+        outputMint: COOK_MINT,
+        amount: sellRaw,
+        slippageBps: String(ctx.slippageBps),
+        owner: ctx.owner.toBase58(),
+      })}`,
+    );
     const built = await postJson<{ transactionBase64: string }>("/api/swap/build", {
       aggregator: "cookiebox",
       owner: ctx.owner.toBase58(),
@@ -167,6 +178,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
       outputMint: COOK_MINT,
       amount: sellRaw,
       slippageBps: ctx.slippageBps,
+      outAmount: quote.all.find((r) => r.aggregator === "cookiebox")?.outAmount,
     });
     signature = await sendAndRecord(
       ctx.cookieConn,
@@ -179,6 +191,8 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
   }
 
   // What the swap actually produced, net of its own fee, read off the transaction itself.
+  reportSwap(ctx, j, signature, "sell");
+
   const parsed = await fetchParsed(ctx.cookieConn, signature);
   const gained = cookieNativeLamports(parsed, ctx.owner);
   if (gained === null) {
@@ -631,6 +645,7 @@ const deliverThenBuyToken: LegRunner = async (ctl, ctx, i) => {
     i,
     "cookie",
   );
+  reportSwap(ctx, j, signature, "buy");
 
   await markFinalLeg(ctl, ctx, i, signature, "cookie", ctx.cookieConn, out);
 };
@@ -901,6 +916,41 @@ function tokenDelta(
 }
 
 // --- Small helpers --------------------------------------------------------------------------------
+
+/**
+ * Report a Cookie Chain swap leg for cashback, as the terminal's swap panel does for its own trades.
+ *
+ * The fee it paid is re-read from the chain by the server, so this sends nothing that has to be
+ * believed. A settlement names its pair, so the trade also counts towards that pair's listing fees;
+ * a payout is not trading any pair and names none. Sent again on a resume, which the unique
+ * signature makes harmless, and a failure costs the record, never the route.
+ */
+function reportSwap(ctx: RunContext, j: Journey, signature: string, side: "buy" | "sell"): void {
+  const payout = j.legs[0]?.kind === "claim" || j.legs[0]?.kind === "lp-claim";
+  void fetch("/api/rewards/record", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      signature,
+      wallet: ctx.owner.toBase58(),
+      source: "swap",
+      mint: j.token.mint,
+      ticker: payout ? undefined : j.ticker,
+      symbol: j.token.symbol,
+      side,
+      // Derived server-side from the fee the transaction paid.
+      valueUsd: 0,
+      feeUsd: 0,
+      chain: "cookie",
+    }),
+  }).catch(() => undefined);
+}
+
+async function getJson<T>(url: string): Promise<T> {
+  const json = await fetch(url).then((r) => r.json());
+  if (json?.error) throw new CoorwaError(json.error, json.hint);
+  return json as T;
+}
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
