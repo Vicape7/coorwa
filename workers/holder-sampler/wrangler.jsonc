@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "coorwa-holder-sampler",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+
+  // Every five minutes. The endpoint rolls a die on each call, so samples land at moments nobody can
+  // predict: never closer than 30 minutes, never further apart than two hours.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  "vars": {
+    // The deployed Coorwa app. Replace with the real domain before deploying.
+    "SAMPLE_URL": "https://example.com/api/cashback/sample"
+  },
+
+  // HOLDER_SAMPLE_SECRET is a secret, not a var: `npx wrangler secret put HOLDER_SAMPLE_SECRET`.
+  // It must equal the app's own HOLDER_SAMPLE_SECRET.
+
+  "observability": {
+    "enabled": true
+  }
+}

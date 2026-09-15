@@ -129,8 +129,8 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
         A token is only in the terminal once somebody gives it a pair. Anyone can, for{" "}
         {usd(quote?.pricePerPairUsd ?? 1)} a pair, paid in COOK straight into the cashback vault -
-        not to Coorwa, which cannot touch it. That dollar goes back to the people who trade the
-        pair, and every fee the pair earns after that goes to its traders and to the token&apos;s
+        not to Coorwa, which cannot touch it. That dollar goes to the token&apos;s holders, and
+        every fee the pair earns after that goes to its holders and to the token&apos;s
         creator. Liquidity is still the token&apos;s COOK pool; the asset is what the price is quoted
         and charted in.
       </p>

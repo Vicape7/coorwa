@@ -29,9 +29,9 @@ export const fills = pgTable(
     /** The non-COOK side of the trade. */
     mint: text("mint").notNull(),
     /**
-     * The benchmark of the pair the trade was made on, when it was made on one. Listing fees are
-     * paid per pair and returned to that pair's traders, so this is what decides who shares one.
-     * Only written after the server has checked that the token actually carries it.
+     * The benchmark of the pair the trade was made on, when it was made on one. Only written after
+     * the server has checked that the token actually carries it, so volume can be told apart per
+     * pair.
      */
     ticker: text("ticker"),
     symbol: text("symbol"),
@@ -91,7 +91,7 @@ export const launches = pgTable(
  *
  * A token is only in the terminal once it has a pair: its launch benchmark if it was launched here,
  * otherwise one of these. Each costs one dollar's worth of COOK, paid into the cashback vault rather
- * than to Coorwa, and paid back out to that pair's traders.
+ * than to Coorwa, and paid out to that token's holders.
  *
  * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
  * only written once that transaction has been read back from the chain: it has to have funded the
@@ -184,8 +184,12 @@ export const claims = pgTable(
     /** Raw COOK units, the number that is hashed into the leaf. */
     amountRaw: bigint("amount_raw", { mode: "bigint" }).notNull(),
     amountUsd: doublePrecision("amount_usd").notNull(),
-    /** The two halves of the line, kept apart so the rewards page can show where it came from. */
-    traderUsd: doublePrecision("trader_usd").notNull().default(0),
+    /**
+     * The two halves of the line, kept apart so the rewards page can show where it came from. The
+     * holder half lives in the column still called `trader_usd`: rewards went to traders before they
+     * went to holders, and renaming a column is a migration for no change in meaning of the number.
+     */
+    holderUsd: doublePrecision("trader_usd").notNull().default(0),
     creatorUsd: doublePrecision("creator_usd").notNull().default(0),
     /** The claim transaction. Null until this line is claimed, which is what nets it out. */
     signature: text("signature"),
@@ -196,5 +200,59 @@ export const claims = pgTable(
     // One line per wallet per epoch. Two would each be claimable, so the epoch would pay twice.
     uniqueIndex("claims_epoch_wallet_idx").on(t.epoch, t.wallet),
     index("claims_wallet_idx").on(t.wallet),
+  ],
+);
+
+/**
+ * What one wallet was given out of one token's holder pool, in one epoch.
+ *
+ * Holder rewards depend on who held a token at the moment the epoch was built, which the fills table
+ * cannot answer after the fact. So the split is recorded here as it is made, per token and wallet,
+ * and written together with the epoch's claim lines. A draft's rows are replaced when the draft is
+ * rebuilt; a published epoch's rows are the record, and what they add up to per token is what that
+ * token's pool has already paid out.
+ */
+export const holderRewards = pgTable(
+  "holder_rewards",
+  {
+    id: serial("id").primaryKey(),
+    epoch: bigint("epoch", { mode: "bigint" }).notNull(),
+    mint: text("mint").notNull(),
+    wallet: text("wallet").notNull(),
+    /** What the wallet held at the snapshot, in raw token units: the weight it was paid by. */
+    balanceRaw: bigint("balance_raw", { mode: "bigint" }).notNull(),
+    amountUsd: doublePrecision("amount_usd").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("holder_rewards_epoch_mint_wallet_idx").on(t.epoch, t.mint, t.wallet),
+    index("holder_rewards_wallet_idx").on(t.wallet),
+    index("holder_rewards_mint_idx").on(t.mint),
+  ],
+);
+
+/**
+ * One holder's balance in one snapshot taken during an epoch.
+ *
+ * A single snapshot at the moment an epoch is built can be gamed by buying just before it and
+ * selling just after. So holders are also sampled at unpredictable times between epochs, and an
+ * epoch shares each token's pool by the sum of every sample in its window. To be paid in full a wallet
+ * has to hold for the whole epoch, not for one minute of it.
+ *
+ * Every row of one sample carries the same `takenAt`, which is what groups them.
+ */
+export const holderSamples = pgTable(
+  "holder_samples",
+  {
+    id: serial("id").primaryKey(),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
+    mint: text("mint").notNull(),
+    wallet: text("wallet").notNull(),
+    balanceRaw: bigint("balance_raw", { mode: "bigint" }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("holder_samples_taken_mint_wallet_idx").on(t.takenAt, t.mint, t.wallet),
+    index("holder_samples_mint_taken_idx").on(t.mint, t.takenAt),
+    index("holder_samples_wallet_idx").on(t.wallet),
   ],
 );

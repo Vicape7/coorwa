@@ -95,7 +95,7 @@ const Body = z.object({
  * Turn a payment into listings.
  *
  * Anyone may pay for a pair on any token. The payer gains nothing by it: the dollar goes to the
- * pair's traders, and the fees the pair generates go to its traders and the token's creator.
+ * token's holders, and the fees the pair generates go to its holders and the token's creator.
  *
  * Nothing here is taken on the client's word. The transaction is read back from the chain, has to
  * have been signed by the payer, and has to have actually credited the vault's funds account - the

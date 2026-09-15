@@ -87,7 +87,7 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - **The pools page lists pairs, not raw pools.** Each TOKEN/RWA pair is shown with the real
   TOKEN/COOK pool behind it, which is where a deposit goes. A token with two pairs shares one pool.
 - **Anyone can add a pair to any token with a pool, for a dollar a pair.** The payer gains nothing by
-  it: the dollar goes to the pair's traders, and the fees the pair then earns go to its traders and
+  it: the dollar goes to the token's holders, and the fees the pair then earns go to its holders and
   to the token's creator, whoever listed it. The creator is proved against the launch for tokens
   Coorwa made, and against the mint's metadata authority otherwise - which is worth nothing across
   the registry at large, where 4,449 of 5,088 tokens share one launchpad key, and works for every
@@ -97,11 +97,8 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   call, so it lands in the account the rebate is paid out of and Coorwa never holds it. Nothing is
   credited on the client's word: the payment is read back from the chain, and the amount that
   actually reached the vault decides how many pairs it bought. One transaction buys one batch.
-- **A pair's listing fee is paid back to that pair's traders** as cashback. Each epoch shares it out
-  over the wallets that traded the pair since the previous epoch, in proportion to the Coorwa fee
-  each paid on it, and a pair nobody traded keeps its money for the next epoch. All of it goes to
-  traders and none to the creator, who is the one who paid it. Shares are weighted by the fee
-  rather than by a reported trade size because the fee is read off the chain.
+- **A pair's listing fee goes to the token's holders**, all of it, and none to the creator or to
+  whoever paid.
 - What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
   Chain, for the reasons in the table above, and the benchmark is what the price is quoted and
   charted in rather than what it trades against.
@@ -110,11 +107,31 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 - Positions are found by scanning the Token-2022 NFTs you hold, so Coorwa keeps no records of its
   own.
 
-### Cashback
+### Holder rewards
+- **Hold a token, get paid in its stock.** Every fee Coorwa earns on a token is split 62.5 / 37.5
+  between the wallets holding it and the wallet that made it. Coorwa keeps none of it. Having traded
+  a token earns nothing on its own; holding it through the epoch does.
+- **Holders are sampled at moments nobody can predict.** A small Cloudflare Worker
+  (`workers/holder-sampler`) calls the app every five minutes, and the app rolls a die on each call:
+  never two samples within 30 minutes, always one within two hours, and otherwise a 15% chance, which
+  lands a sample about once an hour at a random minute. Building an epoch adds one more snapshot, and
+  each token's pool is shared by every wallet's balance summed across all of them. A wallet that buys
+  before one sample and sells after it weighs one sample's worth against a holder's whole epoch. The
+  rewards page shows each holder an estimate of their share from the samples so far.
+- Each snapshot covers every token whose holder pool has something waiting. Holders are
+  read from the chain: SPL token accounts under both token programs, and for a token still on its
+  MomoSwap curve, curve shares netted from the launchpad's trade feed. Program addresses (pool
+  vaults, curves, escrows) are dropped because nobody can claim for them, as are Coorwa's own
+  collecting wallets, and a wallet needs at least $1 of the token when it has a price. The pool is
+  shared out by balance and the split is stored with the epoch, so the next epoch shares out only
+  what is left. A token nobody holds keeps its pool for the next snapshot.
+- **Only the vault authority can build an epoch**, by signing a short-lived message the server
+  checks against the authority stored on chain, and the sample endpoint needs a shared secret.
+  Whoever picks the moment of a snapshot can hold only across it, so neither moment is left open.
+  Without the sampler an epoch still works from its own snapshot, and the operator panel says so.
 - Coorwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
-- Split 62.5 / 37.5 between trader and creator, the same as the swap fee. Coorwa keeps none of it.
 - **Nothing is credited on the client's word.** A reported fill is re-read on chain before it is
   written: the transaction has to exist, to have succeeded, and to have been signed by the wallet
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
@@ -124,9 +141,8 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   referrer. Six plausible parameter names were tried on both aggregators and every quote came back
   identical, so there is nothing to collect unless Coorwa asks. It asks in the open: two extra
   instructions on the aggregator's own transaction, shown on the panel before anything is signed,
-  paying the cashback vault rather than Coorwa. **All of it is returned** - 62.5% to the trader,
-  37.5% to the token's creator - because a fee out of the trader's own pocket that Coorwa kept any
-  of would be a toll, not a rebate. A route too long to carry the two instructions inside the
+  paying the cashback vault rather than Coorwa. **None of it is kept** - 62.5% to the token's
+  holders, 37.5% to its creator. A route too long to carry the two instructions inside the
   1,232-byte limit goes through unpriced rather than being refused. The same fee is charged on the
   Cookie Chain swap inside a cross-chain settlement or payout, and returned the same way.
 - Payouts go through Coorwa's own program on Cookie Chain rather than a payout wallet. Who is owed
@@ -214,10 +230,13 @@ because the public Solana RPC refuses requests from a browser.
 The vault holds the money and knows nothing about who is owed it. Coorwa knows exactly who is owed
 what and holds none of the money. The two halves meet at a merkle root and nowhere else.
 
-1. **Build.** `POST /api/cashback/draft` sums every confirmed fill up to a cutoff, applies the
-   split, subtracts anything already committed to an earlier epoch, drops balances under the claim
-   floor, converts USD to COOK at a single rate recorded on the epoch, and freezes the result as a
-   draft. It is deterministic on the cutoff, so rebuilding lands on the same root.
+1. **Build.** `POST /api/cashback/draft` sums every confirmed fill and listing up to a cutoff into
+   per-token holder pools and creator shares, snapshots the holders of every pool with something
+   waiting, shares each pool out by balance, subtracts anything already committed to an earlier
+   epoch, drops balances under the claim floor, converts USD to COOK at a single rate recorded on
+   the epoch, and freezes the result as a draft together with the holder split behind it.
+   Rebuilding takes a fresh snapshot, so it can land on a different root; that is fine until the
+   authority has signed, and the publish check refuses a root that no longer matches.
 2. **Publish.** The authority signs `publish_epoch` in their own browser. Coorwa then reads that
    transaction back off the chain, decodes the instruction out of it, and marks the epoch published
    only if the root it carries matches the draft byte for byte. No key ever reaches the server, and
@@ -262,6 +281,16 @@ npm run db:push     # enables the rewards page (needs DATABASE_URL)
 npm run typecheck
 npm run test        # merkle tree, epoch accounting, instruction layouts, IDL agreement
 npm run build
+```
+
+The holder sampler is a separate Worker with a cron trigger:
+
+```bash
+cd workers/holder-sampler
+npm install
+npx wrangler secret put HOLDER_SAMPLE_SECRET   # the same value as in the app
+# set SAMPLE_URL in wrangler.jsonc to the deployed app, then
+npx wrangler deploy
 ```
 
 ### The program
@@ -315,8 +344,10 @@ src/
     creators.ts     Who made a token, from the launch record or the mint's metadata authority
     swap-fee.ts     Coorwa's fee, appended to the aggregator's transaction or dropped if it will not fit
     onchain.ts      Proving a reported transaction really happened before anything is written down
-    cashback.ts     Fee accrual and the split
-    epochs.ts       Epoch accounting: who is owed what, and what has already been committed
+    cashback.ts     What the rewards page shows: pools, a wallet's rewards, its estimated share
+    epochs.ts       Epoch accounting: holder pools, samples, who is owed what, what is committed
+    holders.ts      Who holds a token right now, read from the chain and filtered to real wallets
+    draft-message.ts  The message the vault authority signs to build an epoch
     merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte
     vault.ts        Cashback vault client, encoded against the wire format rather than an IDL
     tx.ts           Simulate → sign → send → confirm
@@ -326,6 +357,9 @@ src/
 programs/
   corwa-vault/    The cashback vault: fund, publish an epoch, claim against its root
     idl.json      What the built program accepts. Committed, and checked against the client in CI
+
+workers/
+  holder-sampler/ Cron Worker that asks the app for a holder sample every five minutes
 
 tests/            Unit tests, offline and instant
   integration/    The vault against a real validator, started by npm run program:test

@@ -32,7 +32,8 @@ interface Filled {
   signature: string;
   confirmed: boolean;
   side: Side;
-  cashbackUsd: number | null;
+  /** The holders' share of the fee this fill earned, which joins the token's holder pool. */
+  poolUsd: number | null;
 }
 
 export function CurvePanel({
@@ -156,10 +157,10 @@ export function CurvePanel({
         signTransaction,
       );
 
-      // Report the fill for cashback. The server re-reads the transaction on chain and works out
+      // Report the fill for rewards. The server re-reads the transaction on chain and works out
       // the fee itself - it does not take this side's word for the size of the trade or the fee it
       // earned - so a failure here costs the record, never the trade.
-      let cashbackUsd: number | null = null;
+      let poolUsd: number | null = null;
       try {
         const recorded = await fetch("/api/rewards/record", {
           method: "POST",
@@ -179,13 +180,13 @@ export function CurvePanel({
           }),
         }).then((r) => r.json());
         if (typeof recorded?.feeUsd === "number") {
-          cashbackUsd = recorded.feeUsd * CASHBACK_SPLIT.trader;
+          poolUsd = recorded.feeUsd * CASHBACK_SPLIT.holders;
         }
       } catch {
         // The ledger can miss a row; the trade still happened.
       }
 
-      setFilled({ ...sent, side, cashbackUsd });
+      setFilled({ ...sent, side, poolUsd });
       setInput("");
       refreshPosition();
     } catch (e) {
@@ -376,8 +377,8 @@ export function CurvePanel({
             >
               {shortAddr(filled.signature, 6)}
             </a>
-            {filled.cashbackUsd != null && filled.cashbackUsd > 0 && (
-              <> Cashback accrued to you: {usd(filled.cashbackUsd)}.</>
+            {filled.poolUsd != null && filled.poolUsd > 0 && (
+              <> Added {usd(filled.poolUsd)} to this token&apos;s holder rewards.</>
             )}
           </Notice>
         )}

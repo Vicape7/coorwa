@@ -13,7 +13,12 @@ import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
 import {
   entitlementsFrom,
-  listingSharesFrom,
+  holderAllocationsFrom,
+  holderWeightsFrom,
+  shouldSample,
+  SAMPLE_CHANCE,
+  SAMPLE_MAX_GAP_MS,
+  SAMPLE_MIN_GAP_MS,
   listingsPerPair,
   toCook,
   type Accrual,
@@ -33,7 +38,7 @@ const B = Keypair.generate().publicKey.toBase58();
 
 function accrual(over: Partial<Accrual> = {}): Accrual {
   return {
-    traderUsd: new Map(),
+    holderUsd: new Map(),
     creatorUsd: new Map(),
     committedUsd: new Map(),
     cookPriceUsd: COOK_USD,
@@ -49,35 +54,35 @@ function accrual(over: Partial<Accrual> = {}): Accrual {
  * left here is the part that must not be wrong whatever the split was - the subtraction, the
  * conversion and the floor.
  */
-const TRADER_SHARE = CASHBACK_MIN_CLAIM_COOK * COOK_USD * 20;
-const CREATOR_SHARE = TRADER_SHARE * (CASHBACK_SPLIT.creator / CASHBACK_SPLIT.trader);
+const HOLDER_SHARE = CASHBACK_MIN_CLAIM_COOK * COOK_USD * 20;
+const CREATOR_SHARE = HOLDER_SHARE * (CASHBACK_SPLIT.creator / CASHBACK_SPLIT.holders);
 
 test("a wallet is paid its share of what it generated, converted once", () => {
-  const [line] = entitlementsFrom(accrual({ traderUsd: new Map([[A, TRADER_SHARE]]) }));
+  const [line] = entitlementsFrom(accrual({ holderUsd: new Map([[A, HOLDER_SHARE]]) }));
 
   assert.equal(line.wallet, A);
-  assert.equal(line.traderUsd, TRADER_SHARE);
+  assert.equal(line.holderUsd, HOLDER_SHARE);
   assert.equal(line.creatorUsd, 0);
-  assert.equal(line.amountUsd, TRADER_SHARE);
+  assert.equal(line.amountUsd, HOLDER_SHARE);
   assert.equal(line.amountRaw, BigInt(Math.floor((line.amountUsd / COOK_USD) * UNITS)));
 });
 
 test("trading and launching add up on the same line", () => {
   const [line] = entitlementsFrom(
     accrual({
-      traderUsd: new Map([[A, TRADER_SHARE]]),
+      holderUsd: new Map([[A, HOLDER_SHARE]]),
       creatorUsd: new Map([[A, CREATOR_SHARE]]),
     }),
   );
 
   // One leaf per wallet per epoch, because the program pays a wallet once and the merkle builder
   // refuses a duplicate outright.
-  assert.equal(line.amountUsd, TRADER_SHARE + CREATOR_SHARE);
+  assert.equal(line.amountUsd, HOLDER_SHARE + CREATOR_SHARE);
 });
 
 test("a balance already sitting in an epoch is not offered again", () => {
-  const earned = TRADER_SHARE;
-  const base = { traderUsd: new Map([[A, TRADER_SHARE]]) };
+  const earned = HOLDER_SHARE;
+  const base = { holderUsd: new Map([[A, HOLDER_SHARE]]) };
 
   // The whole balance is committed, so there is nothing left to publish.
   assert.deepEqual(
@@ -93,8 +98,8 @@ test("a balance already sitting in an epoch is not offered again", () => {
 test("a wallet that has been paid more than it earned is skipped, never negative", () => {
   const lines = entitlementsFrom(
     accrual({
-      traderUsd: new Map([[A, TRADER_SHARE]]),
-      committedUsd: new Map([[A, TRADER_SHARE * 10]]),
+      holderUsd: new Map([[A, HOLDER_SHARE]]),
+      committedUsd: new Map([[A, HOLDER_SHARE * 10]]),
     }),
   );
   assert.deepEqual(lines, []);
@@ -104,18 +109,18 @@ test("dust waits for a later epoch instead of costing its claimant rent", () => 
   // Just under the floor: a claim writes two accounts the claimant pays for, so paying this out
   // would leave them worse off than not claiming.
   const justUnder = (CASHBACK_MIN_CLAIM_COOK - 0.001) * COOK_USD;
-  assert.deepEqual(entitlementsFrom(accrual({ traderUsd: new Map([[A, justUnder]]) })), []);
+  assert.deepEqual(entitlementsFrom(accrual({ holderUsd: new Map([[A, justUnder]]) })), []);
 
   const justOver = (CASHBACK_MIN_CLAIM_COOK + 0.001) * COOK_USD;
-  const [line] = entitlementsFrom(accrual({ traderUsd: new Map([[A, justOver]]) }));
+  const [line] = entitlementsFrom(accrual({ holderUsd: new Map([[A, justOver]]) }));
   assert.ok(toCook(line.amountRaw) >= CASHBACK_MIN_CLAIM_COOK);
 });
 
 test("the same inputs always produce the same root", () => {
   const input = accrual({
-    traderUsd: new Map([
-      [A, TRADER_SHARE],
-      [B, TRADER_SHARE * 3],
+    holderUsd: new Map([
+      [A, HOLDER_SHARE],
+      [B, HOLDER_SHARE * 3],
     ]),
     creatorUsd: new Map([[B, CREATOR_SHARE]]),
   });
@@ -136,8 +141,8 @@ test("the same inputs always produce the same root", () => {
 test("a proof survives the trip to the browser as hex and back", () => {
   const lines = entitlementsFrom(
     accrual({
-      traderUsd: new Map(
-        Array.from({ length: 9 }, () => [Keypair.generate().publicKey.toBase58(), TRADER_SHARE]),
+      holderUsd: new Map(
+        Array.from({ length: 9 }, () => [Keypair.generate().publicKey.toBase58(), HOLDER_SHARE]),
       ),
     }),
   );
@@ -161,69 +166,82 @@ test("a missing COOK price is refused rather than guessed", () => {
   assert.throws(() => entitlementsFrom(accrual({ cookPriceUsd: 0 })), /COOK price/);
 });
 
-test("the split returns the whole fee to trader and creator", () => {
+test("the split returns the whole fee to holders and creator", () => {
   // A split that does not sum to 1 either invents money or quietly keeps some.
   const total = Object.values(CASHBACK_SPLIT).reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(total - 1) < 1e-9, `split sums to ${total}`);
-  assert.deepEqual(Object.keys(CASHBACK_SPLIT).sort(), ["creator", "trader"]);
+  assert.deepEqual(Object.keys(CASHBACK_SPLIT).sort(), ["creator", "holders"]);
 });
 
-// --- listing fees ----------------------------------------------------------------------------------
+// --- holder pools ----------------------------------------------------------------------------------
 
-const PAIR = "mintA|AAPL";
 const day = (n: number) => new Date(Date.UTC(2026, 8, n));
 
-test("a pair's listing fee goes to that pair's traders, in proportion to the fees they paid on it", () => {
-  const shares = listingSharesFrom({
-    listings: [{ pair: PAIR, paidUsd: 4, at: day(1) }],
-    fills: [
-      { pair: PAIR, wallet: "alice", feeUsd: 3, at: day(2) },
-      { pair: PAIR, wallet: "bob", feeUsd: 1, at: day(2) },
-      // Trading another pair earns nothing from this one's listing.
-      { pair: "mintB|NVDA", wallet: "carol", feeUsd: 50, at: day(2) },
-    ],
-    boundaries: [day(10)],
+test("a token's pool is shared over its holders in proportion to what they hold", () => {
+  const rows = holderAllocationsFrom({
+    waitingByMint: new Map([["mintA", 10]]),
+    holders: new Map([
+      [
+        "mintA",
+        new Map([
+          ["alice", 3_000_000n],
+          ["bob", 1_000_000n],
+        ]),
+      ],
+    ]),
   });
-  assert.equal(shares.get("alice"), 3);
-  assert.equal(shares.get("bob"), 1);
-  assert.equal(shares.has("carol"), false);
+  const by = new Map(rows.map((r) => [r.wallet, r.amountUsd]));
+  assert.equal(by.get("alice"), 7.5);
+  assert.equal(by.get("bob"), 2.5);
+  assert.equal(rows.find((r) => r.wallet === "alice")?.balanceRaw, 3_000_000n);
 });
 
-test("a window nobody traded the pair in carries its listing money into the next one", () => {
-  const listings = [{ pair: PAIR, paidUsd: 2, at: day(1) }];
-  const fills = [{ pair: PAIR, wallet: "bob", feeUsd: 0.01, at: day(12) }];
-
-  const first = listingSharesFrom({ listings, fills, boundaries: [day(10)] });
-  assert.equal(first.size, 0);
-
-  const second = listingSharesFrom({ listings, fills, boundaries: [day(10), day(20)] });
-  assert.equal(second.get("bob"), 2);
-});
-
-test("a later trader never shrinks what an earlier window already gave", () => {
-  const listings = [{ pair: PAIR, paidUsd: 1, at: day(1) }];
-  const early = [{ pair: PAIR, wallet: "alice", feeUsd: 1, at: day(2) }];
-  const late = [...early, { pair: PAIR, wallet: "bob", feeUsd: 99, at: day(12) }];
-
-  const epoch1 = listingSharesFrom({ listings, fills: early, boundaries: [day(10)] });
-  const epoch2 = listingSharesFrom({ listings, fills: late, boundaries: [day(10), day(20)] });
-  assert.equal(epoch1.get("alice"), 1);
-  assert.equal(epoch2.get("alice"), 1);
-  // Nothing new was listed in the second window, so there is nothing for bob, and in total the
-  // pair has paid out exactly what it brought in.
-  assert.equal(epoch2.has("bob"), false);
-});
-
-test("money listed after the cutoff, or fills without a fee, count for nothing yet", () => {
-  const shares = listingSharesFrom({
-    listings: [{ pair: PAIR, paidUsd: 5, at: day(11) }],
-    fills: [
-      { pair: PAIR, wallet: "alice", feeUsd: 1, at: day(2) },
-      { pair: PAIR, wallet: "bob", feeUsd: 0, at: day(2) },
-    ],
-    boundaries: [day(10)],
+test("holding one token earns nothing from another token's pool", () => {
+  const rows = holderAllocationsFrom({
+    waitingByMint: new Map([
+      ["mintA", 4],
+      ["mintB", 6],
+    ]),
+    holders: new Map([
+      ["mintA", new Map([["alice", 1n]])],
+      ["mintB", new Map([["bob", 1n]])],
+    ]),
   });
-  assert.equal(shares.size, 0);
+  assert.deepEqual(
+    rows.map((r) => [r.mint, r.wallet, r.amountUsd]),
+    [
+      ["mintA", "alice", 4],
+      ["mintB", "bob", 6],
+    ],
+  );
+});
+
+test("a pool nobody holds, or with nothing waiting, allocates nothing and waits", () => {
+  assert.deepEqual(
+    holderAllocationsFrom({
+      waitingByMint: new Map([["mintA", 5]]),
+      holders: new Map([["mintA", new Map()]]),
+    }),
+    [],
+  );
+  assert.deepEqual(
+    holderAllocationsFrom({
+      waitingByMint: new Map([["mintA", 0]]),
+      holders: new Map([["mintA", new Map([["alice", 10n]])]]),
+    }),
+    [],
+  );
+});
+
+test("allocations never add up to more than the pool, even on a huge supply", () => {
+  const holders = new Map<string, bigint>();
+  for (let i = 0; i < 7; i += 1) holders.set(`w${i}`, 333_333_333_333_333n + BigInt(i));
+  const rows = holderAllocationsFrom({
+    waitingByMint: new Map([["mintA", 1]]),
+    holders: new Map([["mintA", holders]]),
+  });
+  const sum = rows.reduce((s, r) => s + r.amountUsd, 0);
+  assert.ok(sum <= 1 && sum > 0.999999, `allocated ${sum}`);
 });
 
 test("one payment that bought three pairs is a third of the money per pair", () => {
@@ -244,3 +262,46 @@ test("one payment that bought three pairs is a third of the money per pair", () 
     ],
   );
 });
+
+// --- holder samples --------------------------------------------------------------------------------
+
+test("a wallet that held for part of the epoch weighs that part of one that held throughout", () => {
+  const at = (h: number) => new Date(Date.UTC(2026, 8, 1, h));
+  const rows = [
+    { takenAt: at(1), wallet: "steady", balanceRaw: 100n },
+    { takenAt: at(2), wallet: "steady", balanceRaw: 100n },
+    { takenAt: at(3), wallet: "steady", balanceRaw: 100n },
+    // Bought just before one sample and sold after it.
+    { takenAt: at(2), wallet: "flipper", balanceRaw: 100n },
+  ];
+  const { weights, samples } = holderWeightsFrom(rows, new Map([["steady", 100n]]));
+  assert.equal(samples, 4, "three samples plus the snapshot taken as the epoch is built");
+  assert.equal(weights.get("steady"), 400n);
+  assert.equal(weights.get("flipper"), 100n);
+
+  const rewards = holderAllocationsFrom({
+    waitingByMint: new Map([["mintA", 5]]),
+    holders: new Map([["mintA", weights]]),
+  });
+  const by = new Map(rewards.map((r) => [r.wallet, r.amountUsd]));
+  assert.equal(by.get("steady"), 4);
+  assert.equal(by.get("flipper"), 1);
+});
+
+test("with no samples the epoch falls back to the snapshot it takes itself", () => {
+  const { weights, samples } = holderWeightsFrom([], new Map([["alice", 7n]]));
+  assert.equal(samples, 1);
+  assert.deepEqual([...weights], [["alice", 7n]]);
+});
+
+test("a sample is never taken twice inside the minimum gap, and always after the maximum", () => {
+  const now = new Date(Date.UTC(2026, 8, 1, 12));
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  assert.equal(shouldSample(null, now, 0.99), true, "the first sample is always taken");
+  assert.equal(shouldSample(ago(SAMPLE_MIN_GAP_MS - 1), now, 0), false);
+  assert.equal(shouldSample(ago(SAMPLE_MAX_GAP_MS), now, 0.99), true);
+  const between = ago((SAMPLE_MIN_GAP_MS + SAMPLE_MAX_GAP_MS) / 2);
+  assert.equal(shouldSample(between, now, SAMPLE_CHANCE - 0.01), true);
+  assert.equal(shouldSample(between, now, SAMPLE_CHANCE + 0.01), false);
+});
+

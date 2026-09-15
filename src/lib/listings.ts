@@ -8,14 +8,13 @@
  * that nobody lists sixteen dead pairs for the sake of it.
  *
  * Anyone may pay, not only the token's creator, because the payer gains nothing from it. The dollar
- * goes to the pair's traders, and the fees the pair then generates go to its traders and to the
+ * goes to the token's holders, and the fees the pair then generates go to its holders and to the
  * token's creator, whoever listed it.
  *
  * The money never touches Coorwa. It is paid by calling `fund` on the cashback vault, which the
- * program lets anyone call, so it lands in the same account the rebate is paid out of. It belongs to
- * the pair it bought: each epoch hands it to the wallets that traded that pair, in proportion to the
- * fees they paid on it (see `listingSharesFrom` in `epochs.ts`). That is what makes this a listing
- * fee rather than a toll: it goes back to the people trading.
+ * program lets anyone call, so it lands in the same account the rewards are paid out of. It joins
+ * the token's holder pool (`holderPools` in `epochs.ts`), which each epoch shares out over whoever
+ * holds the token at its snapshot.
  *
  * Optional like the rest of the database. With no DATABASE_URL nothing is listed and nothing can be
  * bought.

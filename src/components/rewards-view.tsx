@@ -5,11 +5,12 @@ import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, Transaction } from "@solana/web3.js";
-import { usd, amount, shortAddr, timeAgo } from "@/lib/format";
+import { usd, amount, shortAddr } from "@/lib/format";
 import {
   cookieTxUrl,
   CASHBACK_SPLIT,
   COORWA_SWAP_FEE_BPS,
+  HOLDER_MIN_USD,
   COOK_SYMBOL,
   PAIR_LISTING_USD,
   VAULT_MINT,
@@ -124,15 +125,15 @@ export function RewardsView() {
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
       <div className="max-w-2xl">
-        <span className="label text-[12px]">Cashback</span>
+        <span className="label text-[12px]">Rewards</span>
         <h1 className="display mt-3 text-[clamp(2rem,4.5vw,3.25rem)] text-primary">
-          The fees you generate, returned.
+          Hold a token, get paid in its stock.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Coorwa rebates the fees it earns rather than keeping them. Three things fill the vault: the
-          launchpad referral share, Coorwa&apos;s own {(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}% fee on
-          a swap, and the fee a creator pays to list a pair. All of it is paid back out of the same
-          vault, against a root anyone can check.
+          Every fee Coorwa earns on a token goes back to the people holding it and to whoever made
+          it. Coorwa keeps none of it. Each epoch takes a snapshot of who holds every token with
+          rewards waiting, shares them out by how much each wallet holds, and publishes the result
+          as a root anyone can check. You claim as an xStock on Solana, or as COOK.
         </p>
       </div>
 
@@ -141,9 +142,9 @@ export function RewardsView() {
         {!wallet ? (
           <div className="flex flex-wrap items-center gap-5">
             <div>
-              <div className="text-[15px] text-primary">Your cashback</div>
+              <div className="text-[15px] text-primary">Your rewards</div>
               <p className="mt-1 text-[14px] text-muted">
-                Connect to see what you have accrued as a trader and as a creator.
+                Connect to see what you have been paid as a holder and earned as a creator.
               </p>
             </div>
             <button className="btn btn-primary ml-auto" onClick={() => setVisible(true)}>
@@ -156,7 +157,7 @@ export function RewardsView() {
           <div>
             <div className="text-[15px] text-primary">Accounting is not configured here</div>
             <p className="mt-2 max-w-2xl text-[14px] leading-[1.7] text-muted">
-              Cashback needs history, so it needs a database. Trading, launching and providing
+              Rewards need history, so they need a database. Trading, launching and providing
               liquidity are entirely on-chain and work without one - this page is the only part that
               does not. Set <span className="num text-primary">DATABASE_URL</span> to enable it.
             </p>
@@ -177,13 +178,13 @@ export function RewardsView() {
               <Figure
                 label="Accruing"
                 value={usd(data.pendingUsd)}
-                sub="Earned, waiting for the next root"
+                sub="Owed, not yet in an open epoch"
               />
               <Figure label="Claimed" value={usd(data.paidUsd)} sub="Paid out of the vault to you" />
             </div>
 
             <div className="mt-8 border-t border-hair pt-6 text-[13px] text-muted">
-              <span className="num text-primary">{usd(data.traderAccruedUsd)}</span> as a trader ·{" "}
+              <span className="num text-primary">{usd(data.holderEarnedUsd)}</span> as a holder ·{" "}
               <span className="num text-primary">{usd(data.creatorAccruedUsd)}</span> as a creator
             </div>
 
@@ -245,56 +246,76 @@ export function RewardsView() {
       {/* Operator surface. Renders nothing at all unless the connected wallet is the authority. */}
       <VaultAdmin />
 
-      {/* History */}
+      {/* This wallet's share of what is waiting, from the samples so far */}
+      {data?.configured && wallet && data.estimates.length > 0 && (
+        <div className="card mt-4 overflow-hidden">
+          <div className="px-6 pt-5">
+            <h2 className="title text-primary">Your share of the next epoch</h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+              An estimate from the holder snapshots taken so far. Snapshots are taken at random
+              moments through the epoch, so holding the whole time is what keeps your share.
+            </p>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-[14px]">
+              <thead>
+                <tr>
+                  <Th>Token</Th>
+                  <Th align="right">Waiting</Th>
+                  <Th align="right">Your share</Th>
+                  <Th align="right">About</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.estimates.map((e) => (
+                  <tr key={e.mint} className="row-hover">
+                    <td className="px-6 py-2.5 text-primary">{e.symbol ?? shortAddr(e.mint, 4)}</td>
+                    <td className="num px-6 py-2.5 text-right text-muted">{usd(e.waitingUsd)}</td>
+                    <td className="num px-6 py-2.5 text-right text-muted">
+                      {(e.share * 100).toFixed(2)}%
+                    </td>
+                    <td className="num px-6 py-2.5 text-right text-primary">
+                      {usd(e.estimatedUsd)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-6 py-3 text-[12px] text-subtle">
+            From {Math.max(...data.estimates.map((e) => e.samples))} snapshot
+            {Math.max(...data.estimates.map((e) => e.samples)) === 1 ? "" : "s"} this epoch.
+          </p>
+        </div>
+      )}
+
+      {/* This wallet, token by token */}
       {data?.configured && wallet && (
         <div className="card mt-4 overflow-hidden">
           <div className="px-6 py-4">
-            <h2 className="title text-primary">Your fills</h2>
+            <h2 className="title text-primary">Your holder rewards</h2>
           </div>
-          {data.recent.length === 0 ? (
-            <p className="px-6 pb-6 text-[14px] text-muted">
-              Nothing routed through Coorwa from this wallet yet.
+          {data.byToken.length === 0 ? (
+            <p className="px-6 pb-6 text-[14px] leading-relaxed text-muted">
+              Nothing yet. Hold a token that has rewards waiting below when the next epoch is taken,
+              and your share lands here.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-[14px]">
+              <table className="w-full min-w-[480px] text-[14px]">
                 <thead>
                   <tr>
                     <Th>Token</Th>
-                    <Th>Side</Th>
-                    <Th align="right">Value</Th>
-                    <Th align="right">Fee earned</Th>
-                    <Th align="right">Your share</Th>
-                    <Th align="right">When</Th>
+                    <Th align="right">Epochs</Th>
+                    <Th align="right">Paid to you</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recent.map((r) => (
-                    <tr key={r.signature} className="row-hover">
-                      <td className="px-6 py-2.5">
-                        <a
-                          href={cookieTxUrl(r.signature)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary underline decoration-[color:var(--divider-strong)] underline-offset-4"
-                        >
-                          {r.symbol ?? shortAddr(r.signature, 4)}
-                        </a>
-                      </td>
-                      <td
-                        className="px-6 py-2.5"
-                        style={{ color: r.side === "buy" ? "var(--color-up)" : "var(--color-down)" }}
-                      >
-                        {r.side}
-                      </td>
-                      <td className="num px-6 py-2.5 text-right text-primary">{usd(r.valueUsd)}</td>
-                      <td className="num px-6 py-2.5 text-right text-muted">{usd(r.feeUsd)}</td>
-                      <td className="num px-6 py-2.5 text-right text-primary">
-                        {usd(r.shareUsd)}
-                      </td>
-                      <td className="num px-6 py-2.5 text-right text-muted">
-                        {timeAgo(new Date(r.createdAt).getTime())}
-                      </td>
+                  {data.byToken.map((t) => (
+                    <tr key={t.mint} className="row-hover">
+                      <td className="px-6 py-2.5 text-primary">{t.symbol ?? shortAddr(t.mint, 4)}</td>
+                      <td className="num px-6 py-2.5 text-right text-muted">{t.epochs}</td>
+                      <td className="num px-6 py-2.5 text-right text-primary">{usd(t.amountUsd)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -306,25 +327,25 @@ export function RewardsView() {
 
       {/* Where it comes from */}
       <div className="card mt-4 p-8">
-        <h2 className="title text-primary">Where cashback comes from today</h2>
+        <h2 className="title text-primary">Where rewards come from</h2>
         <dl className="mt-6 divide-y divide-[color:var(--divider)]">
           <Source
             label="Launchpad fills"
             state="Free to you"
             tone="up"
-            body={`Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. MomoSwap pays that out of the same fee whether or not anyone is named, so it costs you nothing. ${pct(CASHBACK_SPLIT.trader)} of it comes back to you.`}
+            body={`Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. MomoSwap pays that out of the same fee whether or not anyone is named, so it costs the trader nothing. ${pct(CASHBACK_SPLIT.holders)} goes to the token's holders, ${pct(CASHBACK_SPLIT.creator)} to its creator.`}
           />
           <Source
             label="Swap fills"
             state={`${(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}% fee`}
             tone="muted"
-            body={`Neither Cookie Chain router pays a referrer, so Coorwa charges its own fee on a terminal swap, and on the Cookie Chain swap inside a cross-chain settlement or payout. It is a fee, not a freebie: it comes out of your trade and is shown before you sign. None of it is kept. ${pct(CASHBACK_SPLIT.trader)} comes back to you and ${pct(CASHBACK_SPLIT.creator)} goes to the token's creator, so routing through Coorwa leaves you about ${((COORWA_SWAP_FEE_BPS / 100) * CASHBACK_SPLIT.creator).toFixed(3)}% behind trading direct.`}
+            body={`Neither Cookie Chain router pays a referrer, so Coorwa charges its own fee on a terminal swap, and on the Cookie Chain swap inside a cross-chain settlement or payout. It is a fee: it comes out of the trade and is shown before signing. None of it is kept. ${pct(CASHBACK_SPLIT.holders)} goes to the token's holders and ${pct(CASHBACK_SPLIT.creator)} to its creator. A trader who also holds the token gets part of it back as a holder; one who does not, does not.`}
           />
           <Source
             label="Pair listings"
-            state="To the pair's traders"
+            state="To the token's holders"
             tone="up"
-            body={`Anyone can pay $${PAIR_LISTING_USD} to add a pair to a token. That money goes to the wallets that traded the pair since the previous epoch, in proportion to the Coorwa fee each paid on it, and none of it to the creator or to whoever paid. A pair nobody traded keeps its share for the next epoch.`}
+            body={`Anyone can pay $${PAIR_LISTING_USD} to add a pair to a token. All of it joins that token's holder rewards, none of it to the creator or to whoever paid.`}
           />
           <Source
             label="LP fees"
@@ -335,20 +356,20 @@ export function RewardsView() {
         </dl>
       </div>
 
-      {/* Split + leaderboard */}
-      <div className="mt-10 grid gap-4 lg:grid-cols-2">
+      {/* Split + pools */}
+      <div className="mt-10 grid gap-4 lg:grid-cols-[2fr_3fr]">
         <div className="card p-8">
           <h2 className="title text-primary">How a fee is split</h2>
           <dl className="mt-6 space-y-4">
             <Split
-              pct={CASHBACK_SPLIT.trader}
-              label="Trader"
-              body="Back to whoever generated the fee, paid as an xStock on Solana or as COOK."
+              pct={CASHBACK_SPLIT.holders}
+              label="Holders"
+              body={`To every wallet holding the token through the epoch, by how much it held across snapshots taken at random moments. A wallet needs at least $${HOLDER_MIN_USD} of the token to count, and pool vaults and programs never do.`}
             />
             <Split
               pct={CASHBACK_SPLIT.creator}
               label="Creator"
-              body="To whoever launched the token being traded, on top of MomoSwap's own creator fee."
+              body="To whoever launched the token, on top of MomoSwap's own creator fee."
             />
           </dl>
           <p className="mt-6 text-[13px] leading-relaxed text-muted">
@@ -357,25 +378,41 @@ export function RewardsView() {
           </p>
         </div>
 
-        <div className="card p-8">
-          <h2 className="title text-primary">Most routed</h2>
-          {!data?.leaderboard?.length ? (
-            <p className="mt-4 text-[14px] text-muted">No volume routed yet.</p>
+        <div className="card overflow-hidden">
+          <div className="px-6 pt-6">
+            <h2 className="title text-primary">Holder rewards by token</h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+              Waiting is shared out when the next epoch is built, over whoever held the token
+              through it.
+            </p>
+          </div>
+          {!data?.pools?.length ? (
+            <p className="px-6 pb-6 pt-4 text-[14px] text-muted">No fees earned on any token yet.</p>
           ) : (
-            <ol className="mt-6 space-y-3">
-              {data.leaderboard.map((row, i) => (
-                <li key={row.wallet} className="flex items-center gap-4">
-                  <span className="num w-5 shrink-0 text-[13px] text-subtle">{i + 1}</span>
-                  <span className="num flex-1 truncate text-[14px] text-primary">
-                    {shortAddr(row.wallet, 5)}
-                  </span>
-                  <span className="num text-[14px] text-muted">{usd(row.volumeUsd)}</span>
-                  <span className="num w-20 shrink-0 text-right text-[14px] text-primary">
-                    {usd(row.accruedUsd)}
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[460px] text-[14px]">
+                <thead>
+                  <tr>
+                    <Th>Token</Th>
+                    <Th align="right">Waiting</Th>
+                    <Th align="right">Paid to holders</Th>
+                    <Th align="right">Holders paid</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.pools.map((p) => (
+                    <tr key={p.mint} className="row-hover">
+                      <td className="px-6 py-2.5 text-primary">{p.symbol ?? shortAddr(p.mint, 4)}</td>
+                      <td className="num px-6 py-2.5 text-right text-primary">{usd(p.waitingUsd)}</td>
+                      <td className="num px-6 py-2.5 text-right text-muted">
+                        {usd(p.distributedUsd)}
+                      </td>
+                      <td className="num px-6 py-2.5 text-right text-muted">{p.holdersPaid}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

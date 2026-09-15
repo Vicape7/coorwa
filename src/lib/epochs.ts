@@ -24,11 +24,12 @@
  * Server only: the tree hashes with node:crypto and the browser never needs it. The browser is
  * handed a finished proof by the API.
  */
-import { and, asc, desc, eq, gt, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { Connection, PublicKey, type VersionedTransactionResponse } from "@solana/web3.js";
 import { db, dbEnabled, schema } from "./db";
 import { buildEpochTree, verifyProof, type Entitlement } from "./merkle";
 import { fetchCookPriceUsd } from "./cookiescan";
+import { snapshotHolders } from "./holders";
 import {
   CASHBACK_CLAIM_WINDOW_DAYS,
   CASHBACK_MIN_CLAIM_COOK,
@@ -89,7 +90,7 @@ function requireDb() {
 
 export interface EntitlementLine {
   wallet: string;
-  traderUsd: number;
+  holderUsd: number;
   creatorUsd: number;
   amountUsd: number;
   amountRaw: bigint;
@@ -97,12 +98,11 @@ export interface EntitlementLine {
 
 export interface Accrual {
   /**
-   * The trader's share of the fees the wallet generated, **after** its split.
-   *
-   * Split before it arrives here (`feeShareSql`), so this function only has to get the subtraction,
-   * the conversion and the floor right.
+   * Everything the wallet has been given out of holder pools, cumulatively: every published epoch
+   * plus the one being built. Split and allocated before it arrives here (`holderAllocationsFrom`),
+   * so this function only has to get the subtraction, the conversion and the floor right.
    */
-  traderUsd: Map<string, number>;
+  holderUsd: Map<string, number>;
   /** The creator's share of the fees earned on tokens the wallet launched, after its split. */
   creatorUsd: Map<string, number>;
   /** Already sitting in an epoch: claimed, or published and still inside its window. */
@@ -119,16 +119,16 @@ export interface Accrual {
  * it without a Postgres anywhere.
  */
 export function entitlementsFrom(accrual: Accrual): EntitlementLine[] {
-  const { traderUsd: traderShare, creatorUsd: creatorShare, committedUsd, cookPriceUsd } = accrual;
+  const { holderUsd: holderShare, creatorUsd: creatorShare, committedUsd, cookPriceUsd } = accrual;
   if (!(cookPriceUsd > 0)) throw new Error("a COOK price is needed to convert a USD balance");
 
-  const wallets = new Set([...traderShare.keys(), ...creatorShare.keys()]);
+  const wallets = new Set([...holderShare.keys(), ...creatorShare.keys()]);
   const out: EntitlementLine[] = [];
 
   for (const wallet of wallets) {
-    const traderUsd = traderShare.get(wallet) ?? 0;
+    const holderUsd = holderShare.get(wallet) ?? 0;
     const creatorUsd = creatorShare.get(wallet) ?? 0;
-    const amountUsd = traderUsd + creatorUsd - (committedUsd.get(wallet) ?? 0);
+    const amountUsd = holderUsd + creatorUsd - (committedUsd.get(wallet) ?? 0);
     if (!(amountUsd > 0)) continue;
 
     const raw = BigInt(Math.floor((amountUsd / cookPriceUsd) * Number(UNITS_PER_COOK)));
@@ -136,87 +136,57 @@ export function entitlementsFrom(accrual: Accrual): EntitlementLine[] {
     // not dropped: it stays uncommitted and rolls into whichever epoch it finally clears.
     if (raw < MIN_CLAIM_RAW) continue;
 
-    out.push({ wallet, traderUsd, creatorUsd, amountUsd, amountRaw: raw });
+    out.push({ wallet, holderUsd, creatorUsd, amountUsd, amountRaw: raw });
   }
 
   return out.sort((a, b) => b.amountUsd - a.amountUsd);
 }
 
-// --- listing fees --------------------------------------------------------------------------------
+// --- holder pools --------------------------------------------------------------------------------
 
-/** Fees one wallet paid trading one pair, identified as `mint|TICKER`. */
-export interface PairFill {
-  pair: string;
+/** One wallet's share of one token's holder pool in one epoch. */
+export interface HolderAllocation {
+  mint: string;
   wallet: string;
-  feeUsd: number;
-  at: Date;
-}
-
-/** A listing fee paid for one pair. */
-export interface PairListing {
-  pair: string;
-  paidUsd: number;
-  at: Date;
+  balanceRaw: bigint;
+  amountUsd: number;
 }
 
 /**
- * What each wallet has earned from listing fees, cumulatively, up to the last boundary.
+ * Share each token's waiting pool out over the wallets holding it, in proportion to what they hold.
  *
- * A listing fee belongs to the pair it bought and goes to the people trading that pair. Each epoch
- * is a window, from the cutoff of the published epoch before it to its own. A pair's listing money
- * that arrived by the end of a window is shared out over the wallets that traded the pair inside
- * it, in proportion to the Coorwa fee each paid there. The fee rather than a reported trade size,
- * because the fee is read off the chain and a size is whatever a client says. A window in which
- * nobody traded the pair shares out nothing, and the money waits for the next one.
+ * A token's pool is everything its holders are owed and have not yet been given: the holders' share
+ * of every fee earned on it, plus every listing fee paid for its pairs, less what published epochs
+ * already allocated. All of it goes to whoever holds the token at this snapshot. Having traded it,
+ * or having held it last week, earns nothing on its own; holding it now does.
  *
- * All of it goes to traders, none to the creator: the creator is the one who paid it.
+ * A token nobody eligible holds allocates nothing, and its pool waits for the next epoch rather than
+ * being lost or handed to somebody else.
  *
- * Cumulative on purpose, like the fee accrual beside it. The windows of published epochs never
- * move, so what a wallet was given in them never shrinks, and `entitlementsFrom` can take what has
- * already been committed straight back off. A share worked out over all time instead would fall
- * for an early trader whenever somebody else traded later, and the epoch that had already paid them
- * would then have paid out more than the pair ever brought in.
- *
- * `boundaries` are the cutoffs, oldest first; the last is the epoch being built. Anything after it
- * belongs to a later epoch and is ignored.
+ * Balances are weights, compared as exact integers and only turned into a fraction at the end, so
+ * two holders of the same amount always receive the same share.
  */
-export function listingSharesFrom(args: {
-  fills: readonly PairFill[];
-  listings: readonly PairListing[];
-  boundaries: readonly Date[];
-}): Map<string, number> {
-  const out = new Map<string, number>();
-  const pairs = new Set([...args.listings.map((l) => l.pair)]);
+export function holderAllocationsFrom(args: {
+  waitingByMint: ReadonlyMap<string, number>;
+  holders: ReadonlyMap<string, ReadonlyMap<string, bigint>>;
+}): HolderAllocation[] {
+  const out: HolderAllocation[] = [];
+  for (const [mint, waiting] of args.waitingByMint) {
+    if (!(waiting > 0)) continue;
+    const held = args.holders.get(mint);
+    if (!held || held.size === 0) continue;
 
-  for (const pair of pairs) {
-    let pool = 0;
-    let from = -Infinity;
-    for (const boundary of args.boundaries) {
-      const to = boundary.getTime();
-      const inWindow = (at: Date) => at.getTime() > from && at.getTime() <= to;
+    let total = 0n;
+    for (const raw of held.values()) if (raw > 0n) total += raw;
+    if (total === 0n) continue;
 
-      for (const l of args.listings) {
-        if (l.pair === pair && inWindow(l.at)) pool += l.paidUsd;
-      }
-
-      const paid = new Map<string, number>();
-      let total = 0;
-      for (const f of args.fills) {
-        if (f.pair !== pair || !(f.feeUsd > 0) || !inWindow(f.at)) continue;
-        paid.set(f.wallet, (paid.get(f.wallet) ?? 0) + f.feeUsd);
-        total += f.feeUsd;
-      }
-
-      if (pool > 0 && total > 0) {
-        for (const [wallet, fee] of paid) {
-          out.set(wallet, (out.get(wallet) ?? 0) + (pool * fee) / total);
-        }
-        pool = 0;
-      }
-      from = to;
+    for (const [wallet, raw] of held) {
+      if (raw <= 0n) continue;
+      // Scaled to parts per billion first, so the division is exact integer work on any supply.
+      const ppb = Number((raw * 1_000_000_000n) / total);
+      out.push({ mint, wallet, balanceRaw: raw, amountUsd: (waiting * ppb) / 1_000_000_000 });
     }
   }
-
   return out;
 }
 
@@ -226,32 +196,57 @@ export function listingSharesFrom(args: {
  */
 export function listingsPerPair(
   rows: readonly { mint: string; ticker: string; signature: string; paidUsd: number; at: Date }[],
-): PairListing[] {
+): { pair: string; mint: string; paidUsd: number; at: Date }[] {
   const siblings = new Map<string, number>();
   for (const r of rows) siblings.set(r.signature, (siblings.get(r.signature) ?? 0) + 1);
   return rows.map((r) => ({
     pair: `${r.mint}|${r.ticker}`,
+    mint: r.mint,
     paidUsd: r.paidUsd / (siblings.get(r.signature) ?? 1),
     at: r.at,
   }));
 }
 
-/** Every wallet's listing-fee share as of a cutoff, read from the database. */
-export async function listingAccrual(asOf: Date): Promise<Map<string, number>> {
-  const conn = requireDb();
-  const { fills, listings, epochs } = schema;
+/**
+ * The holders' or the creator's share of the fees in a group of fills, as a SQL sum.
+ *
+ * The rewards page uses the same sums as the epoch, so what it shows is what the next epoch pays.
+ * The share goes over the wire as a bound parameter, which Postgres types as text, so it is cast.
+ * Without it every draft died on "operator does not exist: double precision * text".
+ */
+export function feeShareSql(side: "holders" | "creator") {
+  const { fills } = schema;
+  return sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT[side]}::float8`;
+}
 
-  const [pairFills, listingRows, published] = await Promise.all([
+export interface HolderPool {
+  mint: string;
+  symbol: string | null;
+  /** Everything ever owed to this token's holders, up to the cutoff. */
+  accruedUsd: number;
+  /** What published epochs have already shared out. */
+  distributedUsd: number;
+  /** The difference: what the next snapshot shares out. */
+  waitingUsd: number;
+  /** Distinct wallets paid from this pool across published epochs. */
+  holdersPaid: number;
+}
+
+/** Every token's holder pool as of a cutoff, read from the database. */
+export async function holderPools(asOf: Date): Promise<HolderPool[]> {
+  const conn = requireDb();
+  const { fills, listings, holderRewards, epochs } = schema;
+
+  const [fees, listingRows, distributed] = await Promise.all([
     conn
       .select({
         mint: fills.mint,
-        ticker: fills.ticker,
-        wallet: fills.wallet,
-        feeUsd: fills.feeUsd,
-        at: fills.createdAt,
+        symbol: sql<string | null>`max(${fills.symbol})`,
+        usd: feeShareSql("holders"),
       })
       .from(fills)
-      .where(and(isNotNull(fills.ticker), gt(fills.feeUsd, 0), lte(fills.createdAt, asOf))),
+      .where(lte(fills.createdAt, asOf))
+      .groupBy(fills.mint),
     conn
       .select({
         mint: listings.mint,
@@ -263,62 +258,283 @@ export async function listingAccrual(asOf: Date): Promise<Map<string, number>> {
       .from(listings)
       .where(lte(listings.createdAt, asOf)),
     conn
-      .select({ asOf: epochs.asOf })
-      .from(epochs)
-      .where(and(eq(epochs.status, "published"), lt(epochs.asOf, asOf)))
-      .orderBy(asc(epochs.asOf)),
+      .select({
+        mint: holderRewards.mint,
+        usd: sql<number>`coalesce(sum(${holderRewards.amountUsd}), 0)`,
+        holders: sql<number>`count(distinct ${holderRewards.wallet})`,
+      })
+      .from(holderRewards)
+      .innerJoin(epochs, eq(holderRewards.epoch, epochs.index))
+      .where(eq(epochs.status, "published"))
+      .groupBy(holderRewards.mint),
   ]);
 
-  return listingSharesFrom({
-    fills: pairFills.map((f) => ({
-      pair: `${f.mint}|${f.ticker}`,
-      wallet: f.wallet,
-      feeUsd: f.feeUsd,
-      at: f.at,
-    })),
-    listings: listingsPerPair(listingRows),
-    boundaries: [...published.map((e) => e.asOf), asOf],
-  });
+  const pools = new Map<string, HolderPool>();
+  const pool = (mint: string) => {
+    let p = pools.get(mint);
+    if (!p) {
+      p = { mint, symbol: null, accruedUsd: 0, distributedUsd: 0, waitingUsd: 0, holdersPaid: 0 };
+      pools.set(mint, p);
+    }
+    return p;
+  };
+
+  for (const f of fees) {
+    const p = pool(f.mint);
+    p.accruedUsd += Number(f.usd ?? 0);
+    p.symbol = f.symbol ?? p.symbol;
+  }
+  for (const l of listingsPerPair(listingRows)) pool(l.mint).accruedUsd += l.paidUsd;
+  for (const d of distributed) {
+    const p = pool(d.mint);
+    p.distributedUsd = Number(d.usd ?? 0);
+    p.holdersPaid = Number(d.holders ?? 0);
+  }
+  for (const p of pools.values()) p.waitingUsd = Math.max(0, p.accruedUsd - p.distributedUsd);
+
+  return [...pools.values()].sort((a, b) => b.accruedUsd - a.accruedUsd);
+}
+
+/** What each wallet has been given by published epochs, summed over every token. */
+async function publishedHolderUsd(): Promise<Map<string, number>> {
+  const conn = requireDb();
+  const { holderRewards, epochs } = schema;
+  const rows = await conn
+    .select({
+      wallet: holderRewards.wallet,
+      usd: sql<number>`coalesce(sum(${holderRewards.amountUsd}), 0)`,
+    })
+    .from(holderRewards)
+    .innerJoin(epochs, eq(holderRewards.epoch, epochs.index))
+    .where(eq(epochs.status, "published"))
+    .groupBy(holderRewards.wallet);
+  return new Map(rows.map((r) => [r.wallet, Number(r.usd ?? 0)]));
+}
+
+// --- holder samples ------------------------------------------------------------------------------
+
+/** The least time between two samples, so a burst of cron calls cannot stack them. */
+export const SAMPLE_MIN_GAP_MS = 30 * 60 * 1000;
+/** The most, so a token is sampled at least this often however the dice fall. */
+export const SAMPLE_MAX_GAP_MS = 2 * 60 * 60 * 1000;
+/**
+ * The chance a call between the two takes a sample. With a call every five minutes that puts a
+ * sample roughly an hour apart on average, at a moment nobody can know in advance.
+ */
+export const SAMPLE_CHANCE = 0.15;
+
+/**
+ * Whether a scheduled call should take a sample now.
+ *
+ * The schedule itself is public and fixed, so sampling on it would let a wallet hold only across the
+ * published minutes. Rolling a die on each call instead leaves the moment unpredictable while the
+ * two bounds keep the rate sensible. `roll` is passed in so the rule can be tested.
+ */
+export function shouldSample(lastAt: Date | null, now: Date, roll: number): boolean {
+  if (!lastAt) return true;
+  const gap = now.getTime() - lastAt.getTime();
+  if (gap < SAMPLE_MIN_GAP_MS) return false;
+  if (gap >= SAMPLE_MAX_GAP_MS) return true;
+  return roll < SAMPLE_CHANCE;
 }
 
 /**
- * Every wallet's uncommitted balance as of a cutoff.
+ * One token's holder weights over an epoch window: every sample's balance, summed per wallet.
  *
- * Four sums and a subtraction: the trader's share of the fees they generated, their share of the
- * listing fees of the pairs they traded, the creator's share of the fees earned on tokens they
- * launched, and everything already committed to an epoch taken back off. The cutoff is what makes this reproducible - `fills` is append-only, so the same cutoff
- * always returns the same set, which is why rebuilding a draft lands on the same root.
+ * A wallet absent from a sample held nothing then and adds nothing for it, so a wallet that held for
+ * a tenth of the samples weighs a tenth of one that held throughout. `current` is the snapshot taken
+ * as the epoch is built, counted as one more sample. `samples` is how many went in, which turns a
+ * summed weight back into an average balance for the record.
  */
-/**
- * The trader's or the creator's share of the fees in a group of fills, as a SQL sum.
- *
- * The rewards page uses the same sums as the epoch, so what it shows as accruing is what the next
- * epoch pays. The share goes over the wire as a bound parameter, which Postgres types as text, so it
- * is cast. Without it every draft died on "operator does not exist: double precision * text".
- */
-export function feeShareSql(side: "trader" | "creator") {
-  const { fills } = schema;
-  return sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT[side]}::float8`;
+export function holderWeightsFrom(
+  rows: readonly { takenAt: Date; wallet: string; balanceRaw: bigint }[],
+  current: ReadonlyMap<string, bigint> | null,
+): { weights: Map<string, bigint>; samples: number } {
+  const weights = new Map<string, bigint>();
+  const moments = new Set<number>();
+  for (const r of rows) {
+    moments.add(r.takenAt.getTime());
+    if (r.balanceRaw > 0n) weights.set(r.wallet, (weights.get(r.wallet) ?? 0n) + r.balanceRaw);
+  }
+  if (current) {
+    for (const [wallet, raw] of current) {
+      if (raw > 0n) weights.set(wallet, (weights.get(wallet) ?? 0n) + raw);
+    }
+  }
+  return { weights, samples: moments.size + (current ? 1 : 0) };
 }
 
+/** Where the open window starts: the cutoff of the latest published epoch before `asOf`. */
+async function windowStart(asOf: Date): Promise<Date> {
+  const conn = requireDb();
+  const { epochs } = schema;
+  const [last] = await conn
+    .select({ asOf: epochs.asOf })
+    .from(epochs)
+    .where(and(eq(epochs.status, "published"), lte(epochs.asOf, asOf)))
+    .orderBy(desc(epochs.asOf))
+    .limit(1);
+  return last?.asOf ?? new Date(0);
+}
+
+/** Every sample row for these mints inside (from, to], grouped by mint. */
+async function samplesIn(mints: readonly string[], from: Date, to: Date) {
+  const out = new Map<string, { takenAt: Date; wallet: string; balanceRaw: bigint }[]>();
+  if (mints.length === 0) return out;
+  const conn = requireDb();
+  const { holderSamples } = schema;
+  const rows = await conn
+    .select({
+      mint: holderSamples.mint,
+      takenAt: holderSamples.takenAt,
+      wallet: holderSamples.wallet,
+      balanceRaw: holderSamples.balanceRaw,
+    })
+    .from(holderSamples)
+    .where(
+      and(
+        inArray(holderSamples.mint, [...mints]),
+        gt(holderSamples.takenAt, from),
+        lte(holderSamples.takenAt, to),
+      ),
+    );
+  for (const r of rows) {
+    const list = out.get(r.mint);
+    if (list) list.push(r);
+    else out.set(r.mint, [r]);
+  }
+  return out;
+}
+
+export interface SampleResult {
+  sampled: boolean;
+  reason: string;
+  takenAt: string | null;
+  mints: number;
+  rows: number;
+}
+
+/**
+ * Take a holder sample if the dice say so: every token with rewards waiting, stored under one time.
+ *
+ * Called on a schedule by the sampler Worker. A token with nothing waiting is not sampled, because
+ * nothing would be paid from it; if a pool fills later, the samples from then on are what count.
+ */
+export async function recordHolderSample(
+  now = new Date(),
+  roll = Math.random(),
+): Promise<SampleResult> {
+  const conn = requireDb();
+  const { holderSamples } = schema;
+
+  const [last] = await conn
+    .select({ at: sql<Date | null>`max(${holderSamples.takenAt})` })
+    .from(holderSamples);
+  const lastAt = last?.at ? new Date(last.at) : null;
+  if (!shouldSample(lastAt, now, roll)) {
+    return { sampled: false, reason: "not this time", takenAt: null, mints: 0, rows: 0 };
+  }
+
+  const waiting = (await holderPools(now)).filter((p) => p.waitingUsd > 0);
+  const snapshots = await snapshotHolders(waiting.map((p) => p.mint));
+  const rows = snapshots.flatMap((s) =>
+    [...s.holders].map(([wallet, balanceRaw]) => ({ takenAt: now, mint: s.mint, wallet, balanceRaw })),
+  );
+
+  // A marker row under no mint records the time even when nothing was held, or the gap rule would
+  // retry the sample on every call. No query for a real mint ever reads it.
+  await conn
+    .insert(holderSamples)
+    .values({ takenAt: now, mint: "", wallet: "", balanceRaw: 0n })
+    .onConflictDoNothing();
+  for (let i = 0; i < rows.length; i += 500) {
+    await conn
+      .insert(holderSamples)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  return {
+    sampled: true,
+    reason: waiting.length === 0 ? "no token has rewards waiting" : "sampled",
+    takenAt: now.toISOString(),
+    mints: waiting.length,
+    rows: rows.length,
+  };
+}
+
+export interface HolderEstimate {
+  mint: string;
+  symbol: string | null;
+  waitingUsd: number;
+  /** This wallet's part of the token's summed weight so far, 0 to 1. */
+  share: number;
+  estimatedUsd: number;
+  samples: number;
+}
+
+/**
+ * What a wallet would get from each waiting pool if the epoch were built from the samples so far.
+ *
+ * An estimate and labelled as one: the epoch adds a snapshot of its own, and whoever holds between
+ * now and then changes the weights. It reads only the database, so it costs nothing to show on
+ * every page view.
+ */
+export async function holderEstimates(wallet: string, asOf = new Date()): Promise<HolderEstimate[]> {
+  const waiting = (await holderPools(asOf)).filter((p) => p.waitingUsd > 0);
+  const samples = await samplesIn(
+    waiting.map((p) => p.mint),
+    await windowStart(asOf),
+    asOf,
+  );
+
+  const out: HolderEstimate[] = [];
+  for (const pool of waiting) {
+    const { weights, samples: count } = holderWeightsFrom(samples.get(pool.mint) ?? [], null);
+    const mine = weights.get(wallet);
+    if (!mine) continue;
+    let total = 0n;
+    for (const w of weights.values()) total += w;
+    const share = Number((mine * 1_000_000n) / total) / 1_000_000;
+    out.push({
+      mint: pool.mint,
+      symbol: pool.symbol,
+      waitingUsd: pool.waitingUsd,
+      share,
+      estimatedUsd: pool.waitingUsd * share,
+      samples: count,
+    });
+  }
+  return out.sort((a, b) => b.estimatedUsd - a.estimatedUsd);
+}
+
+/**
+ * Every wallet's uncommitted balance as of a cutoff, and the holder allocations behind it.
+ *
+ * The holder half weighs every wallet by its balance across all the samples taken in this epoch's
+ * window, plus a snapshot taken now, for each token whose pool has something waiting. What it
+ * allocates is returned alongside the lines so the draft can store it: once the epoch is published
+ * those rows are what the pool has paid out, and the next epoch shares out only what is left.
+ *
+ * The creator half and the committed subtraction are sums over append-only tables up to the cutoff,
+ * as before.
+ */
 export async function computeEntitlements(
   asOf: Date,
   cookPriceUsd: number,
-): Promise<EntitlementLine[]> {
+): Promise<{
+  lines: EntitlementLine[];
+  allocations: HolderAllocation[];
+  /** The most samples any token's split was built from, the snapshot taken now included. */
+  holderSamples: number;
+}> {
   const conn = requireDb();
   const { fills, claims, epochs } = schema;
 
-  const traderShare = feeShareSql("trader");
-  const creatorShare = feeShareSql("creator");
-
-  const [asTrader, asCreator, committed, listingShare] = await Promise.all([
+  const [pools, given, asCreator, committed] = await Promise.all([
+    holderPools(asOf),
+    publishedHolderUsd(),
     conn
-      .select({ wallet: fills.wallet, feeUsd: traderShare })
-      .from(fills)
-      .where(lte(fills.createdAt, asOf))
-      .groupBy(fills.wallet),
-    conn
-      .select({ wallet: fills.creator, feeUsd: creatorShare })
+      .select({ wallet: fills.creator, feeUsd: feeShareSql("creator") })
       .from(fills)
       .where(and(isNotNull(fills.creator), lte(fills.createdAt, asOf)))
       .groupBy(fills.creator),
@@ -338,8 +554,36 @@ export async function computeEntitlements(
         ),
       )
       .groupBy(claims.wallet),
-    listingAccrual(asOf),
   ]);
+
+  const waiting = pools.filter((p) => p.waitingUsd > 0);
+  const mints = waiting.map((p) => p.mint);
+  const [snapshots, sampled] = await Promise.all([
+    snapshotHolders(mints),
+    windowStart(asOf).then((from) => samplesIn(mints, from, asOf)),
+  ]);
+
+  const weights = new Map<string, Map<string, bigint>>();
+  const counts = new Map<string, number>();
+  for (const snap of snapshots) {
+    const w = holderWeightsFrom(sampled.get(snap.mint) ?? [], snap.holders);
+    weights.set(snap.mint, w.weights);
+    counts.set(snap.mint, w.samples);
+  }
+
+  const allocations = holderAllocationsFrom({
+    waitingByMint: new Map(waiting.map((p) => [p.mint, p.waitingUsd])),
+    holders: weights,
+  }).map((a) => ({
+    ...a,
+    // Stored as the average balance across the samples, which is what a reader expects to see.
+    balanceRaw: a.balanceRaw / BigInt(Math.max(1, counts.get(a.mint) ?? 1)),
+  }));
+
+  const holderUsd = new Map(given);
+  for (const a of allocations) {
+    holderUsd.set(a.wallet, (holderUsd.get(a.wallet) ?? 0) + a.amountUsd);
+  }
 
   const numbers = (rows: { wallet: string | null; value: unknown }[]) => {
     const m = new Map<string, number>();
@@ -347,18 +591,13 @@ export async function computeEntitlements(
     return m;
   };
 
-  // A pair's listing fees are the traders' cashback, so they join the trader's half of the line.
-  const traderUsd = numbers(asTrader.map((r) => ({ wallet: r.wallet, value: r.feeUsd })));
-  for (const [wallet, usd] of listingShare) {
-    traderUsd.set(wallet, (traderUsd.get(wallet) ?? 0) + usd);
-  }
-
-  return entitlementsFrom({
-    traderUsd,
+  const lines = entitlementsFrom({
+    holderUsd,
     creatorUsd: numbers(asCreator.map((r) => ({ wallet: r.wallet, value: r.feeUsd }))),
     committedUsd: numbers(committed.map((r) => ({ wallet: r.wallet, value: r.amountUsd }))),
     cookPriceUsd,
   });
+  return { lines, allocations, holderSamples: Math.max(0, ...counts.values()) };
 }
 
 // --- epochs ------------------------------------------------------------------------------------
@@ -420,6 +659,8 @@ export interface DraftResult {
   shortfallCook: number;
   /** True when an existing draft was returned untouched. */
   reused: boolean;
+  /** How many holder samples the split was built from. Unknown on a reused draft. */
+  holderSamples: number | null;
 }
 
 /**
@@ -427,12 +668,12 @@ export interface DraftResult {
  *
  * Idempotent on purpose. A draft moves no money, but replacing one the authority has already
  * signed against would orphan that signature, so a second call returns what is there unless the
- * caller explicitly asks to rebuild. That is also why this needs no authentication: the worst a
- * stranger achieves by calling it is computing the same draft twice.
+ * caller explicitly asks to rebuild. A rebuild takes a fresh holder snapshot and can land on a
+ * different root, which is why the endpoint in front of this only lets the vault authority call it.
  */
 export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<DraftResult> {
   const conn = requireDb();
-  const { epochs, claims } = schema;
+  const { epochs, claims, holderRewards } = schema;
 
   const snapshot = await fetchVault(cookieConnection(), MINT);
   if (!snapshot) {
@@ -458,6 +699,7 @@ export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<Draf
       shortfallRaw: shortfall(existing[0].totalRaw, snapshot).toString(),
       shortfallCook: toCook(shortfall(existing[0].totalRaw, snapshot)),
       reused: true,
+      holderSamples: null,
     };
   }
 
@@ -467,7 +709,7 @@ export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<Draf
   }
 
   const asOf = new Date();
-  const lines = await computeEntitlements(asOf, cookPriceUsd);
+  const { lines, allocations, holderSamples } = await computeEntitlements(asOf, cookPriceUsd);
   if (lines.length === 0) {
     throw new EpochError("nothing is owed above the claim floor yet", 409);
   }
@@ -493,6 +735,7 @@ export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<Draf
 
   await conn.transaction(async (tx) => {
     await tx.delete(claims).where(eq(claims.epoch, index));
+    await tx.delete(holderRewards).where(eq(holderRewards.epoch, index));
     await tx.delete(epochs).where(eq(epochs.index, index));
     await tx.insert(epochs).values(row);
     await tx.insert(claims).values(
@@ -501,10 +744,22 @@ export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<Draf
         wallet: l.wallet,
         amountRaw: l.amountRaw,
         amountUsd: l.amountUsd,
-        traderUsd: l.traderUsd,
+        holderUsd: l.holderUsd,
         creatorUsd: l.creatorUsd,
       })),
     );
+    // Stored with the lines, because the snapshot behind them cannot be taken again later.
+    for (let i = 0; i < allocations.length; i += 500) {
+      await tx.insert(holderRewards).values(
+        allocations.slice(i, i + 500).map((a) => ({
+          epoch: index,
+          mint: a.mint,
+          wallet: a.wallet,
+          balanceRaw: a.balanceRaw,
+          amountUsd: a.amountUsd,
+        })),
+      );
+    }
   });
 
   return {
@@ -515,6 +770,7 @@ export async function buildDraft(opts: { rebuild?: boolean } = {}): Promise<Draf
     shortfallRaw: shortfall(tree.total, snapshot).toString(),
     shortfallCook: toCook(shortfall(tree.total, snapshot)),
     reused: false,
+    holderSamples,
   };
 }
 
@@ -527,7 +783,7 @@ async function storedLines(index: bigint): Promise<EntitlementLine[]> {
     .orderBy(desc(schema.claims.amountUsd));
   return rows.map((r) => ({
     wallet: r.wallet,
-    traderUsd: r.traderUsd,
+    holderUsd: r.holderUsd,
     creatorUsd: r.creatorUsd,
     amountUsd: r.amountUsd,
     amountRaw: r.amountRaw,
@@ -636,7 +892,7 @@ export interface ClaimableLine {
   amountRaw: string;
   amountCook: number;
   amountUsd: number;
-  traderUsd: number;
+  holderUsd: number;
   creatorUsd: number;
   deadline: string;
   /** Sibling hashes, leaf upwards, as hex. The browser passes them straight to the program. */
@@ -736,7 +992,7 @@ export async function claimableFor(wallet: string | null): Promise<ClaimableRepo
       amountRaw: r.claim.amountRaw.toString(),
       amountCook: toCook(r.claim.amountRaw),
       amountUsd: r.claim.amountUsd,
-      traderUsd: r.claim.traderUsd,
+      holderUsd: r.claim.holderUsd,
       creatorUsd: r.claim.creatorUsd,
       deadline: deadline.toISOString(),
       proof: trees[i].proofFor(wallet).map(hex),

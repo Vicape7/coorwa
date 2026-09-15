@@ -108,20 +108,18 @@ export default function Home() {
       </Section>
 
       <Section>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Split pct="50" who="Traders" />
-          <Split pct="30" who="Creators" />
-          <Split pct="20" who="Liquidity" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Split pct="62.5" who="Holders" />
+          <Split pct="37.5" who="Creators" />
         </div>
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
-          <span className="text-primary">Where the money is from.</span> MomoSwap pays a referrer
-          20% of its 1% curve fee, out of the same fee either way - with nobody named, the programme
-          keeps that slice itself. So Coorwa naming itself costs a trader nothing. Swaps are a
-          different story: neither Cookie Chain router exposes a platform fee yet, so those fills
-          earn Coorwa nothing and are recorded at zero rather than credited with a rebate no fee is
-          backing.{" "}
+          <span className="text-primary">Hold a token, get paid in its stock.</span> Every fee Coorwa
+          earns on a token goes to the wallets holding it, by how much they hold, and to whoever made
+          it. It comes from MomoSwap&apos;s referral share of the curve fee, which costs a trader
+          nothing, Coorwa&apos;s own 0.10% on a swap, and the dollar paid to list a pair. Coorwa keeps
+          none of it, and holders claim it as a real xStock on Solana.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">
-            See your cashback
+            See your rewards
           </Link>
           .
         </p>

@@ -14,6 +14,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
+import bs58 from "bs58";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { Notice } from "./notice";
@@ -29,6 +30,7 @@ import {
   cookieTxUrl,
 } from "@/lib/config";
 import { closeEpochIx, fundTransaction, initializeIx, publishEpochIx } from "@/lib/vault";
+import { draftMessage } from "@/lib/draft-message";
 import type { EpochOverview, EpochRow } from "@/lib/epochs";
 
 const MINT = new PublicKey(VAULT_MINT);
@@ -40,13 +42,15 @@ interface DraftLine {
   wallet: string;
   amountCook: number;
   amountUsd: number;
-  traderUsd: number;
+  holderUsd: number;
   creatorUsd: number;
 }
 
 interface DraftResponse {
   epoch: EpochRow;
   reused: boolean;
+  /** Holder samples the split was built from; null on a draft that was reused. */
+  holderSamples: number | null;
   freeCook: number;
   shortfallCook: number;
   lines: DraftLine[];
@@ -62,7 +66,7 @@ function hexToBytes(hex: string): Uint8Array {
 
 export function VaultAdmin() {
   const { connection } = useConnection();
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey, signTransaction, signMessage } = useWallet();
   const wallet = publicKey?.toBase58() ?? null;
 
   const { data, mutate } = useSWR<EpochOverview>("/api/cashback/epochs", fetcher, {
@@ -134,14 +138,24 @@ export function VaultAdmin() {
     return run("fund", () => fundTransaction(connection, publicKey!, MINT, raw));
   }, [run, fundInput, publicKey, connection]);
 
+  // Building a draft takes the holder snapshot, so the endpoint wants the authority's signature on it.
   const onDraft = useCallback(async (rebuild: boolean) => {
+    if (!publicKey || !signMessage) {
+      setNote({ tone: "down", text: "This wallet cannot sign messages, so it cannot build an epoch." });
+      return;
+    }
     setBusy(rebuild ? "rebuild" : "draft");
     setNote(null);
     try {
+      const authority = publicKey.toBase58();
+      const ts = Date.now();
+      const signed = await signMessage(
+        new TextEncoder().encode(draftMessage({ authority, ts, rebuild })),
+      );
       const res = await fetch("/api/cashback/draft", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rebuild }),
+        body: JSON.stringify({ rebuild, authority, ts, signature: bs58.encode(signed) }),
       });
       const body: DraftResponse = await res.json();
       if (!res.ok) throw new Error(body.error ?? "could not build the epoch");
@@ -151,7 +165,7 @@ export function VaultAdmin() {
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [publicKey, signMessage]);
 
   const onPublish = useCallback(() => {
     if (!draft) return;
@@ -366,6 +380,15 @@ function DraftCard({
 
       <div className="num mt-4 break-all text-[12px] text-subtle">{draft.epoch.root}</div>
 
+      {draft.holderSamples != null && (
+        <p className="mt-2 text-[12px] text-muted">
+          Holder rewards split from {draft.holderSamples} snapshot
+          {draft.holderSamples === 1 ? "" : "s"}.
+          {draft.holderSamples <= 1 &&
+            " Only the one taken now: the sampler Worker has not run this epoch, so a wallet that bought just before building would be paid in full."}
+        </p>
+      )}
+
       {short && (
         <div className="mt-4">
           <Notice tone="down">
@@ -381,7 +404,7 @@ function DraftCard({
             {draft.lines.map((l) => (
               <tr key={l.wallet} className="row-hover">
                 <td className="num py-2 pr-6 text-primary">{shortAddr(l.wallet, 5)}</td>
-                <td className="num py-2 pr-6 text-right text-muted">{usd(l.traderUsd)}</td>
+                <td className="num py-2 pr-6 text-right text-muted">{usd(l.holderUsd)}</td>
                 <td className="num py-2 pr-6 text-right text-muted">{usd(l.creatorUsd)}</td>
                 <td className="num py-2 text-right text-primary">
                   {amount(l.amountCook, 3)} {COOK_SYMBOL}

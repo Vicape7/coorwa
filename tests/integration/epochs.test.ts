@@ -87,10 +87,18 @@ async function fundedKey(sol = 5): Promise<Keypair> {
   return kp;
 }
 
-/** The fee a wallet must have generated for its trader share to be worth this many COOK. */
+/**
+ * The fee a token must have earned for its creator's share to be worth this many COOK.
+ *
+ * The pipeline is driven through the creator share because it needs nothing but fills. The holder
+ * share needs a snapshot of real token accounts, and its arithmetic is covered offline.
+ */
 function feeForCook(cook: number): number {
-  return (cook * cookUsd) / CASHBACK_SPLIT.trader;
+  return (cook * cookUsd) / CASHBACK_SPLIT.creator;
 }
+
+/** A mint nobody holds, so the holder snapshot finds nothing and the pool simply waits. */
+const TOKEN = Keypair.generate().publicKey.toBase58();
 
 let fillSeq = 0;
 function fakeFill(wallet: string, feeUsd: number) {
@@ -98,14 +106,14 @@ function fakeFill(wallet: string, feeUsd: number) {
   return {
     // The uniqueness key only has to be unique; nothing in this path reads it back off the chain.
     signature: `epochtest${fillSeq}`.padEnd(88, "x"),
-    wallet,
+    wallet: Keypair.generate().publicKey.toBase58(),
     source: "launchpad",
-    mint: MINT.toBase58(),
+    mint: TOKEN,
     symbol: "TEST",
     side: "buy",
     valueUsd: feeUsd * 100,
     feeUsd,
-    creator: null,
+    creator: wallet,
     chain: "cookie",
   };
 }
@@ -120,6 +128,7 @@ before(async () => {
 
   // A clean slate, so the draft below contains exactly what this file put there.
   await db!.delete(schema.claims);
+  await db!.delete(schema.holderRewards);
   await db!.delete(schema.epochs);
   await db!.delete(schema.fills);
 });
@@ -274,16 +283,16 @@ test("a claimant is handed a proof that its own wallet can spend", { skip }, asy
 test("a claimed line is never offered to a second epoch", { skip }, async () => {
   // The rule the whole design rests on. Alice has claimed and Bob has not, but Bob's line is still
   // inside its window, so neither balance is free to be published again.
-  const lines = await computeEntitlements(new Date(), cookUsd);
+  const { lines } = await computeEntitlements(new Date(), cookUsd);
   assert.deepEqual(lines, []);
 
   await assert.rejects(() => buildDraft({ rebuild: true }), /nothing is owed/);
 });
 
-test("new trading after the epoch accrues on top, not instead", { skip }, async () => {
+test("new fees after the epoch accrue on top, not instead", { skip }, async () => {
   await db!.insert(schema.fills).values([fakeFill(alice.publicKey.toBase58(), feeForCook(2))]);
 
-  const lines = await computeEntitlements(new Date(), cookUsd);
+  const { lines } = await computeEntitlements(new Date(), cookUsd);
   assert.equal(lines.length, 1);
   assert.equal(lines[0].wallet, alice.publicKey.toBase58());
 

@@ -1,0 +1,12 @@
+{
+  "name": "coorwa-holder-sampler",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.131.2"
+  }
+}

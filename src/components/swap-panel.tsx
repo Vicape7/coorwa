@@ -466,9 +466,9 @@ function RouteDetail({
             upstream and signed in your wallet - Coorwa never holds your funds. Coorwa&apos;s fee is
             a visible instruction paying the cashback vault, and all of it is returned:{" "}
             {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
-            {(CASHBACK_SPLIT.trader * 100).toFixed(1)}% to whoever traded,{" "}
+            {(CASHBACK_SPLIT.holders * 100).toFixed(1)}% to the token&apos;s holders,{" "}
             {(CASHBACK_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither
-            router will pay a referrer, so this is the only thing funding the rebate here.
+            router will pay a referrer, so this is the only thing funding the rewards here.
           </p>
         </div>
       )}

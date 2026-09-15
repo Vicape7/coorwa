@@ -62,3 +62,8 @@ CLAUDE.md
 # The program's own keypair. It sets the program address and lets whoever holds it claim that
 # address first, so it is backed up out of band rather than committed.
 target/deploy/*-keypair.json
+
+# Cloudflare Workers under workers/
+/workers/*/node_modules
+.wrangler
+.dev.vars

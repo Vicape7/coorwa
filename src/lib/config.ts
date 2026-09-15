@@ -117,12 +117,11 @@ export const MOMOSWAP_REFERRAL_SHARE = 0.2;
  * honest: a dollar is nothing to someone who means it and enough to stop a bot listing sixteen pairs
  * on a dead token.
  *
- * The money is not Coorwa's. It goes into the same vault the cashback is paid out of, through the
- * same permissionless `fund` instruction anyone can call, and each epoch pays it back to the wallets
- * that traded that pair (`listingSharesFrom` in `epochs.ts`), rather than to whoever runs this.
+ * The money is not Coorwa's. It goes into the same vault the rewards are paid out of, through the
+ * same permissionless `fund` instruction anyone can call, and joins that token's holder pool
+ * (`holderPools` in `epochs.ts`), rather than going to whoever runs this.
  */
 export const PAIR_LISTING_USD = 1;
-
 
 /**
  * Coorwa's own fee on a terminal swap, in basis points of the COOK leg.
@@ -139,17 +138,26 @@ export const PAIR_LISTING_USD = 1;
 export const COORWA_SWAP_FEE_BPS = 10;
 
 /**
- * Where every fee Coorwa collects goes back to: the launchpad referral share and the swap fee alike.
- * Must sum to 1: all of it is returned, none of it kept.
+ * Where every fee Coorwa collects on a token goes back to: the launchpad referral share and the swap
+ * fee alike. Must sum to 1: all of it is returned, none of it kept.
  *
- * A fifth of the launchpad share used to be held back "for liquidity", but nothing ever paid it to
- * anyone, so it now goes to the two people a pair actually has: whoever trades it and whoever made
- * the token. The old 50:30 weighting between them is kept, scaled up to the whole.
+ * The holders' part is not paid to whoever generated the fee. It joins that token's holder pool, and
+ * each epoch shares the pool out over the wallets holding the token at the snapshot, in proportion to
+ * what they hold. The creator's part goes to whoever made the token, as before.
  */
 export const CASHBACK_SPLIT = {
-  trader: 0.625,
+  holders: 0.625,
   creator: 0.375,
 } as const;
+
+/**
+ * The least a wallet has to hold of a token, in USD at the snapshot, to share its holder pool.
+ *
+ * Without a floor, dust accounts left behind by every trade would each take a sliver and most would
+ * never clear the claim minimum anyway. Applied only when the token has a price; a token with none
+ * shares its pool over every wallet holding any.
+ */
+export const HOLDER_MIN_USD = 1;
 
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
