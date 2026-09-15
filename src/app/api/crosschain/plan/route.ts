@@ -15,6 +15,7 @@ const Query = z.object({
   ticker: z.string().min(1).max(10),
   slippageBps: z.coerce.number().int().min(1).max(5000).default(DEFAULT_SLIPPAGE_BPS),
   owner: z.string().min(32).max(44).optional(),
+  plusCook: z.coerce.number().min(0).optional(),
 });
 
 /** Price the full TOKEN -> COOK -> bridge -> xStock route, with real per-leg slippage. */

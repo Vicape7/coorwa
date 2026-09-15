@@ -26,7 +26,7 @@
  * never be offered to a different wallet than the one that signed it.
  */
 import type { RouteLeg } from "./crosschain";
-import type { PayoutClaim } from "./payout";
+import type { LpClaim, PayoutClaim } from "./payout";
 
 export type JourneyDirection = "buy" | "sell";
 export type StepState = "idle" | "running" | "done" | "failed";
@@ -89,6 +89,16 @@ export interface Journey {
    * in is measured against it, for the same reason the bridge measures against `destBaseline`.
    */
   claimBaseline?: number;
+
+  /** LP payout only: the position whose fees are claimed. */
+  lpClaim?: LpClaim;
+  /**
+   * LP payout only, measured from the claim transaction: the COOK it brought in, in lamports (may be
+   * negative, see `lpToBridge`), and the raw amount of the other side it paid, which the swap leg
+   * sells. Sold as measured rather than as quoted, because fees keep accruing until the claim lands.
+   */
+  lpClaimedLamports?: string;
+  sellRaw?: string;
 
   createdAt: number;
   updatedAt: number;
@@ -163,6 +173,7 @@ export function newJourney(args: {
   input: { amount: number; symbol: string; amountRaw?: string };
   legs: RouteLeg[];
   claims?: PayoutClaim[];
+  lpClaim?: LpClaim;
 }): Journey {
   const now = Date.now();
   return {
@@ -183,12 +194,19 @@ export function newJourney(args: {
  * rather than by which error was thrown: the cursor is the only thing that tracks what confirmed.
  */
 export function fundsLocation(j: Journey): string {
-  if (j.legs[j.cursor]?.kind === "claim") {
+  const next = j.legs[j.cursor]?.kind;
+  if (next === "claim") {
     return "Nothing has crossed yet. Whatever has been claimed is in your Cookie Chain wallet as COOK, and the rest is still in the vault.";
+  }
+  if (next === "lp-claim") {
+    return "Nothing has crossed yet. The fees are still in your position, or already in your Cookie Chain wallet if the claim landed.";
   }
   const bridgeLeg = j.legs.findIndex((l) => l.kind === "bridge");
   const bridged = j.bridgeAmount ? `${j.bridgeAmount} COOK` : "your COOK";
 
+  if (j.legs[0]?.kind === "lp-claim" && next === "cookie-swap") {
+    return `Nothing has crossed yet. The fees are in your Cookie Chain wallet, as ${j.token.symbol} and COOK.`;
+  }
   if (j.cursor <= bridgeLeg) {
     return j.direction === "buy"
       ? `Nothing has crossed yet. Your funds are still on Cookie Chain, as ${j.cursor === 0 ? j.token.symbol : "COOK"}.`

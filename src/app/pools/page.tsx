@@ -1,5 +1,5 @@
 import { SiteShell } from "@/components/site-shell";
-import { PoolsView } from "@/components/pools-view";
+import { PoolsViewClient } from "@/components/pools-view-client";
 
 export const metadata = {
   title: "Pools · Coorwa",
@@ -9,7 +9,7 @@ export const metadata = {
 export default function PoolsPage() {
   return (
     <SiteShell>
-      <PoolsView />
+      <PoolsViewClient />
     </SiteShell>
   );
 }

@@ -30,6 +30,9 @@ import { TokenMark } from "./token-mark";
 import { Notice } from "./notice";
 import { PillSelect } from "./ui/pill-select";
 import { ListPair } from "./list-pair";
+import { LpPayout } from "./lp-payout";
+import { isResumable, loadJourney } from "@/lib/journey";
+import { lpPayoutSlug } from "@/lib/payout";
 import type { PoolRow } from "@/app/api/pools/route";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -70,7 +73,7 @@ export function PoolsView() {
 
       <ListPair />
 
-      <MyPositions />
+      <MyPositions pools={pools} />
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
         <h2 className="title text-primary">All pools</h2>
@@ -191,15 +194,28 @@ interface LoadedPosition {
   position: UserPosition;
   ctx: PoolContext;
   value: ReturnType<typeof positionValue>;
-  symbols: { a: string; b: string };
+  mints: { a: string; b: string };
 }
 
-function MyPositions() {
+function MyPositions({ pools }: { pools: PoolRow[] }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
 
   const deps = useMemo(() => buildDeps(connection), [connection]);
+
+  /** Symbols from the pool list, so a position reads "CHAT / wCOOK" rather than two addresses. */
+  const symbolOf = useMemo(() => {
+    const known = new Map<string, string>();
+    for (const p of pools) {
+      known.set(p.base.mint, p.base.symbol);
+      known.set(p.quote.mint, p.quote.symbol);
+    }
+    return (mint: string) => known.get(mint) ?? shortAddr(mint, 4);
+  }, [pools]);
+
+  /** The position whose fees are open as a stock payout, if any. */
+  const [payoutFor, setPayoutFor] = useState<string | null>(null);
 
   /** Bumped by Refresh, and after a write, to force a rescan of the same wallet. */
   const [nonce, setNonce] = useState(0);
@@ -217,6 +233,7 @@ function MyPositions() {
 
   const wallet = publicKey?.toBase58() ?? null;
   const key = wallet ? `${wallet}|${nonce}` : null;
+  const rescan = useCallback(() => setNonce((n) => n + 1), []);
   const current = key && scan?.key === key ? scan : null;
   const loading = key !== null && current === null;
 
@@ -235,9 +252,9 @@ function MyPositions() {
               position: p,
               ctx,
               value: positionValue(ctx, p),
-              symbols: {
-                a: shortAddr(ctx.state.tokenAMint.toBase58(), 4),
-                b: shortAddr(ctx.state.tokenBMint.toBase58(), 4),
+              mints: {
+                a: ctx.state.tokenAMint.toBase58(),
+                b: ctx.state.tokenBMint.toBase58(),
               },
             });
           } catch {
@@ -305,7 +322,10 @@ function MyPositions() {
     );
   }
 
-  const positions = current?.positions ?? null;
+  // A rescan keeps the last list on screen, so a payout panel open under a position is not unmounted
+  // (and its final state lost) by the refresh its own completion asks for.
+  const previous = scan && wallet && scan.key.startsWith(`${wallet}|`) ? scan : null;
+  const positions = current?.positions ?? previous?.positions ?? null;
 
   return (
     <div className="card mt-10 p-7">
@@ -341,7 +361,7 @@ function MyPositions() {
         </div>
       )}
 
-      {loading && <div className="skeleton mt-5 h-20 w-full" />}
+      {loading && positions === null && <div className="skeleton mt-5 h-20 w-full" />}
 
       {positions !== null && positions.length === 0 && (
         <p className="mt-4 text-[14px] leading-relaxed text-muted">
@@ -355,6 +375,7 @@ function MyPositions() {
           {positions.map((p) => {
             const id = p.position.position.toBase58();
             const hasFees = p.value.feeA > 0 || p.value.feeB > 0;
+            const symbols = { a: symbolOf(p.mints.a), b: symbolOf(p.mints.b) };
             return (
               <li key={id} className="panel p-5">
                 <div className="flex flex-wrap items-start gap-4">
@@ -368,10 +389,11 @@ function MyPositions() {
                       {shortAddr(p.position.pool.toBase58(), 6)}
                     </a>
                     <div className="num mt-2 text-[15px] text-primary">
-                      {fmt(p.value.amountA)} {p.symbols.a} + {fmt(p.value.amountB)} {p.symbols.b}
+                      {fmt(p.value.amountA)} {symbols.a} + {fmt(p.value.amountB)} {symbols.b}
                     </div>
                     <div className="num mt-1 text-[13px] text-muted">
-                      Fees pending: {fmt(p.value.feeA, 8)} / {fmt(p.value.feeB, 8)}
+                      Fees pending: {fmt(p.value.feeA, 8)} {symbols.a} / {fmt(p.value.feeB, 8)}{" "}
+                      {symbols.b}
                     </div>
                     {p.position.permanentLockedLiquidity.gtn(0) && (
                       <div className="mt-1 text-[12px] text-subtle">
@@ -389,6 +411,14 @@ function MyPositions() {
                       {busy === `${id}:claim` ? "Claiming" : "Claim fees"}
                     </button>
                     <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={(!hasFees && payoutFor !== id) || busy !== null}
+                      onClick={() => setPayoutFor((open) => (open === id ? null : id))}
+                      aria-expanded={payoutFor === id}
+                    >
+                      {payoutFor === id ? "Hide" : "Take as stock"}
+                    </button>
+                    <button
                       className="btn btn-quiet btn-sm"
                       disabled={busy !== null || p.position.unlockedLiquidity.lten(0)}
                       onClick={() => act(p, "withdraw")}
@@ -397,6 +427,30 @@ function MyPositions() {
                     </button>
                   </div>
                 </div>
+
+                {/* A payout that stopped on an earlier visit shows itself without being asked. */}
+                {(payoutFor === id || isResumable(loadJourney(wallet!, lpPayoutSlug(id)))) && (
+                  <LpPayout
+                    p={{
+                      pool: p.position.pool.toBase58(),
+                      position: id,
+                      positionNftAccount: p.position.positionNftAccount.toBase58(),
+                      a: {
+                        mint: p.mints.a,
+                        symbol: symbols.a,
+                        decimals: p.ctx.aDecimals,
+                        feeRaw: p.value.feeARaw,
+                      },
+                      b: {
+                        mint: p.mints.b,
+                        symbol: symbols.b,
+                        decimals: p.ctx.bDecimals,
+                        feeRaw: p.value.feeBRaw,
+                      },
+                    }}
+                    onSettled={rescan}
+                  />
+                )}
               </li>
             );
           })}

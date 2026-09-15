@@ -246,6 +246,13 @@ export interface UserPosition {
   permanentLockedLiquidity: BN;
   feeAPending: BN;
   feeBPending: BN;
+  /**
+   * The pool's fee-per-liquidity when the position last settled. `feeAPending` only moves when the
+   * position itself is touched, so on its own it reads 0 for fees earned since; the difference
+   * against the pool's running figure is the rest. See `unclaimedFees`.
+   */
+  feeAPerTokenCheckpoint: number[];
+  feeBPerTokenCheckpoint: number[];
 }
 
 interface RawPositionState {
@@ -256,6 +263,8 @@ interface RawPositionState {
   permanentLockedLiquidity: BN;
   feeAPending: BN;
   feeBPending: BN;
+  feeAPerTokenCheckpoint: number[];
+  feeBPerTokenCheckpoint: number[];
 }
 
 /**
@@ -306,6 +315,8 @@ export async function findUserPositions(
       permanentLockedLiquidity: st.permanentLockedLiquidity,
       feeAPending: st.feeAPending,
       feeBPending: st.feeBPending,
+      feeAPerTokenCheckpoint: st.feeAPerTokenCheckpoint,
+      feeBPerTokenCheckpoint: st.feeBPerTokenCheckpoint,
     });
   });
 
@@ -537,6 +548,31 @@ export async function buildClaimFees(args: {
   return new Transaction().add(aTa.ix, bTa.ix, ix, ...post);
 }
 
+/**
+ * Fees a claim would pay right now, in raw units of each side.
+ *
+ * Not `feeAPending`. That field is only written when the position is touched, and on 2026-09-15
+ * it read 0 on nearly every position on Cookie Chain while the same positions held thousands of
+ * COOK in fees. This adds what accrued since the checkpoint, by the formula of the SDK's
+ * `getUnClaimLpFee`: liquidity times the growth in fee per liquidity, a u128 little-endian Q64.64
+ * pair scaled by 2^128. It is written out here because importing that helper made Next evaluate
+ * the SDK's CommonJS build on the server. On 2026-09-15 it matched the helper on all 194
+ * positions of the 28 manageable pools, and simulated claims on five of them paid exactly this.
+ */
+export function unclaimedFees(ctx: PoolContext, position: UserPosition): { a: BN; b: BN } {
+  const state = ctx.state as PoolState & { feeAPerLiquidity: number[]; feeBPerLiquidity: number[] };
+  const liquidity = position.unlockedLiquidity
+    .add(position.vestedLiquidity)
+    .add(position.permanentLockedLiquidity);
+  const u128 = (bytes: number[]) => new BN(Buffer.from(bytes).reverse());
+  const accrued = (pool: number[], checkpoint: number[]) =>
+    liquidity.mul(u128(pool).sub(u128(checkpoint))).shrn(128);
+  return {
+    a: position.feeAPending.add(accrued(state.feeAPerLiquidity, position.feeAPerTokenCheckpoint)),
+    b: position.feeBPending.add(accrued(state.feeBPerLiquidity, position.feeBPerTokenCheckpoint)),
+  };
+}
+
 /** Convert raw liquidity into the token amounts it currently represents. */
 export function positionValue(ctx: PoolContext, position: UserPosition) {
   const total = position.unlockedLiquidity
@@ -550,11 +586,14 @@ export function positionValue(ctx: PoolContext, position: UserPosition) {
     maxSqrtPrice: ctx.state.sqrtMaxPrice,
   } as never) as { outAmountA: BN; outAmountB: BN };
 
+  const fees = unclaimedFees(ctx, position);
   return {
     amountA: Number(quote.outAmountA.toString()) / 10 ** ctx.aDecimals,
     amountB: Number(quote.outAmountB.toString()) / 10 ** ctx.bDecimals,
-    feeA: Number(position.feeAPending.toString()) / 10 ** ctx.aDecimals,
-    feeB: Number(position.feeBPending.toString()) / 10 ** ctx.bDecimals,
+    feeA: Number(fees.a.toString()) / 10 ** ctx.aDecimals,
+    feeB: Number(fees.b.toString()) / 10 ** ctx.bDecimals,
+    feeARaw: fees.a.toString(),
+    feeBRaw: fees.b.toString(),
   };
 }
 

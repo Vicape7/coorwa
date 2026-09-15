@@ -6,6 +6,7 @@
  *   buy     TOKEN --[Cookie agg]--> COOK --[Hyperlane]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *   sell    xSTOCK --[Jupiter]--> COOK (Solana) --[Hyperlane]--> COOK --[Cookie agg]--> TOKEN
  *   payout  vault --[claim]--> COOK --[Hyperlane]--> COOK (Solana) --[Jupiter]--> xSTOCK
+ *   LP fees position --[claim fees]--> TOKEN + COOK --[Cookie agg]--> COOK --[Hyperlane]--> ...
  *
  * `crosschain.ts` prices these routes. This signs them. The two directions share every leg runner
  * they can, because the awkward part is the same on both sides: the bridge is asynchronous, so a
@@ -34,7 +35,7 @@ import { createCloseAccountInstruction, getAssociatedTokenAddressSync } from "@s
 import { COOK_DECIMALS, COOK_MINT, COOK_SOLANA_DECIMALS, COOK_SOLANA_MINT } from "./config";
 import { buildBridgeTransfer, messageIdFromLogs } from "./bridge";
 import { claimInstructions, claimStatusPda, epochPda, vaultPda } from "./vault";
-import { claimedToBridge, proofBytes } from "./payout";
+import { claimedToBridge, lpClaimedCook, lpToBridge, proofBytes } from "./payout";
 import { decodeTx, simulate, explainError, type SignerFn } from "./tx";
 import { amount as fmtAmount, rawToUi, shortAddr, uiToRaw } from "./format";
 import { CoorwaError } from "./http";
@@ -119,6 +120,7 @@ export async function runJourney(start: Journey, ctx: RunContext): Promise<Journ
 function legRunners(j: Journey): LegRunner[] {
   return j.legs.map(({ kind }) => {
     if (kind === "claim") return claimCashback;
+    if (kind === "lp-claim") return claimLpFees;
     if (kind === "bridge") return bridgeLeg;
     if (j.direction === "buy") return kind === "cookie-swap" ? sellTokenForCook : deliverThenBuyRwa;
     return kind === "solana-swap" ? sellRwaForCook : deliverThenBuyToken;
@@ -129,9 +131,31 @@ function legRunners(j: Journey): LegRunner[] {
 
 const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
   const j = ctl.get();
+  const reserve = BigInt(uiToRaw(COOKIE_GAS_RESERVE, COOK_DECIMALS));
+
+  // After an LP fee claim the amount to sell is what the claim paid, measured, not what was typed.
+  const lp = j.legs[0]?.kind === "lp-claim";
+  if (lp && (j.sellRaw === undefined || j.lpClaimedLamports === undefined)) {
+    throw new CoorwaError(
+      "The fee claim has no measured amounts to sell.",
+      "Nothing has been sold. The fees are in your Cookie Chain wallet. Resume the payout and the " +
+        "claim leg will read them again without re-signing it.",
+    );
+  }
+  const sellRaw = lp ? j.sellRaw! : uiToRaw(j.input.amount, j.token.decimals);
+
+  if (lp && BigInt(sellRaw) <= 0n) {
+    // The fees on this side rounded to nothing by the time the claim landed. Bridge the COOK alone.
+    const toBridge = lpToBridge(BigInt(j.lpClaimedLamports!), 0n, reserve);
+    if (toBridge <= 0n) throw tooLittleToBridge();
+    ctl.update({ bridgeAmount: rawToUi(toBridge, COOK_DECIMALS) });
+    ctl.setStep(i, { state: "done", detail: `No ${j.token.symbol} to sell` });
+    return;
+  }
+
   ctl.setStep(i, {
     state: "running",
-    detail: `Selling ${fmtAmount(j.input.amount)} ${j.token.symbol} for COOK`,
+    detail: `Selling ${fmtAmount(rawToUi(sellRaw, j.token.decimals))} ${j.token.symbol} for COOK`,
   });
 
   let signature = await landedSignature(ctx.cookieConn, j.steps[i]?.signature);
@@ -141,7 +165,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
       owner: ctx.owner.toBase58(),
       inputMint: j.token.mint,
       outputMint: COOK_MINT,
-      amount: uiToRaw(j.input.amount, j.token.decimals),
+      amount: sellRaw,
       slippageBps: ctx.slippageBps,
     });
     signature = await sendAndRecord(
@@ -156,7 +180,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
 
   // What the swap actually produced, net of its own fee, read off the transaction itself.
   const parsed = await fetchParsed(ctx.cookieConn, signature);
-  const gained = cookieNativeDelta(parsed, ctx.owner);
+  const gained = cookieNativeLamports(parsed, ctx.owner);
   if (gained === null) {
     throw new CoorwaError(
       "The swap landed, but its result could not be read back.",
@@ -165,20 +189,22 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
     );
   }
 
-  const toBridge = round(gained - COOKIE_GAS_RESERVE, COOK_DECIMALS);
-  if (toBridge <= 0) {
+  const toBridge = lp
+    ? lpToBridge(BigInt(j.lpClaimedLamports!), gained, reserve)
+    : gained - reserve;
+  if (toBridge <= 0n) {
     throw new CoorwaError(
       "The swap produced no spendable COOK to bridge.",
       `About ${COOKIE_GAS_RESERVE} COOK has to stay behind to pay the bridge transaction's own fee.`,
     );
   }
 
-  ctl.update({ bridgeAmount: toBridge });
+  ctl.update({ bridgeAmount: rawToUi(toBridge, COOK_DECIMALS) });
   ctl.setStep(i, {
     state: "done",
     signature,
     chain: "cookie",
-    detail: `${fmtAmount(gained)} COOK received`,
+    detail: `${fmtAmount(rawToUi(gained, COOK_DECIMALS))} COOK received`,
   });
 };
 
@@ -336,6 +362,99 @@ const claimCashback: LegRunner = async (ctl, ctx, i) => {
     detail: `${fmtAmount(rawToUi(gained < owed ? gained : owed, COOK_DECIMALS))} COOK claimed`,
   });
 };
+
+// --- Leg 1, LP fees: claim what a position has earned --------------------------------------------
+
+/**
+ * Claim a position's fees, then measure both sides of what the claim paid.
+ *
+ * Unlike the vault, the pool does not refuse a second claim: it pays whatever accrued in between,
+ * which is next to nothing. So the stored signature is what stops a resume claiming twice, and a
+ * second claim that did slip through would cost one transaction fee, never anyone's funds.
+ *
+ * Nothing is measured against a balance read beforehand. The claim transaction's own balances say
+ * exactly what it paid, and that also keeps COOK the wallet was already holding out of the payout.
+ */
+const claimLpFees: LegRunner = async (ctl, ctx, i) => {
+  const j = ctl.get();
+  const lp = j.lpClaim;
+  if (!lp) {
+    throw new CoorwaError(
+      "This payout names no position to claim from.",
+      "Nothing has been signed. Discard it and start again from the LP page.",
+    );
+  }
+
+  let signature = await landedSignature(ctx.cookieConn, j.steps[i]?.signature);
+  if (!signature) {
+    ctl.setStep(i, { state: "running", detail: "Reading your position" });
+    // Loaded here rather than at the top: the Anchor bundle behind it fails to evaluate during
+    // server rendering, and every page with a settlement panel imports this file.
+    const { buildClaimFees, buildDeps, findUserPositions, loadPool } = await import("./liquidity");
+    const deps = buildDeps(ctx.cookieConn);
+    const pool = await loadPool(deps, lp.pool);
+    const position = (await findUserPositions(deps, ctx.owner, pool.pool)).find(
+      (p) => p.position.toBase58() === lp.position,
+    );
+    if (!position) {
+      throw new CoorwaError(
+        "This position is no longer in your wallet.",
+        "Nothing has been signed. A position belongs to whoever holds its NFT, so only that wallet " +
+          "can claim its fees.",
+      );
+    }
+
+    ctl.setStep(i, { state: "running", detail: "Claiming your fees" });
+    const tx = await buildClaimFees({ ctx: pool, owner: ctx.owner, position });
+    const { blockhash } = await ctx.cookieConn.getLatestBlockhash("confirmed");
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = ctx.owner;
+    signature = await sendAndRecord(ctx.cookieConn, tx, ctx, ctl, i, "cookie");
+  }
+
+  const parsed = await fetchParsed(ctx.cookieConn, signature);
+  const ownerDelta = cookieNativeLamports(parsed, ctx.owner);
+  const wrapped = getAssociatedTokenAddressSync(new PublicKey(COOK_MINT), ctx.owner, true);
+  const sold = tokenDelta(parsed, ctx.owner, j.token.mint, j.token.decimals);
+  if (!parsed || ownerDelta === null || sold === null) {
+    throw new CoorwaError(
+      "The fee claim landed, but what it paid could not be read back.",
+      "Nothing is lost and nothing was sent twice. The fees are in your Cookie Chain wallet. Resume " +
+        "the payout and it will read them again without re-signing this leg.",
+    );
+  }
+  const claimed = lpClaimedCook(ownerDelta, accountLamportsBefore(parsed, wrapped));
+  const tokenRaw = sold.raw > 0n ? sold.raw : 0n;
+
+  ctl.update({ lpClaimedLamports: claimed.toString(), sellRaw: tokenRaw.toString() });
+
+  // With no side to sell, this leg hands the bridge its amount itself.
+  if (ctl.get().legs[i + 1]?.kind !== "cookie-swap") {
+    const reserve = BigInt(uiToRaw(COOKIE_GAS_RESERVE, COOK_DECIMALS));
+    const toBridge = lpToBridge(claimed, 0n, reserve);
+    if (toBridge <= 0n) throw tooLittleToBridge();
+    ctl.update({ bridgeAmount: rawToUi(toBridge, COOK_DECIMALS) });
+  }
+
+  const cook = `${fmtAmount(rawToUi(claimed > 0n ? claimed : 0n, COOK_DECIMALS))} COOK`;
+  ctl.setStep(i, {
+    state: "done",
+    signature,
+    chain: "cookie",
+    detail:
+      tokenRaw > 0n
+        ? `${fmtAmount(rawToUi(tokenRaw, j.token.decimals))} ${j.token.symbol} and ${cook} claimed`
+        : `${cook} claimed`,
+  });
+};
+
+function tooLittleToBridge(): CoorwaError {
+  return new CoorwaError(
+    "The fees brought in too little COOK to bridge.",
+    `About ${COOKIE_GAS_RESERVE} COOK has to stay behind to pay the bridge transaction's own fee. ` +
+      "Whatever was claimed is in your Cookie Chain wallet.",
+  );
+}
 
 // --- Leg 2: the bridge, either way ---------------------------------------------------------------
 
@@ -729,17 +848,23 @@ async function fetchParsed(
 }
 
 /**
- * Change in the owner's native COOK balance on Cookie Chain, net of the fee they paid. Null when it
- * cannot be read. Cookie Chain specific: it divides by COOK's 9 native decimals.
+ * Change in the owner's native COOK balance on Cookie Chain, in lamports, net of the fee they paid.
+ * Null when it cannot be read.
  */
-function cookieNativeDelta(
+function cookieNativeLamports(
   tx: ParsedTransactionWithMeta | null,
   owner: PublicKey,
-): number | null {
+): bigint | null {
   if (!tx?.meta) return null;
   const i = tx.transaction.message.accountKeys.findIndex((k) => k.pubkey.equals(owner));
   if (i < 0) return null;
-  return (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / 10 ** COOK_DECIMALS;
+  return BigInt(tx.meta.postBalances[i]) - BigInt(tx.meta.preBalances[i]);
+}
+
+/** Lamports an account held before the transaction, or 0 when it did not exist or is not in it. */
+function accountLamportsBefore(tx: ParsedTransactionWithMeta, account: PublicKey): bigint {
+  const i = tx.transaction.message.accountKeys.findIndex((k) => k.pubkey.equals(account));
+  return i < 0 ? 0n : BigInt(tx.meta?.preBalances[i] ?? 0);
 }
 
 /**

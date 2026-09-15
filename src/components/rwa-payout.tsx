@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Cashback taken as a stock rather than as COOK.
+ * Money Coorwa pays out, taken as a stock rather than as it arrives.
  *
- * The claim and the cross-chain route existed separately; this runs them as one journey. Every open
- * epoch is claimed into the wallet, the COOK is bridged to Solana, and the chosen xStock is bought
- * there into the same wallet. It is the settlement panel's executor with the claim as its first
- * leg, so a payout that stops after the bridge resumes from the middle like any route.
+ * Two things pay out today: cashback out of the vault, and the fees on an LP position. Both are the
+ * settlement panel's cross-chain buy with a claim as its first leg, so this component runs either
+ * as one journey: claim into the wallet, bridge the COOK to Solana, buy the chosen xStock there into
+ * the same wallet. A payout that stops after the bridge resumes from the middle like any route.
  *
  * Two checks come before the first signature, because either failure would leave COOK sitting on
  * Solana halfway: the payout has to be worth its fixed costs, and the wallet has to hold the SOL the
@@ -41,6 +41,8 @@ import {
   claimLeg,
   payoutBlocked,
   solanaReadiness,
+  type LpClaim,
+  type PayoutClaim,
   type SolanaReadiness,
 } from "@/lib/payout";
 import { RouteSteps } from "./route-steps";
@@ -53,9 +55,103 @@ interface PayoutPlan {
   outShares: number;
   outUsd: number;
   impactPct: number;
+  note: string | null;
+}
+
+/**
+ * One way of pricing the payout. A payout may offer several, tried in order until one prices: an
+ * LP claim first tries selling both sides, then falls back to its COOK side alone when the other
+ * side is too small for any route.
+ */
+export interface PayoutPricing {
+  /** Where the Cookie Chain side of the route starts: COOK itself, or a token sold for it. */
+  inputMint: string;
+  inputSymbol: string;
+  inputDecimals: number;
+  amount: number;
+  /** COOK joining the route after the swap, see `planCrossChainBuy`. */
+  plusCook?: number;
+  firstLeg: RouteLeg;
+  /** Said under the estimate when this pricing is the one used. */
+  note?: string;
+}
+
+export interface PayoutSpec {
+  /** Journey key in place of a pair, so each payout resumes on its own. */
+  slug: string;
+  source: "cashback" | "lp-fees";
+  /** What is owed, in COOK, for the "nothing yet" check. Only its sign matters to the gate. */
+  owedCook: number;
+  pricings: PayoutPricing[];
+  /** The Cookie Chain side the journey records: COOK for cashback, the pool's token for LP fees. */
+  token: { mint: string; symbol: string; decimals: number };
+  input: { amount: number; symbol: string };
+  claims?: PayoutClaim[];
+  lpClaim?: LpClaim;
+  copy: {
+    title: string;
+    body: string;
+    /** Button label, with the stock's symbol appended. */
+    action: string;
+    done: string;
+    /** How a resume avoids paying twice, for the stuck notice. */
+    resumeSafety: string;
+  };
 }
 
 export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettled: () => void }) {
+  const owedCook = useMemo(() => open.reduce((sum, l) => sum + l.amountCook, 0), [open]);
+  const spec = useMemo<PayoutSpec>(
+    () => ({
+      slug: PAYOUT_SLUG,
+      source: "cashback",
+      owedCook,
+      pricings:
+        owedCook > 0
+          ? [
+              {
+                inputMint: COOK_MINT,
+                inputSymbol: COOK_SYMBOL,
+                inputDecimals: COOK_DECIMALS,
+                amount: owedCook,
+                firstLeg: claimLeg(owedCook),
+              },
+            ]
+          : [],
+      token: { mint: COOK_MINT, symbol: COOK_SYMBOL, decimals: COOK_DECIMALS },
+      input: { amount: owedCook, symbol: COOK_SYMBOL },
+      claims: open.map((l) => ({ epoch: l.epoch, amountRaw: l.amountRaw, proof: l.proof })),
+      copy: {
+        title: "Or take it as a stock",
+        body:
+          "Claim, bridge the COOK to Solana, and buy a real xStock into this same wallet there. " +
+          "Each step is its own signature, and a payout that stops halfway picks up where it left off.",
+        action: "Claim as",
+        done: "Paid out in full.",
+        resumeSafety:
+          "Resuming checks what already landed before sending anything, and the vault refuses a " +
+          "second claim of the same epoch, so nothing is paid twice.",
+      },
+    }),
+    [owedCook, open],
+  );
+
+  return <StockPayout spec={spec} hidden={open.length === 0} onSettled={onSettled} />;
+}
+
+/**
+ * The payout panel itself. `hidden` hides it while there is nothing to pay, unless a payout from an
+ * earlier visit is still waiting to be resumed.
+ */
+export function StockPayout({
+  spec,
+  hidden = false,
+  onSettled,
+}: {
+  spec: PayoutSpec;
+  hidden?: boolean;
+  onSettled: () => void;
+}) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
 
@@ -68,15 +164,16 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
   const [running, setRunning] = useState(false);
 
   const owner = publicKey?.toBase58() ?? null;
-  const owedCook = useMemo(() => open.reduce((sum, l) => sum + l.amountCook, 0), [open]);
+  const { slug } = spec;
 
   // --- A payout left over from a previous visit -------------------------------------------------
 
   // Restored during render, as the settlement panel does, so the page never paints once without it.
+  const restoreKey = owner ? `${owner}|${slug}` : null;
   const [restoredFor, setRestoredFor] = useState<string | null>(null);
-  if (restoredFor !== owner) {
-    setRestoredFor(owner);
-    const stored = owner ? loadJourney(owner, PAYOUT_SLUG) : null;
+  if (restoredFor !== restoreKey) {
+    setRestoredFor(restoreKey);
+    const stored = owner ? loadJourney(owner, slug) : null;
     if (isResumable(stored)) {
       // Nothing is driving a route stored as "running" any more; the tab that ran it is gone.
       setJourney({ ...stored, status: "interrupted" });
@@ -86,73 +183,80 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
     }
   }
 
-  // --- Pricing: the same planner as a settlement, starting from COOK ----------------------------
+  // --- Pricing: the same planner as a settlement ------------------------------------------------
 
-  const planKey = owedCook > 0 ? `${ticker}|${owedCook}` : null;
+  const planKey =
+    spec.pricings.length > 0
+      ? JSON.stringify([ticker, spec.pricings.map((p) => [p.inputMint, p.amount, p.plusCook ?? 0])])
+      : null;
   const [priced, setPriced] = useState<{
     key: string;
     plan: PayoutPlan | null;
     error: string | null;
   } | null>(null);
 
+  const pricings = spec.pricings;
   useEffect(() => {
     if (!planKey) return;
     let cancelled = false;
 
     (async () => {
-      try {
-        const params = new URLSearchParams({
-          inputMint: COOK_MINT,
-          inputSymbol: COOK_SYMBOL,
-          inputDecimals: String(COOK_DECIMALS),
-          amount: String(owedCook),
-          ticker,
-        });
-        if (owner) params.set("owner", owner);
-        const json = await fetch(`/api/crosschain/plan?${params}`).then((r) => r.json());
-        if (cancelled) return;
+      let error = "could not price the payout";
+      for (const p of pricings) {
+        try {
+          const params = new URLSearchParams({
+            inputMint: p.inputMint,
+            inputSymbol: p.inputSymbol,
+            inputDecimals: String(p.inputDecimals),
+            amount: String(p.amount),
+            ticker,
+          });
+          if (p.plusCook) params.set("plusCook", String(p.plusCook));
+          if (owner) params.set("owner", owner);
+          const json = await fetch(`/api/crosschain/plan?${params}`).then((r) => r.json());
+          if (cancelled) return;
 
-        if (json.error) {
-          setPriced({
-            key: planKey,
-            plan: null,
-            error: json.hint ? `${json.error} - ${json.hint}` : json.error,
-          });
-        } else if (!(json.outputUsd > 0)) {
-          // Without a price the floor cannot be applied, and a guess would be the wrong way round.
-          setPriced({
-            key: planKey,
-            plan: null,
-            error:
-              "The stock's price could not be read, so the payout cannot be valued. Try again shortly.",
-          });
-        } else {
+          if (json.error) {
+            error = json.hint ? `${json.error} - ${json.hint}` : json.error;
+            continue;
+          }
+          if (!(json.outputUsd > 0)) {
+            // Without a price the floor cannot be applied, and a guess would be the wrong way round.
+            // A fallback would not read the price any better, so stop here.
+            setPriced({
+              key: planKey,
+              plan: null,
+              error:
+                "The stock's price could not be read, so the payout cannot be valued. Try again shortly.",
+            });
+            return;
+          }
           setPriced({
             key: planKey,
             plan: {
-              legs: json.legs,
+              legs: [p.firstLeg, ...json.legs],
               outShares: json.outputShares,
               outUsd: json.outputUsd,
               impactPct: json.totalPriceImpactPct,
+              note: p.note ?? null,
             },
             error: null,
           });
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setPriced({
-            key: planKey,
-            plan: null,
-            error: e instanceof Error ? e.message : "could not price the payout",
-          });
+          return;
+        } catch (e) {
+          if (cancelled) return;
+          error = e instanceof Error ? e.message : error;
         }
       }
+      setPriced({ key: planKey, plan: null, error });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [planKey, owedCook, ticker, owner]);
+    // `pricings` is described completely by `planKey`; a new array with the same key is no change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planKey, ticker, owner]);
 
   const current = planKey && priced?.key === planKey ? priced : null;
   const plan = current?.plan ?? null;
@@ -186,9 +290,10 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
 
   const blocked = payoutBlocked({
     rpcIsPublic: SOLANA_RPC_IS_PUBLIC,
-    owedCook,
+    owedCook: spec.owedCook,
     valueUsd: plan ? plan.outUsd : null,
     sol,
+    source: spec.source,
   });
 
   // --- Running ----------------------------------------------------------------------------------
@@ -228,28 +333,29 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
       newJourney({
         direction: "buy",
         owner,
-        pairSlug: PAYOUT_SLUG,
+        pairSlug: slug,
         ticker: asset.ticker,
         rwaMint: asset.mint,
         rwaDecimals: RWA_DECIMALS,
-        token: { mint: COOK_MINT, symbol: COOK_SYMBOL, decimals: COOK_DECIMALS },
-        input: { amount: owedCook, symbol: COOK_SYMBOL },
-        legs: [claimLeg(owedCook), ...plan.legs],
-        claims: open.map((l) => ({ epoch: l.epoch, amountRaw: l.amountRaw, proof: l.proof })),
+        token: spec.token,
+        input: spec.input,
+        legs: plan.legs,
+        claims: spec.claims,
+        lpClaim: spec.lpClaim,
       }),
     );
-  }, [owner, plan, asset, owedCook, open, drive]);
+  }, [owner, plan, asset, slug, spec, drive]);
 
   const reset = useCallback(() => {
-    if (owner) clearJourney(owner, PAYOUT_SLUG);
+    if (owner) clearJourney(owner, slug);
     setJourney(null);
-  }, [owner]);
+  }, [owner, slug]);
 
   // --- Render -----------------------------------------------------------------------------------
 
-  if (!publicKey || (open.length === 0 && !journey)) return null;
+  if (!publicKey || (hidden && !journey)) return null;
 
-  const legs = journey ? journey.legs : plan ? [claimLeg(owedCook), ...plan.legs] : [];
+  const legs = journey ? journey.legs : (plan?.legs ?? []);
   const stuck = journey?.status === "interrupted" && hasTouchedChain(journey);
   const failedToStart = journey?.status === "interrupted" && !stuck;
 
@@ -257,12 +363,8 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
     <div className="mt-6 border-t border-hair pt-6">
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] text-primary">Or take it as a stock</div>
-          <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted">
-            Claim, bridge the COOK to Solana, and buy a real xStock into this same wallet there.
-            Each step is its own signature, and a payout that stops halfway picks up where it left
-            off.
-          </p>
+          <div className="text-[15px] text-primary">{spec.copy.title}</div>
+          <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted">{spec.copy.body}</p>
         </div>
         <label className="shrink-0">
           <span className="sr-only">Stock to receive</span>
@@ -291,6 +393,7 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
           <div className="mt-1 text-[12px] text-muted">
             {usd(plan.outUsd)} on Solana mainnet · {plan.impactPct.toFixed(2)}% slippage
           </div>
+          {plan.note && <div className="mt-1 text-[12px] text-subtle">{plan.note}</div>}
         </div>
       )}
 
@@ -311,16 +414,13 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
             {journey.messageId && (
               <p className="num mt-1">Hyperlane message {shortAddr(journey.messageId, 8)}</p>
             )}
-            <p className="mt-1">
-              Resuming checks what already landed before sending anything, and the vault refuses a
-              second claim of the same epoch, so nothing is paid twice.
-            </p>
+            <p className="mt-1">{spec.copy.resumeSafety}</p>
           </Notice>
         )}
 
         {journey?.status === "done" && (
           <Notice tone="up">
-            Paid out in full. Your {journey.ticker}x is in your Solana wallet, and every step above
+            {spec.copy.done} Your {journey.ticker}x is in your Solana wallet, and every step above
             links to its transaction.
           </Notice>
         )}
@@ -365,7 +465,7 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
             disabled={blocked !== null || running}
             onClick={start}
           >
-            {running ? "Paying out" : `Claim as ${asset.symbol}`}
+            {running ? "Paying out" : `${spec.copy.action} ${asset.symbol}`}
           </button>
         )}
       </div>

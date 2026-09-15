@@ -28,8 +28,11 @@ import { rawToUi, uiToRaw } from "./format";
 import { CoorwaError } from "./http";
 
 export interface RouteLeg {
-  /** "claim" only ever opens a cashback payout, which is this route with the vault in front. */
-  kind: "claim" | "cookie-swap" | "bridge" | "solana-swap";
+  /**
+   * "claim" and "lp-claim" only ever open a payout: this route with the vault, or an LP position's
+   * fees, in front of it.
+   */
+  kind: "claim" | "lp-claim" | "cookie-swap" | "bridge" | "solana-swap";
   label: string;
   venue: string;
   inSymbol: string;
@@ -101,6 +104,12 @@ export async function planCrossChainBuy(args: {
   ticker: string;
   slippageBps?: number;
   owner?: string;
+  /**
+   * COOK that joins the route after leg 1 without being swapped for, as a UI amount. An LP fee claim
+   * pays both sides of the pool, so its COOK side goes straight to the bridge next to what the
+   * other side sells for.
+   */
+  plusCook?: number;
 }): Promise<CrossChainPlan> {
   const asset = rwaByTicker(args.ticker);
   if (!asset) throw new CoorwaError(`unknown RWA: ${args.ticker}`);
@@ -139,6 +148,8 @@ export async function planCrossChainBuy(args: {
       note: `routed by ${best.aggregator}`,
     });
   }
+
+  cookAmount += args.plusCook ?? 0;
 
   // --- Leg 2: bridge COOK to Solana over Hyperlane (1:1, minus interchain gas) ---
   const bridged = Math.max(0, cookAmount - BRIDGE_GAS_COOK);
