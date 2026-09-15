@@ -33,7 +33,6 @@ import {
   CASHBACK_CLAIM_WINDOW_DAYS,
   CASHBACK_MIN_CLAIM_COOK,
   CASHBACK_SPLIT,
-  SWAP_CASHBACK_SPLIT,
   COOKIE_RPC_URL,
   COOK_DECIMALS,
   VAULT_MINT,
@@ -100,9 +99,8 @@ export interface Accrual {
   /**
    * The trader's share of the fees the wallet generated, **after** its split.
    *
-   * Split at the source rather than here, because the two sources do not share one. A launchpad
-   * referral is somebody else's money and holds a fifth back for liquidity; a swap fee comes out of
-   * the trader's own pocket, so all of it goes back and keeping any would make Coorwa a toll.
+   * Split before it arrives here (`feeShareSql`), so this function only has to get the subtraction,
+   * the conversion and the floor right.
    */
   traderUsd: Map<string, number>;
   /** The creator's share of the fees earned on tokens the wallet launched, after its split. */
@@ -291,6 +289,18 @@ export async function listingAccrual(asOf: Date): Promise<Map<string, number>> {
  * launched, and everything already committed to an epoch taken back off. The cutoff is what makes this reproducible - `fills` is append-only, so the same cutoff
  * always returns the same set, which is why rebuilding a draft lands on the same root.
  */
+/**
+ * The trader's or the creator's share of the fees in a group of fills, as a SQL sum.
+ *
+ * The rewards page uses the same sums as the epoch, so what it shows as accruing is what the next
+ * epoch pays. The share goes over the wire as a bound parameter, which Postgres types as text, so it
+ * is cast. Without it every draft died on "operator does not exist: double precision * text".
+ */
+export function feeShareSql(side: "trader" | "creator") {
+  const { fills } = schema;
+  return sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT[side]}::float8`;
+}
+
 export async function computeEntitlements(
   asOf: Date,
   cookPriceUsd: number,
@@ -298,14 +308,8 @@ export async function computeEntitlements(
   const conn = requireDb();
   const { fills, claims, epochs } = schema;
 
-  // The split is applied here, in the sum, because it belongs to where the fee came from. A
-  // launchpad referral holds a fifth back for liquidity; a swap fee is returned whole.
-  // The shares go over the wire as bound parameters, which Postgres types as text, so they are cast.
-  // Without it every draft died on "operator does not exist: double precision * text".
-  const traderShare = sql<number>`sum(${fills.feeUsd} * case when ${fills.source} = 'launchpad'
-    then ${CASHBACK_SPLIT.trader}::float8 else ${SWAP_CASHBACK_SPLIT.trader}::float8 end)`;
-  const creatorShare = sql<number>`sum(${fills.feeUsd} * case when ${fills.source} = 'launchpad'
-    then ${CASHBACK_SPLIT.creator}::float8 else ${SWAP_CASHBACK_SPLIT.creator}::float8 end)`;
+  const traderShare = feeShareSql("trader");
+  const creatorShare = feeShareSql("creator");
 
   const [asTrader, asCreator, committed, listingShare] = await Promise.all([
     conn

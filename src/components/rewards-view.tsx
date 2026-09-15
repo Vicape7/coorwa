@@ -6,7 +6,14 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { usd, amount, shortAddr, timeAgo } from "@/lib/format";
-import { cookieTxUrl, CASHBACK_SPLIT, COOK_SYMBOL, VAULT_MINT } from "@/lib/config";
+import {
+  cookieTxUrl,
+  CASHBACK_SPLIT,
+  COORWA_SWAP_FEE_BPS,
+  COOK_SYMBOL,
+  PAIR_LISTING_USD,
+  VAULT_MINT,
+} from "@/lib/config";
 import { claimInstructions } from "@/lib/vault";
 import { signSendConfirm, explainError } from "@/lib/tx";
 import { Notice } from "./notice";
@@ -122,10 +129,10 @@ export function RewardsView() {
           The fees you generate, returned.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Coorwa rebates the fees it earns rather than keeping them. Today that means the launchpad
-          referral share: MomoSwap pays a referrer 20% of its 1% curve fee, out of the same fee
-          either way - with nobody named, the programme keeps that slice itself. So naming Coorwa
-          costs a trader nothing and is what funds the rebate.
+          Coorwa rebates the fees it earns rather than keeping them. Three things fill the vault: the
+          launchpad referral share, Coorwa&apos;s own {(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}% fee on
+          a swap, and the fee a creator pays to list a pair. All of it is paid back out of the same
+          vault, against a root anyone can check.
         </p>
       </div>
 
@@ -175,13 +182,22 @@ export function RewardsView() {
               <Figure label="Claimed" value={usd(data.paidUsd)} sub="Paid out of the vault to you" />
             </div>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-hair pt-6">
-              <div className="text-[13px] text-muted">
-                <span className="num text-primary">{usd(data.traderAccruedUsd)}</span> as a trader ·{" "}
-                <span className="num text-primary">{usd(data.creatorAccruedUsd)}</span> as a creator
+            <div className="mt-8 border-t border-hair pt-6 text-[13px] text-muted">
+              <span className="num text-primary">{usd(data.traderAccruedUsd)}</span> as a trader ·{" "}
+              <span className="num text-primary">{usd(data.creatorAccruedUsd)}</span> as a creator
+            </div>
+
+            {/* A stock first, COOK second: settling into a real asset is what Coorwa is for. */}
+            <RwaPayout open={open} onSettled={() => void Promise.all([refreshVault(), mutate()])} />
+
+            <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-hair pt-6">
+              <div className="min-w-0 flex-1 text-[13px] text-muted">
+                {open.length > 0
+                  ? `Or take it as ${COOK_SYMBOL} on Cookie Chain, in one signature per epoch.`
+                  : `Paid as a stock on Solana, or as ${COOK_SYMBOL} on Cookie Chain.`}
               </div>
               <button
-                className="btn btn-primary ml-auto"
+                className="btn btn-ghost"
                 disabled={blocked !== null || claiming}
                 title={blocked ?? undefined}
                 onClick={onClaim}
@@ -189,8 +205,8 @@ export function RewardsView() {
                 {claiming
                   ? "Claiming"
                   : open.length > 0
-                    ? `Claim ${amount(vault?.claimableCook ?? 0, 3)} ${COOK_SYMBOL}`
-                    : "Claim"}
+                    ? `Claim ${amount(vault?.claimableCook ?? 0, 3)} ${COOK_SYMBOL} instead`
+                    : `Claim as ${COOK_SYMBOL}`}
               </button>
             </div>
 
@@ -220,8 +236,6 @@ export function RewardsView() {
               {blocked ??
                 "The claim is yours to sign. Coorwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
             </p>
-
-            <RwaPayout open={open} onSettled={() => void Promise.all([refreshVault(), mutate()])} />
 
             {vault && vault.lines.length > 0 && <EpochLines lines={vault.lines} />}
           </>
@@ -276,7 +290,7 @@ export function RewardsView() {
                       <td className="num px-6 py-2.5 text-right text-primary">{usd(r.valueUsd)}</td>
                       <td className="num px-6 py-2.5 text-right text-muted">{usd(r.feeUsd)}</td>
                       <td className="num px-6 py-2.5 text-right text-primary">
-                        {usd(r.feeUsd * CASHBACK_SPLIT.trader)}
+                        {usd(r.shareUsd)}
                       </td>
                       <td className="num px-6 py-2.5 text-right text-muted">
                         {timeAgo(new Date(r.createdAt).getTime())}
@@ -296,21 +310,27 @@ export function RewardsView() {
         <dl className="mt-6 divide-y divide-[color:var(--divider)]">
           <Source
             label="Launchpad fills"
-            state="Live"
+            state="Free to you"
             tone="up"
-            body="Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. That is real revenue and it is what the balance above is built from."
+            body={`Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. MomoSwap pays that out of the same fee whether or not anyone is named, so it costs you nothing. ${pct(CASHBACK_SPLIT.trader)} of it comes back to you.`}
           />
           <Source
             label="Swap fills"
-            state="No fee yet"
+            state={`${(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}% fee`}
             tone="muted"
-            body="Neither Cookie Chain router - Cookiebox or Candy Shop - exposes a platform-fee or referral parameter, so a swap routed through Coorwa earns Coorwa nothing. Those fills are recorded at zero rather than credited with a rebate no fee is backing. When a router adds one, this turns on with no change to how you trade."
+            body={`Neither Cookie Chain router pays a referrer, so Coorwa charges its own fee on a terminal swap, and on the Cookie Chain swap inside a cross-chain settlement or payout. It is a fee, not a freebie: it comes out of your trade and is shown before you sign. None of it is kept. ${pct(CASHBACK_SPLIT.trader)} comes back to you and ${pct(CASHBACK_SPLIT.creator)} goes to the token's creator, so routing through Coorwa leaves you about ${((COORWA_SWAP_FEE_BPS / 100) * CASHBACK_SPLIT.creator).toFixed(3)}% behind trading direct.`}
+          />
+          <Source
+            label="Pair listings"
+            state="To the pair's traders"
+            tone="up"
+            body={`Anyone can pay $${PAIR_LISTING_USD} to add a pair to a token. That money goes to the wallets that traded the pair since the previous epoch, in proportion to the Coorwa fee each paid on it, and none of it to the creator or to whoever paid. A pair nobody traded keeps its share for the next epoch.`}
           />
           <Source
             label="LP fees"
             state="Yours already"
             tone="muted"
-            body="Fees on a position you own are paid to you by the pool directly. Coorwa never sits between you and them - it just builds the claim."
+            body="Fees on a position you own are paid to you by the pool directly, and Coorwa takes nothing from them. It builds the claim, and can settle what you claim into an xStock on Solana."
           />
         </dl>
       </div>
@@ -323,19 +343,18 @@ export function RewardsView() {
             <Split
               pct={CASHBACK_SPLIT.trader}
               label="Trader"
-              body="Back to whoever generated the fee, claimable in COOK or as an xStock on Solana."
+              body="Back to whoever generated the fee, paid as an xStock on Solana or as COOK."
             />
             <Split
               pct={CASHBACK_SPLIT.creator}
               label="Creator"
               body="To whoever launched the token being traded, on top of MomoSwap's own creator fee."
             />
-            <Split
-              pct={CASHBACK_SPLIT.liquidity}
-              label="Liquidity"
-              body="Returned to the pool, so the pairs get deeper rather than thinner."
-            />
           </dl>
+          <p className="mt-6 text-[13px] leading-relaxed text-muted">
+            The same for a launchpad referral, a swap fee and the swap inside a settlement. Coorwa
+            keeps none of it.
+          </p>
         </div>
 
         <div className="card p-8">
@@ -467,11 +486,15 @@ function Source({
   );
 }
 
+function pct(share: number): string {
+  return `${Number((share * 100).toFixed(1))}%`;
+}
+
 function Split({ pct, label, body }: { pct: number; label: string; body: string }) {
   return (
     <div className="flex items-baseline gap-5">
-      <dt className="num display w-16 shrink-0 text-[28px] text-primary">
-        {Math.round(pct * 100)}
+      <dt className="num display w-20 shrink-0 text-[28px] text-primary">
+        {Number((pct * 100).toFixed(1))}
         <span className="text-[16px] text-subtle">%</span>
       </dt>
       <dd>

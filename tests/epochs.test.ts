@@ -22,7 +22,6 @@ import { buildEpochTree, verifyProof } from "../src/lib/merkle";
 import {
   CASHBACK_MIN_CLAIM_COOK,
   CASHBACK_SPLIT,
-  SWAP_CASHBACK_SPLIT,
   COOK_DECIMALS,
 } from "../src/lib/config";
 
@@ -162,20 +161,11 @@ test("a missing COOK price is refused rather than guessed", () => {
   assert.throws(() => entitlementsFrom(accrual({ cookPriceUsd: 0 })), /COOK price/);
 });
 
-test("every split returns the whole fee, and the swap split holds nothing back", () => {
-  // A split that does not sum to 1 either invents money or quietly keeps some. The launchpad's
-  // holds a fifth for liquidity because that revenue is a referral share somebody else pays; the
-  // swap fee comes out of the trader's own pocket, so all of it goes back.
-  const launchpad = CASHBACK_SPLIT.trader + CASHBACK_SPLIT.creator + CASHBACK_SPLIT.liquidity;
-  const swap = SWAP_CASHBACK_SPLIT.trader + SWAP_CASHBACK_SPLIT.creator;
-
-  assert.ok(Math.abs(launchpad - 1) < 1e-9, `launchpad split sums to ${launchpad}`);
-  assert.ok(Math.abs(swap - 1) < 1e-9, `swap split sums to ${swap}`);
-  assert.equal(
-    SWAP_CASHBACK_SPLIT.trader / SWAP_CASHBACK_SPLIT.creator,
-    CASHBACK_SPLIT.trader / CASHBACK_SPLIT.creator,
-    "the weighting between trader and creator should be the same either way",
-  );
+test("the split returns the whole fee to trader and creator", () => {
+  // A split that does not sum to 1 either invents money or quietly keeps some.
+  const total = Object.values(CASHBACK_SPLIT).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(total - 1) < 1e-9, `split sums to ${total}`);
+  assert.deepEqual(Object.keys(CASHBACK_SPLIT).sort(), ["creator", "trader"]);
 });
 
 // --- listing fees ----------------------------------------------------------------------------------

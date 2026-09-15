@@ -122,7 +122,7 @@ export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettle
       input: { amount: owedCook, symbol: COOK_SYMBOL },
       claims: open.map((l) => ({ epoch: l.epoch, amountRaw: l.amountRaw, proof: l.proof })),
       copy: {
-        title: "Or take it as a stock",
+        title: "Take it as a stock",
         body:
           "Claim, bridge the COOK to Solana, and buy a real xStock into this same wallet there. " +
           "Each step is its own signature, and a payout that stops halfway picks up where it left off.",

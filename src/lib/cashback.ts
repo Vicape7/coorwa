@@ -6,15 +6,19 @@
  * MomoSwap simply keeps that slice - so naming Coorwa costs a trader nothing and is what funds the
  * rebate.
  *
- * Accrual is split per `CASHBACK_SPLIT`: half back to the trader who generated the fee, a share to
- * the creator of the token traded, and the rest returned to liquidity. Every row it reads was
+ * Accrual is split per `CASHBACK_SPLIT`, launchpad referral and swap fee alike: all of it back to
+ * the trader who generated the fee and the creator of the token traded. Every row it reads was
  * written only after a transaction confirmed on-chain, so a balance here is checkable against the
  * explorer rather than taken on trust.
  */
 import { and, eq, sql, desc, gte } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
-import { CASHBACK_SPLIT, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
-import { listingAccrual } from "./epochs";
+import {
+  CASHBACK_SPLIT,
+  MOMOSWAP_TRADE_FEE_BPS,
+  MOMOSWAP_REFERRAL_SHARE,
+} from "./config";
+import { feeShareSql, listingAccrual } from "./epochs";
 
 export interface CashbackSummary {
   configured: boolean;
@@ -43,6 +47,8 @@ export interface CashbackSummary {
     side: string;
     valueUsd: number;
     feeUsd: number;
+    /** The trader's share of this fill's fee. */
+    shareUsd: number;
     createdAt: string;
   }[];
   leaderboard: { wallet: string; volumeUsd: number; accruedUsd: number }[];
@@ -78,7 +84,7 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     .select({
       wallet: fills.wallet,
       volumeUsd: sql<number>`sum(${fills.valueUsd})`,
-      feeUsd: sql<number>`sum(${fills.feeUsd})`,
+      accruedUsd: feeShareSql("trader"),
     })
     .from(fills)
     .groupBy(fills.wallet)
@@ -88,7 +94,7 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
   const leaderboard = board.map((r) => ({
     wallet: r.wallet,
     volumeUsd: Number(r.volumeUsd ?? 0),
-    accruedUsd: Number(r.feeUsd ?? 0) * CASHBACK_SPLIT.trader,
+    accruedUsd: Number(r.accruedUsd ?? 0),
   }));
 
   if (!wallet) return { ...EMPTY(null), configured: true, leaderboard };
@@ -98,12 +104,13 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
       fills: sql<number>`count(*)`,
       volumeUsd: sql<number>`coalesce(sum(${fills.valueUsd}), 0)`,
       feeUsd: sql<number>`coalesce(sum(${fills.feeUsd}), 0)`,
+      traderUsd: feeShareSql("trader"),
     })
     .from(fills)
     .where(eq(fills.wallet, wallet));
 
   const [asCreator] = await db
-    .select({ feeUsd: sql<number>`coalesce(sum(${fills.feeUsd}), 0)` })
+    .select({ creatorUsd: feeShareSql("creator") })
     .from(fills)
     .where(eq(fills.creator, wallet));
 
@@ -136,8 +143,8 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
   const feesGeneratedUsd = Number(mine?.feeUsd ?? 0);
   // What the next epoch would give this wallet out of the listing fees of the pairs it traded.
   const listingUsd = (await listingAccrual(new Date())).get(wallet) ?? 0;
-  const traderAccruedUsd = feesGeneratedUsd * CASHBACK_SPLIT.trader + listingUsd;
-  const creatorAccruedUsd = Number(asCreator?.feeUsd ?? 0) * CASHBACK_SPLIT.creator;
+  const traderAccruedUsd = Number(mine?.traderUsd ?? 0) + listingUsd;
+  const creatorAccruedUsd = Number(asCreator?.creatorUsd ?? 0);
   const paidUsd = Number(committed?.paidUsd ?? 0);
   const committedUsd = Number(committed?.committedUsd ?? 0);
 
@@ -158,6 +165,7 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
       side: r.side,
       valueUsd: r.valueUsd,
       feeUsd: r.feeUsd,
+      shareUsd: r.feeUsd * CASHBACK_SPLIT.trader,
       createdAt: r.createdAt.toISOString(),
     })),
     leaderboard,
@@ -215,6 +223,7 @@ export async function protocolTotals() {
     .select({
       volumeUsd: sql<number>`coalesce(sum(${fills.valueUsd}), 0)`,
       feesUsd: sql<number>`coalesce(sum(${fills.feeUsd}), 0)`,
+      rebatedUsd: sql<number>`${feeShareSql("trader")} + ${feeShareSql("creator")}`,
       wallets: sql<number>`count(distinct ${fills.wallet})`,
       fills: sql<number>`count(*)`,
     })
@@ -226,7 +235,7 @@ export async function protocolTotals() {
     configured: true,
     volumeUsd: Number(row?.volumeUsd ?? 0),
     feesUsd,
-    rebatedUsd: feesUsd * (CASHBACK_SPLIT.trader + CASHBACK_SPLIT.creator),
+    rebatedUsd: Number(row?.rebatedUsd ?? 0),
     wallets: Number(row?.wallets ?? 0),
     fills: Number(row?.fills ?? 0),
   };

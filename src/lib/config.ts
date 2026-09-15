@@ -110,12 +110,12 @@ export const MOMOSWAP_TRADE_FEE_BPS = 100;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
 /**
- * What one extra benchmark costs, in USD, paid in COOK into the cashback vault.
+ * What one TOKEN/RWA pair costs, in USD, paid in COOK into the cashback vault, by anyone.
  *
- * Every token gets one benchmark for nothing, so the terminal is a list of deliberate pairs rather
- * than every token crossed with every asset. Anything beyond that first one is paid for, which is
- * the only thing keeping the list honest: a dollar is nothing to someone who means it and enough to
- * stop a bot listing sixteen pairs on a dead token.
+ * A token launched through Coorwa gets its first pair free, picked at launch. Every other pair, and
+ * every pair on a token from anywhere else, is paid for, which is the only thing keeping the list
+ * honest: a dollar is nothing to someone who means it and enough to stop a bot listing sixteen pairs
+ * on a dead token.
  *
  * The money is not Coorwa's. It goes into the same vault the cashback is paid out of, through the
  * same permissionless `fund` instruction anyone can call, and each epoch pays it back to the wallets
@@ -123,12 +123,6 @@ export const MOMOSWAP_REFERRAL_SHARE = 0.2;
  */
 export const PAIR_LISTING_USD = 1;
 
-/** How the referral + router revenue is split back out. Must sum to 1. */
-export const CASHBACK_SPLIT = {
-  trader: 0.5,
-  creator: 0.3,
-  liquidity: 0.2,
-} as const;
 
 /**
  * Coorwa's own fee on a terminal swap, in basis points of the COOK leg.
@@ -145,14 +139,14 @@ export const CASHBACK_SPLIT = {
 export const COORWA_SWAP_FEE_BPS = 10;
 
 /**
- * Where a swap fee goes back to. Must sum to 1: all of it is returned, none of it kept.
+ * Where every fee Coorwa collects goes back to: the launchpad referral share and the swap fee alike.
+ * Must sum to 1: all of it is returned, none of it kept.
  *
- * The launchpad split holds a fifth back for liquidity because that revenue is a referral share
- * somebody else pays. This one comes out of the trader's own pocket, so keeping any of it would
- * make Coorwa a toll rather than a rebate. The 50:30 weighting between trader and creator is the
- * same as the launchpad's, with the liquidity slice removed and the rest scaled back up.
+ * A fifth of the launchpad share used to be held back "for liquidity", but nothing ever paid it to
+ * anyone, so it now goes to the two people a pair actually has: whoever trades it and whoever made
+ * the token. The old 50:30 weighting between them is kept, scaled up to the whole.
  */
-export const SWAP_CASHBACK_SPLIT = {
+export const CASHBACK_SPLIT = {
   trader: 0.625,
   creator: 0.375,
 } as const;
