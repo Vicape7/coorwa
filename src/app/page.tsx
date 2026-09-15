@@ -1,7 +1,13 @@
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
+import launchpadArt from "../../public/launchpad.png";
+import lpArt from "../../public/lp.png";
+import stocksArt from "../../public/stocks.png";
+import terminalArt from "../../public/terminal.png";
 import { Nav } from "@/components/nav";
 import { HeroSearch } from "@/components/hero-search";
 import { LiveStats } from "@/components/live-stats";
+import { RewardsCalculator } from "@/components/rewards-calculator";
 import { RwaCarousel } from "@/components/rwa-carousel";
 import { AuroraField, GlassEffect } from "@/components/ui/liquid-glass";
 import { GradientWave } from "@/components/ui/gradient-wave";
@@ -66,32 +72,44 @@ export default function Home() {
           <Tool
             href="/terminal"
             title="Terminal"
+            image={terminalArt}
             body="Candles built from executed fills, not standing quotes. Both Cookie Chain routers quoted on every trade; the better fill wins."
           />
           <Tool
             href="/launch"
             title="Launchpad"
+            image={launchpadArt}
             body="Mint on a COOK bonding curve through MomoSwap. The fee split is read from the live config, never hardcoded."
           />
           <Tool
             href="/pools"
             title="LP maker"
+            image={lpArt}
             body="Cookiebox DAMM v2 positions managed natively - deposit, claim, withdraw - against the fork's own program and IDL."
           />
         </div>
       </Section>
 
-      {/* The single claim the whole product rests on. Everything else about it is in the README. */}
+      {/* How a pair is priced: two live markets divided. The details are in the README. */}
       <Section>
         <GlassEffect refract="deep" className="rounded-[var(--radius-float)] p-8 sm:p-12">
-          <span className="label text-[12px]">The honest version</span>
-          <h2 className="display mt-3 max-w-[28ch] text-[clamp(1.75rem,3.4vw,2.4rem)] text-primary">
-            There is no TOKEN/NVDA pool.
+          {/* Fills the empty right half on wide screens; below lg the text needs the whole width. */}
+          <Image
+            src={stocksArt}
+            alt=""
+            aria-hidden
+            sizes="400px"
+            className="pointer-events-none absolute right-6 top-1/2 z-0 hidden h-[400px] w-[400px] -translate-y-1/2 select-none lg:block xl:right-12"
+          />
+          <span className="label relative z-10 text-[12px]">How pricing works</span>
+          <h2 className="display mt-3 text-[clamp(1.75rem,3.4vw,2.4rem)] text-primary">
+            <span className="block">Priced in real stocks.</span>
+            <span className="block">Paid out in real stocks.</span>
           </h2>
           <p className="mt-5 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
-            And Coorwa will not pretend there is. xStocks live only on Solana, and Cookie
-            Chain&apos;s bridge carries COOK alone. So a pair here is a{" "}
-            <span className="text-primary">denomination</span> - two live market prices divided:
+            Every token on Coorwa trades against NVDA, TSLA, SPY and the rest. The price is two live
+            markets divided: real reserves in a Cookie Chain pool over real xStock liquidity on
+            Solana. Nothing is modelled, so the number is exact.
           </p>
 
           <div className="num mt-6 inline-block rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_78%,transparent)] px-5 py-3 text-[15px] text-primary">
@@ -99,22 +117,16 @@ export default function Home() {
           </div>
 
           <p className="mt-6 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
-            The numerator is real reserves in a Cookie Chain pool; the denominator is real Solana
-            liquidity. Neither is modelled, so the ratio is exact - a change of units, not a
-            synthetic instrument. Want the actual share instead? Coorwa routes you cross-chain and
-            it lands in <span className="text-primary">your own Solana wallet</span>.
+            When you want the share itself, Coorwa routes you there: it swaps, bridges and buys the
+            xStock, and it lands in <span className="text-primary">your own Solana wallet</span>.
           </p>
         </GlassEffect>
       </Section>
 
       <Section>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Split pct="62.5" who="Holders" />
-          <Split pct="37.5" who="Creators" />
-        </div>
+        <RewardsCalculator />
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
-          <span className="text-primary">Hold a token, get paid in its stock.</span> Every fee Coorwa
-          earns on a token goes to the wallets holding it, by how much they hold, and to whoever made
+          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold, and to whoever made
           it. It comes from MomoSwap&apos;s referral share of the curve fee, which costs a trader
           nothing, Coorwa&apos;s own 0.10% on a swap, and the dollar paid to list a pair. Coorwa keeps
           none of it, and holders claim it as a real xStock on Solana.{" "}
@@ -154,27 +166,41 @@ function Section({ children }: { children: React.ReactNode }) {
   return <section className="mx-auto w-full max-w-[1160px] px-5 py-7">{children}</section>;
 }
 
-function Tool({ href, title, body }: { href: string; title: string; body: string }) {
+function Tool({
+  href,
+  title,
+  body,
+  image,
+}: {
+  href: string;
+  title: string;
+  body: string;
+  image: StaticImageData;
+}) {
   return (
-    <GlassEffect href={href} className="group flex flex-col rounded-[var(--radius-float)] p-7">
-      <h3 className="title text-primary">{title}</h3>
-      <p className="mt-3 flex-1 text-[14px] leading-[1.7] text-muted">{body}</p>
-      <span className="mt-7 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary">
-        Open
-        <span className="transition-transform group-hover:translate-x-0.5">&rarr;</span>
+    <GlassEffect
+      href={href}
+      className="group flex min-h-[300px] flex-col rounded-[var(--radius-float)] p-7"
+    >
+      {/* Sits in the bottom corner and runs off the pane's edge, which clips it; the text goes over it. */}
+      <Image
+        src={image}
+        alt=""
+        aria-hidden
+        sizes="(min-width: 768px) and (max-width: 1023px) 190px, 260px"
+        className="pointer-events-none absolute -bottom-12 -right-10 z-0 h-[260px] w-[260px] select-none md:h-[190px] md:w-[190px] lg:h-[260px] lg:w-[260px] transition-transform duration-500 ease-out group-hover:-translate-y-1 group-hover:rotate-[-4deg] motion-reduce:transition-none motion-reduce:group-hover:transform-none"
+      />
+      <h3 className="title relative z-10 text-primary">{title}</h3>
+      <p className="relative z-10 mt-3 max-w-[30ch] flex-1 text-[14px] leading-[1.7] text-muted">
+        {body}
+      </p>
+      {/* The nav's well and chip, so "Open" reads as the same control as the links up top. */}
+      <span className="nav-well relative z-10 mt-7 inline-flex self-start rounded-full p-1">
+        <span className="nav-chip inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium text-primary">
+          Open
+          <span className="transition-transform group-hover:translate-x-0.5">&rarr;</span>
+        </span>
       </span>
-    </GlassEffect>
-  );
-}
-
-function Split({ pct, who }: { pct: string; who: string }) {
-  return (
-    <GlassEffect className="rounded-[var(--radius-float)] px-7 py-6">
-      <div className="num display text-[52px] leading-none text-primary">
-        {pct}
-        <span className="text-[24px] text-subtle">%</span>
-      </div>
-      <div className="mt-3 text-[15px] font-medium text-primary">{who}</div>
     </GlassEffect>
   );
 }

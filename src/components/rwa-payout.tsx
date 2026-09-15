@@ -372,7 +372,7 @@ export function StockPayout({
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             disabled={running || journey !== null}
-            className="num rounded-full border border-hair bg-[var(--surface)] px-3 py-2 text-[13px] text-primary outline-none disabled:opacity-50"
+            className="num glass-select rounded-full px-3 py-2 text-[13px] text-primary outline-none disabled:opacity-50"
           >
             {RWA_ASSETS.map((a) => (
               <option key={a.ticker} value={a.ticker}>

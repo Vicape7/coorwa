@@ -176,7 +176,11 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
                       // Inline, because `.pill-quiet` is a real class and would win the cascade.
                       style={
                         picked && !owned
-                          ? { background: "var(--accent)", color: "var(--accent-contrast)" }
+                          ? {
+                              background: "var(--amber-glass-fill)",
+                              boxShadow: "var(--amber-glass-edge)",
+                              color: "var(--accent-contrast)",
+                            }
                           : undefined
                       }
                       className="pill num pill-quiet disabled:opacity-45"

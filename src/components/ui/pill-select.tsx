@@ -42,7 +42,7 @@ export function PillSelect({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="num h-full w-full cursor-pointer appearance-none rounded-full bg-[var(--surface-raised)] py-2.5 pr-8 text-[13px] font-medium text-primary outline-none transition-colors hover:bg-[var(--surface-sunken)]"
+        className="num h-full w-full glass-select cursor-pointer appearance-none rounded-full py-2.5 pr-8 text-[13px] font-medium text-primary outline-none"
         style={{ paddingLeft: prefix ? `${prefix.length * 7 + 22}px` : "14px" }}
       >
         {options.map((o) => (
