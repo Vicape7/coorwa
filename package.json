@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "preview": "node scripts/cloudflare.mjs preview",
+    "deploy": "node scripts/cloudflare.mjs deploy",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --import ./tests/resolve.mjs --test \"tests/*.test.ts\"",
@@ -18,6 +20,7 @@
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
     "@meteora-ag/cp-amm-sdk": "^1.4.8",
+    "@opennextjs/cloudflare": "^1.20.6",
     "@solana/spl-token": "^0.4.15",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
@@ -45,6 +48,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.131.2"
   }
 }

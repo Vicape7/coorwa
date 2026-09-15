@@ -3,6 +3,9 @@
   "name": "coorwa-holder-sampler",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
+  // Cron only. It has no fetch handler, so a public URL would serve nothing but errors.
+  "workers_dev": false,
+  "preview_urls": false,
 
   // Every five minutes. The endpoint rolls a die on each call, so samples land at moments nobody can
   // predict: never closer than 30 minutes, never further apart than two hours.
@@ -11,8 +14,8 @@
   },
 
   "vars": {
-    // The deployed Coorwa app. Replace with the real domain before deploying.
-    "SAMPLE_URL": "https://example.com/api/cashback/sample"
+    // The deployed Coorwa app. Switch to https://coorwa.fun once the domain is on Cloudflare.
+    "SAMPLE_URL": "https://coorwa.coorwa.workers.dev/api/cashback/sample"
   },
 
   // HOLDER_SAMPLE_SECRET is a secret, not a var: `npx wrangler secret put HOLDER_SAMPLE_SECRET`.

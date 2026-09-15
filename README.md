@@ -283,6 +283,23 @@ npm run test        # merkle tree, epoch accounting, instruction layouts, IDL ag
 npm run build
 ```
 
+### Deploying to Cloudflare
+
+The app runs on Cloudflare Workers through the OpenNext adapter (`wrangler.jsonc`,
+`open-next.config.ts`). The database is reached through a Hyperdrive config pointing at Postgres,
+so each request opens its own client over warm connections; replace the `hyperdrive` id with your
+own (`npx wrangler hyperdrive create <name> --connection-string <url>`, using Neon's direct host,
+not the `-pooler` one).
+
+```bash
+npx wrangler secret put HOLDER_SAMPLE_SECRET   # any long random string
+npx wrangler secret put JUPITER_API_KEY        # optional
+npm run deploy                                 # builds, then uploads
+```
+
+`NEXT_PUBLIC_*` values are baked into the bundle at build time, so they come from `.env.local` on
+the machine that builds. `npm run preview` runs the built Worker locally.
+
 The holder sampler is a separate Worker with a cron trigger:
 
 ```bash

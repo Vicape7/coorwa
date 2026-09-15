@@ -67,3 +67,6 @@ target/deploy/*-keypair.json
 /workers/*/node_modules
 .wrangler
 .dev.vars
+
+# OpenNext Cloudflare build output
+.open-next
