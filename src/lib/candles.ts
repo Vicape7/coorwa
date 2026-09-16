@@ -123,36 +123,72 @@ export async function fetchRwaCandles(
 
 // --- The ratio -------------------------------------------------------------------------------------
 
+/** The most buckets a ratio chart returns. Enough for any interval, small enough to draw. */
+const MAX_RATIO_CANDLES = 500;
+
 /**
- * Divide the token series by the RWA series, bucket by bucket.
+ * Divide the token series by the RWA series, one bucket at a time, from the first bucket both
+ * series cover up to now.
  *
- * The RWA series is dense and regular; the token series is sparse (thin pools trade rarely). So the
- * token drives the output and the RWA is forward-filled onto it: for each token candle we use the
- * most recent RWA close at or before that bucket. Buckets with no RWA price yet are dropped rather
- * than guessed.
+ * The token series is sparse (thin pools trade rarely), and charting only the buckets that traded
+ * left a handful of disconnected boxes with days squeezed between them. So every bucket is emitted:
+ *
+ *   - the token's USD price carries forward from its last fill, because with no trade it did not move;
+ *   - the RWA close carries forward the same way across market hours with no candle;
+ *   - each candle opens where the previous one closed, so the series is one continuous line.
+ *
+ * A bucket with no fills still moves when the stock does, which is the honest reading of the pair.
+ * Its volume is 0. Buckets before the RWA series starts are dropped rather than guessed.
  */
-export function ratioCandles(token: Candle[], rwa: Candle[]): Candle[] {
+export function ratioCandles(
+  token: Candle[],
+  rwa: Candle[],
+  step: number,
+  nowSec = Math.floor(Date.now() / 1000),
+): Candle[] {
   if (token.length === 0 || rwa.length === 0) return [];
 
-  const sortedRwa = [...rwa].sort((a, b) => a.time - b.time);
-  const out: Candle[] = [];
-  let cursor = 0;
+  const sortedToken = [...token].sort((a, b) => a.time - b.time);
+  const sortedRwa = [...rwa].filter((r) => r.close > 0).sort((a, b) => a.time - b.time);
+  if (sortedRwa.length === 0) return [];
 
-  for (const c of token) {
-    while (cursor + 1 < sortedRwa.length && sortedRwa[cursor + 1].time <= c.time) cursor++;
-    const r = sortedRwa[cursor];
-    if (!r || r.time > c.time || !(r.close > 0)) continue;
+  const last = Math.floor(nowSec / step) * step;
+  const first = Math.max(
+    sortedToken[0].time,
+    Math.ceil(sortedRwa[0].time / step) * step,
+    last - (MAX_RATIO_CANDLES - 1) * step,
+  );
+
+  const out: Candle[] = [];
+  let ti = 0;
+  let ri = 0;
+  let tokenClose: number | null = null;
+  let prevRatio: number | null = null;
+
+  for (let time = first; time <= last; time += step) {
+    // Fills from buckets skipped by the cap still set where the token stood.
+    while (ti < sortedToken.length && sortedToken[ti].time < time) {
+      tokenClose = sortedToken[ti].close;
+      ti++;
+    }
+    while (ri + 1 < sortedRwa.length && sortedRwa[ri + 1].time <= time) ri++;
+    const r = sortedRwa[ri];
+    if (r.time > time) continue;
+
+    const bucket = sortedToken[ti]?.time === time ? sortedToken[ti] : null;
+    if (bucket) ti++;
+    if (!bucket && tokenClose == null) continue;
 
     // The RWA's own high/low would add noise that is not the pair's move, so the ratio's extremes
     // come from the token's extremes against the RWA's close for that bucket.
-    out.push({
-      time: c.time,
-      open: c.open / r.open || c.open / r.close,
-      high: c.high / r.close,
-      low: c.low / r.close,
-      close: c.close / r.close,
-      volume: c.volume,
-    });
+    const close = (bucket ? bucket.close : tokenClose!) / r.close;
+    const open = prevRatio ?? (bucket ? bucket.open : tokenClose!) / r.close;
+    const high = Math.max(open, close, bucket ? bucket.high / r.close : close);
+    const low = Math.min(open, close, bucket ? bucket.low / r.close : close);
+
+    out.push({ time, open, high, low, close, volume: bucket?.volume ?? 0 });
+    if (bucket) tokenClose = bucket.close;
+    prevRatio = close;
   }
 
   return out;

@@ -44,8 +44,33 @@ export function amount(n: number | null | undefined, maxFrac = 6): string {
  */
 export function rwaRatio(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n === 0) return "—";
-  if (n >= 0.0001) return n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
-  return n.toExponential(4).replace("e-", "e−");
+  return tinyNumber(n);
+}
+
+const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
+
+/**
+ * A small positive number the way DEX screeners print it: 0.000000004302 becomes 0.0₈4302, the
+ * subscript counting the zeros after the decimal point. Scientific notation (4.302e-9) was what the
+ * pair page showed before, and nobody reads a price that way.
+ */
+export function tinyNumber(n: number, significant = 4, trim = true): string {
+  if (!Number.isFinite(n) || n === 0) return "0";
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 0.001) {
+    return sign + abs.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  // toExponential does the rounding, including the 9.99995e-9 -> 1.000e-8 carry.
+  const [mantissa, exp] = abs.toExponential(significant - 1).split("e");
+  const zeros = -Number(exp) - 1;
+  const all = mantissa.replace(".", "");
+  const digits = (trim ? all.replace(/0+$/, "") : all) || "0";
+  const sub = String(zeros)
+    .split("")
+    .map((d) => SUBSCRIPT[Number(d)])
+    .join("");
+  return `${sign}0.0${sub}${digits}`;
 }
 
 export function pct(n: number | null | undefined, digits = 2): string {

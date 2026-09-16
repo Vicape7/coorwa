@@ -18,6 +18,7 @@ import {
 import type { Candle, Interval } from "@/lib/candles";
 import type { Theme } from "@/lib/theme";
 import { useTheme } from "@/lib/use-theme";
+import { tinyNumber } from "@/lib/format";
 
 const INTERVALS: Interval[] = ["5m", "15m", "1h", "4h", "1d"];
 
@@ -41,12 +42,11 @@ const CHART_THEME: Record<Theme, { text: string; grid: string; crosshair: string
     },
   };
 
-function formatRatio(v: number): string {
-  if (!Number.isFinite(v) || v === 0) return "0";
-  if (v >= 0.001) return v.toFixed(6);
-  const exp = Math.floor(Math.log10(Math.abs(v)));
-  return `${(v / 10 ** exp).toFixed(3)}e${exp}`;
-}
+// Untrimmed, so every level on the price scale has the same width and the labels line up.
+const formatRatio = (v: number) => tinyNumber(v, 4, false);
+
+/** How many of the most recent candles are in view when a pair or interval is opened. */
+const VISIBLE_CANDLES = 120;
 
 export function RatioChart({
   mint,
@@ -90,7 +90,7 @@ export function RatioChart({
       layout: {
         background: { color: "transparent" },
         fontFamily: "var(--font-inter), system-ui, sans-serif",
-        fontSize: 11,
+        fontSize: 12,
         attributionLogo: false,
       },
       rightPriceScale: {
@@ -151,6 +151,7 @@ export function RatioChart({
 
   useEffect(() => {
     let alive = true;
+    let framed: string | null = null;
 
     const load = async () => {
       try {
@@ -184,7 +185,17 @@ export function RatioChart({
             color: c.close >= c.open ? "rgba(52,199,89,0.28)" : "rgba(255,59,48,0.28)",
           })),
         );
-        chartRef.current?.timeScale().fitContent();
+        // Framed once per pair and interval. Doing it on every 30 s refresh threw away whatever the
+        // user had scrolled or zoomed to.
+        if (framed !== key && data.length > 0) {
+          const scale = chartRef.current?.timeScale();
+          if (data.length > VISIBLE_CANDLES) {
+            scale?.setVisibleLogicalRange({ from: data.length - VISIBLE_CANDLES, to: data.length });
+          } else {
+            scale?.fitContent();
+          }
+          framed = key;
+        }
         setLoaded({ key, error: null, count: data.length, trades: json.tradeCount ?? 0 });
       } catch (e) {
         if (alive) {

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { fetchTrades, tradesToCandles, fetchRwaCandles, ratioCandles } from "@/lib/candles";
+import {
+  fetchTrades,
+  tradesToCandles,
+  fetchRwaCandles,
+  ratioCandles,
+  INTERVAL_SECONDS,
+} from "@/lib/candles";
 import { rwaByTicker } from "@/lib/rwa";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +47,7 @@ export async function GET(req: Request) {
     }
 
     const rwa = await fetchRwaCandles(asset.mint, interval, 400);
-    const candles = ratioCandles(tokenCandles, rwa);
+    const candles = ratioCandles(tokenCandles, rwa, INTERVAL_SECONDS[interval]);
 
     return NextResponse.json(
       {

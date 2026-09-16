@@ -36,9 +36,9 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
       </Link>
 
       {/* Header */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-10 gap-y-5">
-        <div className="flex items-center gap-3.5">
-          <TokenMark logo={pair.base.logo} symbol={pair.base.symbol} size={44} />
+      <div className="mt-4 flex flex-col gap-5 xl:flex-row xl:items-center xl:gap-8">
+        <div className="flex shrink-0 items-center gap-3.5">
+          <TokenMark logo={pair.base.logo} symbol={pair.base.symbol} size={52} />
           <div>
             <h1 className="display text-[34px] leading-none text-primary">
               {pair.base.symbol}
@@ -51,25 +51,31 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
           </div>
         </div>
 
-        <Metric label="Price" value={rwaRatio(pair.price)} sub={`${pair.quote.ticker} per token`} />
-        <Metric
-          label={`1 ${pair.quote.ticker} buys`}
-          value={amount(pair.inverse)}
-          sub={pair.base.symbol}
-        />
-        <Metric
-          label={`vs ${pair.quote.ticker} 24h`}
-          value={pair.change24h == null ? "—" : pct(pair.change24h)}
-          sub={pair.base.stale ? "no fills in 24h" : "relative return"}
-          tone={pair.change24h == null ? undefined : pair.change24h >= 0 ? "up" : "down"}
-        />
-        <Metric label="Liquidity" value={usd(pair.base.liquidityUsd)} sub="across all pools" />
-        <Metric
-          label={`${pair.quote.symbol} spot`}
-          value={`$${pair.quote.priceUsd.toFixed(2)}`}
-          sub={pct(pair.quote.change24h)}
-          subTone={(pair.quote.change24h ?? 0) >= 0 ? "up" : "down"}
-        />
+        <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Metric
+            label="Price"
+            value={rwaRatio(pair.price)}
+            sub={`${pair.quote.ticker} per token`}
+          />
+          <Metric
+            label={`1 ${pair.quote.ticker} buys`}
+            value={amount(pair.inverse)}
+            sub={pair.base.symbol}
+          />
+          <Metric
+            label={`vs ${pair.quote.ticker} 24h`}
+            value={pair.change24h == null ? "—" : pct(pair.change24h)}
+            sub={pair.base.stale ? "no fills in 24h" : "relative return"}
+            tone={pair.change24h == null ? undefined : pair.change24h >= 0 ? "up" : "down"}
+          />
+          <Metric label="Liquidity" value={usd(pair.base.liquidityUsd)} sub="across all pools" />
+          <Metric
+            label={`${pair.quote.symbol} spot`}
+            value={`$${pair.quote.priceUsd.toFixed(2)}`}
+            sub={pct(pair.quote.change24h)}
+            subTone={(pair.quote.change24h ?? 0) >= 0 ? "up" : "down"}
+          />
+        </div>
       </div>
 
       {/* Body */}
@@ -127,10 +133,10 @@ function Metric({
         : "text-subtle";
 
   return (
-    <div>
-      <div className="label">{label}</div>
-      <div className={`num mt-1 text-[19px] ${toneClass}`}>{value}</div>
-      {sub && <div className={`mt-0.5 text-[12px] ${subClass}`}>{sub}</div>}
+    <div className="glass-pane min-w-0 rounded-[var(--radius-float)] px-4 py-3.5">
+      <div className="label truncate">{label}</div>
+      <div className={`num mt-1.5 truncate text-[19px] ${toneClass}`}>{value}</div>
+      {sub && <div className={`mt-0.5 truncate text-[12px] ${subClass}`}>{sub}</div>}
     </div>
   );
 }
@@ -153,7 +159,8 @@ function HolderRewards({ pair }: { pair: CoorwaPair }) {
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
         {Math.round(CASHBACK_SPLIT.holders * 100)}% of every fee Coorwa earns on {pair.base.symbol}{" "}
         is paid once a day to wallets holding at least {usd(HOLDER_MIN_USD)} of it, in{" "}
-        {pair.quote.symbol} sent to the same address on Solana. Nothing to claim.
+        {pair.quote.symbol} sent to the same address on Solana. Nothing to claim. The creator is
+        paid {Math.round(CASHBACK_SPLIT.creator * 100)}% of the fees and is not counted as a holder.
       </p>
       <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">
         <Fact label="Paid to holders">
