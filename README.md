@@ -85,50 +85,44 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 ### LP maker
 - Every pool on the chain, with depth also expressed in shares.
 - **The pools page lists pairs, not raw pools.** Each TOKEN/RWA pair is shown with the real
-  TOKEN/COOK pool behind it, which is where a deposit goes. A token with two pairs shares one pool.
-- **Anyone can add a pair to any token with a pool, for a dollar a pair.** The payer gains nothing by
-  it: the dollar goes to the token's holders, and the fees the pair then earns go to its holders and
-  to the token's creator, whoever listed it. The creator is proved against the launch for tokens
-  Coorwa made, and against the mint's metadata authority otherwise - which is worth nothing across
-  the registry at large, where 4,449 of 5,088 tokens share one launchpad key, and works for every
-  token that actually has liquidity here, where each resolves to its own wallet. That shared key is
-  refused by name.
-- The fee is paid in COOK by calling `fund` on the cashback vault, which the program lets anyone
-  call, so it lands in the account the rebate is paid out of and Coorwa never holds it. Nothing is
-  credited on the client's word: the payment is read back from the chain, and the amount that
-  actually reached the vault decides how many pairs it bought. One transaction buys one batch.
-- **A pair's listing fee goes to the token's holders**, all of it, and none to the creator or to
-  whoever paid.
+  TOKEN/COOK pool behind it, which is where a deposit goes.
+- **A token has one pair, and only its creator picks it.** The pair is the stock the token's holders
+  are paid in, so it is fixed: a token launched on Coorwa picks it at launch, and any other token
+  gets it once its creator pays a dollar and chooses. Nobody else can add or change a pair. The
+  creator is proved against the launch for tokens Coorwa made, and against the mint's metadata
+  authority otherwise - which is worth nothing across the registry at large, where 4,449 of 5,088
+  tokens share one launchpad key, and works for every token that actually has liquidity here, where
+  each resolves to its own wallet. That shared key is refused by name.
+- The dollar is a plain COOK transfer to the operator wallet and goes to the token's holders.
+  Nothing is credited on the client's word: the payment is read back from the chain, has to be
+  signed by the creator, and has to have credited the operator with enough COOK.
 - What backs a pair is still the token's real COOK pool. A TOKEN/xStock pool cannot exist on Cookie
-  Chain, for the reasons in the table above, and the benchmark is what the price is quoted and
-  charted in rather than what it trades against.
+  Chain, for the reasons in the table above, and the pair's stock is what the price is quoted and
+  charted in and what holders are paid in, rather than what it trades against.
 - **Cookiebox DAMM v2 positions managed natively** - deposit, claim fees, withdraw - with
   instructions built against the fork's own program and IDL.
 - Positions are found by scanning the Token-2022 NFTs you hold, so Coorwa keeps no records of its
   own.
 
 ### Holder rewards
-- **Hold a token, get paid in its stock.** Every fee Coorwa earns on a token is split 62.5 / 37.5
-  between the wallets holding it and the wallet that made it. Coorwa keeps none of it. Having traded
-  a token earns nothing on its own; holding it through the epoch does.
-- **Holders are sampled at moments nobody can predict.** A small Cloudflare Worker
-  (`workers/holder-sampler`) calls the app every five minutes, and the app rolls a die on each call:
-  never two samples within 30 minutes, always one within two hours, and otherwise a 15% chance, which
-  lands a sample about once an hour at a random minute. Building an epoch adds one more snapshot, and
-  each token's pool is shared by every wallet's balance summed across all of them. A wallet that buys
-  before one sample and sells after it weighs one sample's worth against a holder's whole epoch. The
-  rewards page shows each holder an estimate of their share from the samples so far.
-- Each snapshot covers every token whose holder pool has something waiting. Holders are
-  read from the chain: SPL token accounts under both token programs, and for a token still on its
-  MomoSwap curve, curve shares netted from the launchpad's trade feed. Program addresses (pool
-  vaults, curves, escrows) are dropped because nobody can claim for them, as are Coorwa's own
-  collecting wallets, and a wallet needs at least $1 of the token when it has a price. The pool is
-  shared out by balance and the split is stored with the epoch, so the next epoch shares out only
-  what is left. A token nobody holds keeps its pool for the next snapshot.
-- **Only the vault authority can build an epoch**, by signing a short-lived message the server
-  checks against the authority stored on chain, and the sample endpoint needs a shared secret.
-  Whoever picks the moment of a snapshot can hold only across it, so neither moment is left open.
-  Without the sampler an epoch still works from its own snapshot, and the operator panel says so.
+- **Hold a token, get paid in its stock, every day, with nothing to claim.** Every fee Coorwa earns
+  on a token is split 62.5 / 37.5 between the wallets holding it and the wallet that made it, and a
+  pair's dollar goes entirely to holders. Coorwa keeps none of it. Having traded a token earns
+  nothing on its own; holding it through the day does. This is how StonkFun pays its holders, on a
+  chain where the stock cannot live: the stock is bought on Solana and sent to the holder's own
+  address there, which is the same ed25519 key they hold the token with.
+- **Holders are sampled at moments nobody can predict.** A scheduler calls the app every five
+  minutes, and the app rolls a die on each call: never two samples within 30 minutes, always one
+  within two hours, and otherwise a 15% chance, which lands a sample about once an hour at a random
+  minute. A run adds one more snapshot, and each token's pool is shared by every wallet's balance
+  summed across all of them. A wallet that buys before one sample and sells after it weighs one
+  sample's worth against a holder's whole day. The rewards page shows each holder an estimate of
+  their share from the samples so far.
+- Each snapshot covers every paired token whose pool has something waiting. Holders are read from
+  the chain: SPL token accounts under both token programs, and for a token still on its MomoSwap
+  curve, curve shares netted from the launchpad's trade feed. Program addresses (pool vaults,
+  curves, escrows) are dropped because nobody holds their keys, as is Coorwa's own operator wallet,
+  and a wallet needs at least $5 of the token when it has a price.
 - Coorwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
   nothing.
@@ -136,28 +130,29 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   written: the transaction has to exist, to have succeeded, and to have been signed by the wallet
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
   moved, and the referral fee is credited only when Coorwa's referrer address is named on the
-  transaction itself. No referrer on chain, no revenue, so nothing to rebate.
+  transaction itself. For a swap, the fee is whatever the transaction actually paid the operator.
 - **Terminal swaps carry Coorwa's own 0.10% fee**, because neither Cookie Chain router will pay a
   referrer. Six plausible parameter names were tried on both aggregators and every quote came back
-  identical, so there is nothing to collect unless Coorwa asks. It asks in the open: two extra
-  instructions on the aggregator's own transaction, shown on the panel before anything is signed,
-  paying the cashback vault rather than Coorwa. **None of it is kept** - 62.5% to the token's
-  holders, 37.5% to its creator. A route too long to carry the two instructions inside the
-  1,232-byte limit goes through unpriced rather than being refused. The same fee is charged on the
-  Cookie Chain swap inside a cross-chain settlement or payout, and returned the same way.
-- Payouts go through Coorwa's own program on Cookie Chain rather than a payout wallet. Who is owed
-  what is worked out off chain, because it depends on prices and on which wallet generated which
-  fill. Custody is not, because "trust our payout wallet" is the part a user cannot check.
-- Balances accrue in USD and are converted to COOK once, at the rate recorded on the epoch that
-  pays them. A debt carried in tokens would quietly change value between the trade and the payout.
+  identical, so there is nothing to collect unless Coorwa asks. It asks in the open: one COOK
+  transfer to the operator appended to the aggregator's own transaction, shown on the panel before
+  anything is signed. A route too long to carry it inside the 1,232-byte limit goes through
+  unpriced rather than being refused.
+- Balances accrue in USD and are converted into the stock only when the run buys it. xStocks rebase,
+  so a debt carried in their units would quietly change value between the trade and the payout.
 
 ---
 
-## Non-custodial by construction
+## What is signed where
 
-Coorwa never holds a key, never co-signs, and never takes custody. Every transaction is built either
-by an upstream service or by Coorwa's own instruction builders, then **simulated**, then signed by
-the user's wallet in their browser, then sent from there.
+Coorwa never co-signs a user's transaction and never holds a user's tokens. Every transaction a user
+makes is built either by an upstream service or by Coorwa's own instruction builders, then
+**simulated**, then signed by the user's wallet in their browser, then sent from there.
+
+The one thing Coorwa does hold is the fees it collects, in its operator wallet, between the moment
+they are paid and the day's payout run. That is custodial, the same way StonkFun's payout wallets
+are, and it is said here rather than hidden: buying a stock on Solana for holders needs a key to
+sign it. Every payout run, with its bridge transaction, its costs and every send, is listed on the
+rewards page, so what the wallet collected and what it paid out can be checked against the chain.
 
 ### What the wallet is shown is what was asked for
 
@@ -182,84 +177,33 @@ The launchpad publishes no IDL, so the instruction layouts were read off real bu
 `tests/expectation.test.ts` runs the check on six captured responses and on twenty ways of
 tampering with them.
 
-### The cashback vault
+### How a payout run works
 
-Cashback is the one place Coorwa touches money at all, so it is the one place that needed a program
-rather than a promise. `programs/corwa-vault` is an epoch merkle distributor: Coorwa funds it,
-publishes a root naming who is owed what, and each claimant proves their own line and takes it.
+Fees collect in the operator wallet (`NEXT_PUBLIC_COORWA_OPERATOR`) on Cookie Chain. A run starts a
+day after the first holder sample since the last one, and advances one step each time the scheduler
+calls the sample endpoint, because it spans two chains and a bridge that takes minutes
+(`src/lib/payout-cycle.ts`):
 
-What holds it up is what the program cannot do:
+1. **Allocate.** Every paired token's waiting pool is shared over its holders by the day's samples,
+   and the creator's share is added, as one line per wallet per token in the token's stock
+   (`src/lib/rewards-ledger.ts`). A wallet's lines in one stock are paid once they add up to $1;
+   smaller balances wait for later runs, because the first payout into a stock opens a token
+   account on Solana for about 0.002 SOL of rent.
+2. **Bridge.** The run budgets its Solana costs (new token accounts, fees, swaps), unwraps any
+   referral wCOOK, and bridges enough COOK to Solana over the Hyperlane warp route, keeping a small
+   reserve on Cookie Chain.
+3. **Swap.** Once the COOK arrives, Jupiter swaps it into SOL for the cost budget and into each
+   stock being paid, in proportion to what is owed in each.
+4. **Send.** Each stock is split over its wallets in whole units, with no unit created or lost, and
+   sent five wallets per transaction, creating each holder's token account if needed.
+5. **Done.** What the run really spent in SOL is measured and shown next to it.
 
-- **There is no instruction that pays the authority.** Tokens enter through `fund` and leave
-  through `claim`, and nothing else. The authority is the right to publish, never the right to
-  spend, and `set_authority` hands on only that.
-- **A published epoch is already funded.** `publish_epoch` reserves its total against the balance
-  the vault holds free of earlier epochs and refuses if it cannot. So by the time a claimant sees a
-  root, the tokens behind it are already committed and cannot be published twice.
-- **A claim is bound to the claimant, the amount and the epoch.** The leaf is
-  `sha256(0x00 || epoch || claimant || amount)`, so a proof cannot be replayed for another wallet,
-  another figure, or another epoch. A claim record PDA makes a second attempt fail before anything
-  runs.
-- **`close_epoch` is permissionless.** It moves no tokens; it only returns an expired epoch's
-  remainder to the vault for the next one. Requiring the authority would let a lost key strand
-  every unclaimed reserve forever.
+Every transaction is written to the database before it is sent, so a call that dies mid-step leaves
+enough behind for the next one to check what landed rather than pay twice. The operator key is the
+`COORWA_OPERATOR_KEY` secret on the Worker and is refused unless it matches the operator address.
 
-The honest cost of that shape: there is no withdrawal path at all, so tokens sent in by mistake can
-only be routed back out by publishing an epoch that names the sender. And a program this young is
-unaudited, which is stated here rather than buried.
-
-The rewards page offers the payout as an xStock first and as wrapped COOK second, because settling
-into a real asset is the point of Coorwa. The stock payout is
-the cross-chain route above with the claim as its first leg: every open epoch is claimed and
-unwrapped in the same transaction, the COOK is bridged to Solana, and the chosen xStock is bought
-into the claimant's own wallet there. Every step is signed by the user, and a payout that stops
-after the bridge resumes from the middle like any route. Resuming the claim itself is safe because
-of the vault: an epoch that already paid has a claim record, so it is skipped, and a second attempt
-would fail on chain anyway. What the bridge carries is measured from the wallet's balance before
-and after the claims, capped at what the epochs owe.
-
-Two checks run before the first signature, because either failure would leave COOK on Solana
-halfway. A payout has to be worth at least $1 in the stock: the route loses about 1.4% to slippage
-at any size, but a first payout into an asset also opens two token accounts on Solana for about
-0.0038 SOL of rent. And the wallet has to hold the SOL for those accounts and the fees, which the
-page reads and states before anything is signed. The Solana legs need `NEXT_PUBLIC_SOLANA_RPC_URL`,
-because the public Solana RPC refuses requests from a browser.
-
-### How an epoch is run
-
-The vault holds the money and knows nothing about who is owed it. Coorwa knows exactly who is owed
-what and holds none of the money. The two halves meet at a merkle root and nowhere else.
-
-1. **Build.** `POST /api/cashback/draft` sums every confirmed fill and listing up to a cutoff into
-   per-token holder pools and creator shares, snapshots the holders of every pool with something
-   waiting, shares each pool out by balance, subtracts anything already committed to an earlier
-   epoch, drops balances under the claim floor, converts USD to COOK at a single rate recorded on
-   the epoch, and freezes the result as a draft together with the holder split behind it.
-   Rebuilding takes a fresh snapshot, so it can land on a different root; that is fine until the
-   authority has signed, and the publish check refuses a root that no longer matches.
-2. **Publish.** The authority signs `publish_epoch` in their own browser. Coorwa then reads that
-   transaction back off the chain, decodes the instruction out of it, and marks the epoch published
-   only if the root it carries matches the draft byte for byte. No key ever reaches the server, and
-   Coorwa cannot talk an epoch into existing.
-3. **Claim.** The rewards page hands a wallet the proof for its own line. One transaction, signed
-   by the claimant, and the program pays them. The proof is not a secret: it opens the leaf naming
-   that wallet and no other.
-4. **Close.** After 30 days the window shuts and anyone may call `close_epoch`, returning the
-   unclaimed remainder to the vault.
-
-The rule that stops a double payout is that a balance counts as committed while it sits in a
-published epoch which is either claimed or still inside its window. Only an expired, closed epoch
-returns its balance to what can be published next, so an unclaimed line rolls into a later epoch
-instead of being forfeited.
-
-Two things are worth knowing before running this for the first time:
-
-- **`initialize` is open to anyone**, and whoever calls it first for a mint is that vault's
-  authority permanently. Deploy and initialize in the same sitting. The operator panel on the
-  rewards page is shown to the wallet named by `NEXT_PUBLIC_VAULT_AUTHORITY` until a vault exists,
-  and to the on-chain authority afterwards. Everyone else sees nothing.
-- **Funding is one way.** Tokens leave only through an epoch that names their recipient, so an
-  overfunded vault is corrected by publishing a root that pays it back, not by withdrawing.
+`programs/corwa-vault`, the epoch merkle distributor Coorwa used before daily payouts, is still
+deployed on Cookie Chain and still in the repo, but the app no longer publishes epochs.
 
 ---
 
@@ -293,6 +237,7 @@ not the `-pooler` one).
 
 ```bash
 npx wrangler secret put HOLDER_SAMPLE_SECRET   # any long random string
+npx wrangler secret put COORWA_OPERATOR_KEY    # the operator keypair, base58 or JSON array
 npx wrangler secret put JUPITER_API_KEY        # optional
 npm run deploy                                 # builds, then uploads
 ```
@@ -357,12 +302,15 @@ src/
     expectation.ts  A launchpad transaction checked against what was asked for, before signing
     curve.ts        Bonding-curve pricing, kept free of the network so the browser can quote a fill
     launches.ts     Tokens launched here, and the RWA each creator benchmarked theirs against
-    listings.ts     Benchmarks bought for tokens launched elsewhere, priced and proved
+    listings.ts     The one pair a creator buys for a token launched elsewhere, priced and proved
     creators.ts     Who made a token, from the launch record or the mint's metadata authority
     swap-fee.ts     Coorwa's fee, appended to the aggregator's transaction or dropped if it will not fit
     onchain.ts      Proving a reported transaction really happened before anything is written down
-    cashback.ts     What the rewards page shows: pools, a wallet's rewards, its estimated share
-    epochs.ts       Epoch accounting: holder pools, samples, who is owed what, what is committed
+    cashback.ts     What the rewards page shows: pools, runs, a wallet's payouts and estimated share
+    rewards-ledger.ts  Who is owed what in which stock, and what has been paid
+    payout-cycle.ts The daily run: bridge, swap on Jupiter, send to holders on Solana
+    operator.ts     The operator key, from a Worker secret
+    epochs.ts       Holder samples and weights, plus the older epoch accounting for the vault
     holders.ts      Who holds a token right now, read from the chain and filtered to real wallets
     draft-message.ts  The message the vault authority signs to build an epoch
     merkle.ts       The epoch tree: leaves, roots and proofs, matching the program byte for byte
@@ -433,6 +381,6 @@ Reference implementations for several on-chain flows come from
 
 ## Disclaimer
 
-Coorwa is a non-custodial interface. It never holds your assets and never signs for you. Tokens on
-Cookie Chain are volatile and can lose all value; tokenised equities carry issuer and
+Coorwa never holds your tokens and never signs for you. Fees it collects wait in its operator wallet
+until the daily payout sends them to holders. Tokens on Cookie Chain are volatile and can lose all value; tokenised equities carry issuer and
 transfer-restriction risk of their own. Nothing here is investment advice.
