@@ -8,7 +8,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineAmounts, payableLines, splitRaw } from "../src/lib/rewards-ledger";
+import { lineAmounts, payableLines, splitRaw, withoutCreators } from "../src/lib/rewards-ledger";
 
 const sum = (m: Map<unknown, bigint>) => [...m.values()].reduce((a, b) => a + b, 0n);
 
@@ -75,4 +75,13 @@ test("what a swap bought is shared per wallet, then per line, per asset", () => 
 test("an asset the run bought nothing of pays zero rather than failing", () => {
   const out = lineAmounts([{ id: 9, wallet: "w", ticker: "SPY", amountUsd: 3 }], new Map());
   assert.equal(out.get(9), 0n);
+});
+
+test("the creator is paid from fees only, never as a holder of their own token", () => {
+  const weights = new Map([
+    ["creator", 900n],
+    ["holder", 100n],
+  ]);
+  const out = withoutCreators(weights, new Set(["creator"]));
+  assert.deepEqual([...out], [["holder", 100n]]);
 });

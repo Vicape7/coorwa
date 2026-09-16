@@ -2,7 +2,7 @@
  * What the rewards page shows: a wallet's payouts, and every token's pool.
  *
  * The money is real and already exists: MomoSwap pays a referrer 20% of its 1% curve fee, a swap
- * through Coorwa pays its own 0.10%, and a pair payment pays a dollar. All of it reaches the operator
+ * through Coorwa pays its own 1%, and a pair payment pays a dollar. All of it reaches the operator
  * wallet and is paid out once a day in each token's pair asset (`rewards-ledger.ts`,
  * `payout-cycle.ts`). Every fill read here was written only after its transaction confirmed on-chain,
  * and every payout carries the Solana transaction that sent it.
@@ -36,6 +36,11 @@ export interface CashbackSummary {
   paid: WalletRewards["paid"];
   /** This wallet's estimated share of what is waiting, from the holder samples so far. */
   estimates: HolderEstimate[];
+  /**
+   * Tokens this wallet created that have earned fees. The creator's share is paid by the same daily
+   * run, in the token's pair asset, so there is nothing to claim; this is where a creator sees it.
+   */
+  created: RewardPool[];
   pools: RewardPool[];
   runs: RunRow[];
 }
@@ -48,6 +53,7 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   pending: [],
   paid: [],
   estimates: [],
+  created: [],
   pools: [],
   runs: [],
 });
@@ -71,7 +77,8 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
   if (!wallet) return base;
 
   const [mine, estimates] = await Promise.all([walletRewards(wallet), holderEstimates(wallet)]);
-  return { ...base, pending: mine.pending, paid: mine.paid, estimates };
+  const created = pools.filter((p) => p.creator === wallet);
+  return { ...base, pending: mine.pending, paid: mine.paid, estimates, created };
 }
 
 /** One token's pool, for its pair page. */

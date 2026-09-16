@@ -2,7 +2,8 @@
  * Who is owed what, in which asset, and what has been paid.
  *
  * Every fee Coorwa collects on a token belongs to that token: `CASHBACK_SPLIT.holders` of it to the
- * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. The money
+ * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. The creator
+ * is paid from fees only: their own holding never counts toward the holders' share. The money
  * itself sits in the operator wallet. This file is the ledger that says whose it is, and
  * `payout-cycle.ts` is what moves it.
  *
@@ -21,6 +22,7 @@ import { snapshotHolders } from "./holders";
 import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./epochs";
 import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
+import { tokenCreator } from "./creators";
 import { CASHBACK_SPLIT, PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
 
 function requireDb() {
@@ -112,6 +114,32 @@ export function lineAmounts(
   return out;
 }
 
+/**
+ * Holder weights with the token's creator taken out. The creator is paid `CASHBACK_SPLIT.creator` of
+ * the fees and nothing for holding their own token, so their tokens do not dilute real holders either.
+ */
+export function withoutCreators(
+  weights: ReadonlyMap<string, bigint>,
+  creators: ReadonlySet<string>,
+): Map<string, bigint> {
+  return new Map([...weights].filter(([wallet]) => !creators.has(wallet)));
+}
+
+/** Every wallet counted as a token's creator: the one its fills named and the one resolved now. */
+async function creatorsByMint(pools: readonly RewardPool[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  await Promise.all(
+    pools.map(async (p) => {
+      const wallets = new Set<string>();
+      if (p.creator) wallets.add(p.creator);
+      const resolved = await tokenCreator(p.mint).catch(() => null);
+      if (resolved) wallets.add(resolved.wallet);
+      out.set(p.mint, wallets);
+    }),
+  );
+  return out;
+}
+
 // --- pools ------------------------------------------------------------------------------------------
 
 export interface RewardPool {
@@ -130,6 +158,8 @@ export interface RewardPool {
   creator: string | null;
   creatorAccruedUsd: number;
   creatorAllocatedUsd: number;
+  /** What has actually reached the creator's wallet. */
+  creatorPaidUsd: number;
 }
 
 /** Every token's pool as of a cutoff. */
@@ -189,6 +219,7 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
         creator: null,
         creatorAccruedUsd: 0,
         creatorAllocatedUsd: 0,
+        creatorPaidUsd: 0,
       };
       pools.set(mint, p);
     }
@@ -210,8 +241,10 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
   for (const l of listingRows) pool(l.mint).holdersAccruedUsd += Number(l.usd ?? 0);
   for (const a of allocated) {
     const p = pool(a.mint);
-    if (a.role === "creator") p.creatorAllocatedUsd += Number(a.usd ?? 0);
-    else {
+    if (a.role === "creator") {
+      p.creatorAllocatedUsd += Number(a.usd ?? 0);
+      p.creatorPaidUsd += Number(a.paid ?? 0);
+    } else {
       p.holdersAllocatedUsd += Number(a.usd ?? 0);
       p.holdersPaidUsd += Number(a.paid ?? 0);
     }
@@ -272,16 +305,17 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
 
   const waiting = pools.filter((p) => p.ticker && p.holdersWaitingUsd > 0);
   const mints = waiting.map((p) => p.mint);
-  const [snapshots, sampled] = await Promise.all([
+  const [snapshots, sampled, creators] = await Promise.all([
     snapshotHolders(mints),
     samplesIn(mints, from, asOf),
+    creatorsByMint(waiting),
   ]);
 
   const weights = new Map<string, Map<string, bigint>>();
   const counts = new Map<string, number>();
   for (const snap of snapshots) {
     const w = holderWeightsFrom(sampled.get(snap.mint) ?? [], snap.holders);
-    weights.set(snap.mint, w.weights);
+    weights.set(snap.mint, withoutCreators(w.weights, creators.get(snap.mint) ?? new Set()));
     counts.set(snap.mint, w.samples);
   }
   const holderLines = holderAllocationsFrom({
@@ -447,15 +481,20 @@ export interface HolderEstimate {
  */
 export async function holderEstimates(wallet: string): Promise<HolderEstimate[]> {
   const waiting = (await rewardPools()).filter((p) => p.ticker && p.holdersWaitingUsd > 0);
-  const samples = await samplesIn(
-    waiting.map((p) => p.mint),
-    await lastRunAsOf(),
-    new Date(),
-  );
+  const [samples, creators] = await Promise.all([
+    samplesIn(
+      waiting.map((p) => p.mint),
+      await lastRunAsOf(),
+      new Date(),
+    ),
+    creatorsByMint(waiting),
+  ]);
 
   const out: HolderEstimate[] = [];
   for (const pool of waiting) {
-    const { weights, samples: count } = holderWeightsFrom(samples.get(pool.mint) ?? [], null);
+    const sampled = holderWeightsFrom(samples.get(pool.mint) ?? [], null);
+    const weights = withoutCreators(sampled.weights, creators.get(pool.mint) ?? new Set());
+    const count = sampled.samples;
     const mine = weights.get(wallet);
     if (!mine) continue;
     let total = 0n;
