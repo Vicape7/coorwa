@@ -107,9 +107,9 @@ export default function Home() {
             <span className="block">Paid out in real stocks.</span>
           </h2>
           <p className="mt-5 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
-            Every token on Coorwa trades against NVDA, TSLA, SPY and the rest. The price is two live
-            markets divided: real reserves in a Cookie Chain pool over real xStock liquidity on
-            Solana. Nothing is modelled, so the number is exact.
+            Every token on Coorwa is paired with one stock, NVDA, TSLA, SPY or another, picked by its
+            creator. The price is two live markets divided: real reserves in a Cookie Chain pool over
+            real xStock liquidity on Solana. Nothing is modelled, so the number is exact.
           </p>
 
           <div className="num mt-6 inline-block rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_78%,transparent)] px-5 py-3 text-[15px] text-primary">
@@ -117,8 +117,9 @@ export default function Home() {
           </div>
 
           <p className="mt-6 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
-            When you want the share itself, Coorwa routes you there: it swaps, bridges and buys the
-            xStock, and it lands in <span className="text-primary">your own Solana wallet</span>.
+            Holding the token pays you in that stock. Every day Coorwa bridges the fees, buys the
+            xStock and sends it to <span className="text-primary">your own Solana wallet</span>, at
+            the same address you hold the token with.
           </p>
         </GlassEffect>
       </Section>
@@ -126,10 +127,11 @@ export default function Home() {
       <Section>
         <RewardsCalculator />
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
-          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold, and to whoever made
-          it. It comes from MomoSwap&apos;s referral share of the curve fee, which costs a trader
-          nothing, Coorwa&apos;s own 0.10% on a swap, and the dollar paid to list a pair. Coorwa keeps
-          none of it, and holders claim it as a real xStock on Solana.{" "}
+          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold, and
+          to whoever made it. It comes from MomoSwap&apos;s referral share of the curve fee, which
+          costs a trader nothing, Coorwa&apos;s own 0.10% on a swap, and the dollar a creator pays for
+          a pair. Once a day it is paid out in the token&apos;s stock, straight to holders&apos;
+          wallets on Solana, with nothing to claim.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">
             See your rewards
           </Link>
@@ -153,7 +155,8 @@ export default function Home() {
           </div>
         </div>
         <p className="mt-5 max-w-[80ch] text-[12px] leading-[1.7] text-subtle">
-          Coorwa is a non-custodial interface. It never holds your assets and never signs for you.
+          Coorwa never holds your tokens and never signs for you. Fees it collects wait in its
+          operator wallet until the daily payout sends them to holders.
           Tokens on Cookie Chain are volatile and can lose all value; tokenised equities carry
           issuer and transfer-restriction risk of their own. Nothing here is investment advice.
         </p>

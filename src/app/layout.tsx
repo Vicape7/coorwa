@@ -18,11 +18,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Coorwa - trade Cookie Chain in RWAs",
   description:
-    "Terminal, launchpad and LP maker for Cookie Chain. Price every token in NVDA, TSLA or SPY, route cross-chain into real xStocks, and earn fee cashback on every trade.",
+    "Terminal, launchpad and LP maker for Cookie Chain. Every token is paired with a stock, and its holders are paid in that stock every day.",
   openGraph: {
     title: "Coorwa - trade Cookie Chain in RWAs",
     description:
-      "Price every Cookie Chain token in real-world shares, settle cross-chain into real xStocks, and earn cashback from the fees you generate.",
+      "Every Cookie Chain token paired with a real stock. Hold it, and get paid in that stock every day.",
     type: "website",
   },
 };

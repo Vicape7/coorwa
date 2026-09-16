@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { RatioChart } from "./ratio-chart";
 import { SwapPanel } from "./swap-panel";
-import { CrossChainPanel } from "./crosschain-panel";
 import { RecentTrades } from "./recent-trades";
 import { TokenMark } from "./token-mark";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
-import { cookieAccountUrl, COOKIE_EXPLORER } from "@/lib/config";
+import {
+  CASHBACK_SPLIT,
+  COOKIE_EXPLORER,
+  HOLDER_MIN_USD,
+  cookieAccountUrl,
+} from "@/lib/config";
 import type { CoorwaPair } from "@/lib/pairs";
+import type { RewardPool } from "@/lib/rewards-ledger";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
@@ -21,7 +25,6 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
     keepPreviousData: true,
   });
   const pair = data ?? initial;
-  const [tab, setTab] = useState<"swap" | "cross">("swap");
 
   return (
     <div className="mx-auto max-w-[1400px] px-5 py-6">
@@ -86,16 +89,9 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
         </div>
 
         <div className="space-y-4">
-          <div className="segmented w-full">
-            <button onClick={() => setTab("swap")} data-active={tab === "swap"} className="flex-1">
-              Trade on Cookie
-            </button>
-            <button onClick={() => setTab("cross")} data-active={tab === "cross"} className="flex-1">
-              Settle in {pair.quote.ticker}
-            </button>
-          </div>
+          <SwapPanel pair={pair} />
 
-          {tab === "swap" ? <SwapPanel pair={pair} /> : <CrossChainPanel pair={pair} />}
+          <HolderRewards pair={pair} />
 
           <PairFacts pair={pair} />
         </div>
@@ -135,6 +131,49 @@ function Metric({
       <div className="label">{label}</div>
       <div className={`num mt-1 text-[19px] ${toneClass}`}>{value}</div>
       {sub && <div className={`mt-0.5 text-[12px] ${subClass}`}>{sub}</div>}
+    </div>
+  );
+}
+
+/**
+ * What holding this token pays, in its pair's stock. The reason a pair exists at all, so it sits
+ * right under the swap.
+ */
+function HolderRewards({ pair }: { pair: CoorwaPair }) {
+  const { data } = useSWR<{ configured: boolean; pool: RewardPool | null; nextRunAt: string | null }>(
+    `/api/rewards/token?mint=${pair.base.mint}`,
+    fetcher,
+    { refreshInterval: 60_000 },
+  );
+  const pool = data?.pool ?? null;
+
+  return (
+    <div className="card p-5">
+      <div className="label">Holder rewards</div>
+      <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
+        {Math.round(CASHBACK_SPLIT.holders * 100)}% of every fee Coorwa earns on {pair.base.symbol}{" "}
+        is paid once a day to wallets holding at least {usd(HOLDER_MIN_USD)} of it, in{" "}
+        {pair.quote.symbol} sent to the same address on Solana. Nothing to claim.
+      </p>
+      <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">
+        <Fact label="Paid to holders">
+          <span className="num text-primary">{usd(pool?.holdersPaidUsd ?? 0)}</span>
+        </Fact>
+        <Fact label="Waiting to distribute">
+          <span className="num text-primary">{usd(pool?.holdersWaitingUsd ?? 0)}</span>
+        </Fact>
+        <Fact label="Next run">
+          <span className="num text-primary">
+            {data?.nextRunAt ? new Date(data.nextRunAt).toLocaleString() : "after the next fee"}
+          </span>
+        </Fact>
+      </dl>
+      <Link
+        href="/rewards"
+        className="mt-4 inline-block text-[13px] text-muted underline underline-offset-4"
+      >
+        Your rewards
+      </Link>
     </div>
   );
 }

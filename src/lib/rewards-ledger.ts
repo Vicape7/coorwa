@@ -429,3 +429,92 @@ export async function walletRewards(wallet: string): Promise<WalletRewards> {
   }
   return { pending: [...pending].map(([ticker, usd]) => ({ ticker, usd })), paid };
 }
+
+export interface HolderEstimate {
+  mint: string;
+  symbol: string | null;
+  ticker: string;
+  waitingUsd: number;
+  /** This wallet's part of the token's summed weight so far, 0 to 1. */
+  share: number;
+  estimatedUsd: number;
+  samples: number;
+}
+
+/**
+ * What a wallet would get from each waiting pool if the run happened now, from the samples so far.
+ * An estimate: the run adds a snapshot of its own, and holdings keep changing until then.
+ */
+export async function holderEstimates(wallet: string): Promise<HolderEstimate[]> {
+  const waiting = (await rewardPools()).filter((p) => p.ticker && p.holdersWaitingUsd > 0);
+  const samples = await samplesIn(
+    waiting.map((p) => p.mint),
+    await lastRunAsOf(),
+    new Date(),
+  );
+
+  const out: HolderEstimate[] = [];
+  for (const pool of waiting) {
+    const { weights, samples: count } = holderWeightsFrom(samples.get(pool.mint) ?? [], null);
+    const mine = weights.get(wallet);
+    if (!mine) continue;
+    let total = 0n;
+    for (const w of weights.values()) total += w;
+    const share = Number((mine * 1_000_000n) / total) / 1_000_000;
+    out.push({
+      mint: pool.mint,
+      symbol: pool.symbol,
+      ticker: pool.ticker!,
+      waitingUsd: pool.holdersWaitingUsd,
+      share,
+      estimatedUsd: pool.holdersWaitingUsd * share,
+      samples: count,
+    });
+  }
+  return out.sort((a, b) => b.estimatedUsd - a.estimatedUsd);
+}
+
+export interface RunRow {
+  id: number;
+  asOf: string;
+  status: string;
+  totalUsd: number;
+  costsUsd: number | null;
+  wallets: number;
+  bridgeSignature: string | null;
+  note: string | null;
+}
+
+/** The latest payout runs, newest first, for anyone to audit. */
+export async function recentRuns(limit = 10): Promise<RunRow[]> {
+  const conn = requireDb();
+  const { payoutCycles, payoutLines } = schema;
+  const runs = await conn
+    .select()
+    .from(payoutCycles)
+    .where(ne(payoutCycles.status, "empty"))
+    .orderBy(desc(payoutCycles.id))
+    .limit(limit);
+  if (runs.length === 0) return [];
+
+  const counts = await conn
+    .select({
+      cycle: payoutLines.paidIn,
+      wallets: sql<number>`count(distinct ${payoutLines.wallet})`,
+    })
+    .from(payoutLines)
+    .where(inArray(payoutLines.paidIn, runs.map((r) => r.id)))
+    .groupBy(payoutLines.paidIn);
+  const walletsOf = new Map(counts.map((c) => [c.cycle, Number(c.wallets ?? 0)]));
+
+  return runs.map((r) => ({
+    id: r.id,
+    asOf: r.asOf.toISOString(),
+    status: r.status,
+    totalUsd: r.totalUsd,
+    costsUsd: r.costsUsd,
+    wallets: walletsOf.get(r.id) ?? 0,
+    bridgeSignature: r.bridgeSignature,
+    note: r.note,
+  }));
+}

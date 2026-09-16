@@ -1,67 +1,55 @@
 /**
- * Reward accounting for the rewards page.
+ * What the rewards page shows: a wallet's payouts, and every token's pool.
  *
  * The money is real and already exists: MomoSwap pays a referrer 20% of its 1% curve fee, a swap
- * through Coorwa pays its own 0.10%, and a pair listing pays a dollar. None of it is kept.
- *
- * Every fee is split per `CASHBACK_SPLIT`: the holders' part joins that token's holder pool, which
- * each epoch shares out over whoever holds the token at its snapshot, and the creator's part goes to
- * whoever made the token. Every row read here was written only after a transaction confirmed
- * on-chain, so a balance is checkable against the explorer rather than taken on trust.
+ * through Coorwa pays its own 0.10%, and a pair payment pays a dollar. All of it reaches the operator
+ * wallet and is paid out once a day in each token's pair asset (`rewards-ledger.ts`,
+ * `payout-cycle.ts`). Every fill read here was written only after its transaction confirmed on-chain,
+ * and every payout carries the Solana transaction that sent it.
  */
-import { and, eq, sql, desc, gte } from "drizzle-orm";
-import { db, dbEnabled, schema } from "./db";
-import { MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
+import { gte, sql } from "drizzle-orm";
+import { dbEnabled, db, schema } from "./db";
+import { feeShareSql } from "./epochs";
+import { COORWA_OPERATOR, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
 import {
-  feeShareSql,
   holderEstimates,
-  holderPools,
+  nextRunDueAt,
+  recentRuns,
+  rewardPools,
+  walletRewards,
   type HolderEstimate,
-  type HolderPool,
-} from "./epochs";
+  type RewardPool,
+  type RunRow,
+  type WalletRewards,
+} from "./rewards-ledger";
 
 export interface CashbackSummary {
   configured: boolean;
   wallet: string | null;
-  /** Given to this wallet out of holder pools by published epochs. */
-  holderEarnedUsd: number;
-  /** The creator's share of every fee earned on tokens this wallet launched. */
-  creatorAccruedUsd: number;
-  /** Already claimed out of the vault, against a published root. */
-  paidUsd: number;
-  /**
-   * Sitting in a published epoch: either claimed already, or waiting for its claimant inside the
-   * window. Committed money cannot appear in a later epoch, which is what stops a double payout.
-   */
-  committedUsd: number;
-  /**
-   * Owed and not yet in any open epoch: the creator share so far, and anything from an epoch that
-   * expired unclaimed. A holder's share of a pool is not in here until a snapshot has been taken,
-   * because until then nobody knows who will be holding.
-   */
-  pendingUsd: number;
-  /**
-   * What this wallet would get from each waiting pool if the epoch were built from the holder samples
-   * taken so far. An estimate: the epoch adds a snapshot of its own and holdings keep changing.
-   */
+  /** The address every fee is paid to and every payout is sent from. */
+  operator: string | null;
+  /** When the next daily run is due, or null while nothing is waiting. */
+  nextRunAt: string | null;
+  /** Owed to this wallet but under the minimum, per asset. Paid once it adds up. */
+  pending: WalletRewards["pending"];
+  /** Sent to this wallet, newest first. */
+  paid: WalletRewards["paid"];
+  /** This wallet's estimated share of what is waiting, from the holder samples so far. */
   estimates: HolderEstimate[];
-  /** This wallet's holder rewards, token by token, across published epochs. */
-  byToken: { mint: string; symbol: string | null; amountUsd: number; epochs: number }[];
-  /** Every token's holder pool: what is waiting for the next snapshot and what has been paid. */
-  pools: HolderPool[];
+  pools: RewardPool[];
+  runs: RunRow[];
 }
 
 const EMPTY = (wallet: string | null): CashbackSummary => ({
   configured: false,
   wallet,
-  holderEarnedUsd: 0,
-  creatorAccruedUsd: 0,
-  paidUsd: 0,
-  committedUsd: 0,
-  pendingUsd: 0,
+  operator: COORWA_OPERATOR || null,
+  nextRunAt: null,
+  pending: [],
+  paid: [],
   estimates: [],
-  byToken: [],
   pools: [],
+  runs: [],
 });
 
 /** The fee Coorwa earns on a launchpad fill of this size, in the same units as `valueUsd`. */
@@ -72,67 +60,28 @@ export function launchpadReferralFee(valueUsd: number): number {
 export async function summarise(wallet: string | null): Promise<CashbackSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
 
-  const { fills, claims, epochs, holderRewards } = schema;
+  const [pools, runs, next] = await Promise.all([rewardPools(), recentRuns(), nextRunDueAt()]);
+  const base = {
+    ...EMPTY(wallet),
+    configured: true,
+    nextRunAt: next?.toISOString() ?? null,
+    pools: pools.slice(0, 50),
+    runs,
+  };
+  if (!wallet) return base;
 
-  // The pools are global and cheap: sums over three tables.
-  const pools = (await holderPools(new Date())).slice(0, 50);
+  const [mine, estimates] = await Promise.all([walletRewards(wallet), holderEstimates(wallet)]);
+  return { ...base, pending: mine.pending, paid: mine.paid, estimates };
+}
 
-  if (!wallet) return { ...EMPTY(null), configured: true, pools };
-
-  const [mine, [asCreator], [committed], estimates] = await Promise.all([
-    db
-      .select({
-        mint: holderRewards.mint,
-        amountUsd: sql<number>`coalesce(sum(${holderRewards.amountUsd}), 0)`,
-        epochs: sql<number>`count(distinct ${holderRewards.epoch})`,
-      })
-      .from(holderRewards)
-      .innerJoin(epochs, eq(holderRewards.epoch, epochs.index))
-      .where(and(eq(holderRewards.wallet, wallet), eq(epochs.status, "published")))
-      .groupBy(holderRewards.mint)
-      .orderBy(desc(sql`sum(${holderRewards.amountUsd})`)),
-    db
-      .select({ creatorUsd: feeShareSql("creator") })
-      .from(fills)
-      .where(eq(fills.creator, wallet)),
-    // Two numbers out of the same table. Paid is what the vault has actually handed over; committed
-    // also counts a published epoch the wallet has not got round to claiming yet, because that money
-    // is already reserved on chain and must not be promised twice.
-    db
-      .select({
-        paidUsd: sql<number>`coalesce(sum(case when ${claims.claimedAt} is not null then ${claims.amountUsd} else 0 end), 0)`,
-        committedUsd: sql<number>`coalesce(sum(case when ${claims.claimedAt} is not null or ${epochs.deadline} > now() then ${claims.amountUsd} else 0 end), 0)`,
-      })
-      .from(claims)
-      .innerJoin(epochs, eq(claims.epoch, epochs.index))
-      .where(and(eq(claims.wallet, wallet), eq(epochs.status, "published"))),
-    holderEstimates(wallet),
-  ]);
-
-  const symbols = new Map(pools.map((p) => [p.mint, p.symbol]));
-  const byToken = mine.map((r) => ({
-    mint: r.mint,
-    symbol: symbols.get(r.mint) ?? null,
-    amountUsd: Number(r.amountUsd ?? 0),
-    epochs: Number(r.epochs ?? 0),
-  }));
-
-  const holderEarnedUsd = byToken.reduce((sum, t) => sum + t.amountUsd, 0);
-  const creatorAccruedUsd = Number(asCreator?.creatorUsd ?? 0);
-  const paidUsd = Number(committed?.paidUsd ?? 0);
-  const committedUsd = Number(committed?.committedUsd ?? 0);
-
+/** One token's pool, for its pair page. */
+export async function tokenRewards(mint: string) {
+  if (!dbEnabled || !db) return { configured: false, pool: null, nextRunAt: null };
+  const [pools, next] = await Promise.all([rewardPools(), nextRunDueAt()]);
   return {
     configured: true,
-    wallet,
-    holderEarnedUsd,
-    creatorAccruedUsd,
-    paidUsd,
-    committedUsd,
-    pendingUsd: Math.max(0, holderEarnedUsd + creatorAccruedUsd - committedUsd),
-    estimates,
-    byToken,
-    pools,
+    pool: pools.find((p) => p.mint === mint) ?? null,
+    nextRunAt: next?.toISOString() ?? null,
   };
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import {
-  CASHBACK_RWA_MIN_USD,
+  PAYOUT_MIN_USD,
   CASHBACK_SPLIT,
   COORWA_SWAP_FEE_BPS,
   MOMOSWAP_REFERRAL_SHARE,
@@ -19,8 +19,8 @@ import { SlidingNumber } from "./ui/sliding-number";
  * "What would I get?" on the landing page: sliders for how much a token trades through Coorwa and
  * how much of it you hold, and the split that follows, in dollars and in the stock you would take.
  *
- * Every rate comes from config, the same constants the epochs are computed with, so the page cannot
- * drift from what is actually paid. It is an estimate by construction: a real epoch pays on the
+ * Every rate comes from config, the same constants the daily payout runs on, so the page cannot
+ * drift from what is actually paid. It is an estimate by construction: a real run pays on the
  * volume that happened and on sampled balances, not on a flat share.
  */
 
@@ -45,7 +45,7 @@ export function RewardsCalculator() {
   const [volume, setVolume] = useState(2_000);
   const [days, setDays] = useState(30);
   const [share, setShare] = useState(5);
-  const [pairs, setPairs] = useState(1);
+  const [pairs, setPairs] = useState(0);
   const [ticker, setTicker] = useState("NVDA");
 
   const { data } = useSWR<{ prices: Record<string, number> }>("/api/rwa/prices", fetcher, {
@@ -109,9 +109,9 @@ export function RewardsCalculator() {
           />
           <Slider
             id="calc-pairs"
-            label="Pairs listed on the token"
-            display={`${pairs} × $${PAIR_LISTING_USD}`}
-            scale={linearScale(0, RWA_ASSETS.length)}
+            label="Pair paid for by the creator"
+            display={pairs > 0 ? `yes, $${PAIR_LISTING_USD}` : "no, picked at launch"}
+            scale={linearScale(0, 1)}
             value={pairs}
             onChange={setPairs}
           />
@@ -137,10 +137,10 @@ export function RewardsCalculator() {
             <div className="num mt-2 text-[15px] text-muted">
               <StockAmount usd={you} price={price} symbol={`${ticker}x`} />
             </div>
-            {you < CASHBACK_RWA_MIN_USD && (
+            {you < PAYOUT_MIN_USD && (
               <p className="mt-3 text-[13px] text-subtle">
-                Under ${CASHBACK_RWA_MIN_USD} it pays out in COOK instead; stock payouts start at $
-                {CASHBACK_RWA_MIN_USD}.
+                Under ${PAYOUT_MIN_USD} it waits and adds up over later days; each stock is sent once
+                it reaches ${PAYOUT_MIN_USD}.
               </p>
             )}
           </div>
@@ -165,7 +165,7 @@ export function RewardsCalculator() {
           <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
             {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
             {(VENUES[venue].bps / 100).toFixed(2)}%
-            {pairs > 0 && <>, plus {money(pairs * PAIR_LISTING_USD)} from listings to holders</>}.
+            {pairs > 0 && <>, plus {money(pairs * PAIR_LISTING_USD)} from the pair to holders</>}.
           </p>
         </div>
       </div>
