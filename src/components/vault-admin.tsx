@@ -3,17 +3,16 @@
 /**
  * The vault operator panel.
  *
- * This is the only place where cashback stops being a report and starts being money. The authority
- * signs `initialize`, `fund` and `publish_epoch` in their own browser, exactly like a trader signs
- * a swap, and the server reads the published transaction back off the chain to check the root.
+ * This is the only place where cashback stops being a report and starts being money, and it is
+ * built so that no key ever reaches Coorwa's server. The authority signs `initialize`, `fund` and
+ * `publish_epoch` in their own browser, exactly like a trader signs a swap. The server's part is
+ * arithmetic: it works out the leaves, and afterwards it reads the published transaction back off
+ * the chain to check it got the root it expected.
  *
- * Once the authority hands the vault to the server's publisher key, epochs publish themselves every
- * day (`auto-epoch.ts`) and this panel shows that instead of the build and publish buttons.
- *
- * Hidden from everyone but the authority and the operator wallet named by
- * NEXT_PUBLIC_VAULT_AUTHORITY, which keeps the panel after it has handed the authority over.
+ * Hidden from everyone but the authority. Before a vault exists there is no authority to compare
+ * against, so it appears for the wallet named by NEXT_PUBLIC_VAULT_AUTHORITY and nobody else.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import bs58 from "bs58";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -30,13 +29,7 @@ import {
   cookieAccountUrl,
   cookieTxUrl,
 } from "@/lib/config";
-import {
-  closeEpochIx,
-  fundTransaction,
-  initializeIx,
-  publishEpochIx,
-  setAuthorityIx,
-} from "@/lib/vault";
+import { closeEpochIx, fundTransaction, initializeIx, publishEpochIx } from "@/lib/vault";
 import { draftMessage } from "@/lib/draft-message";
 import type { EpochOverview, EpochRow } from "@/lib/epochs";
 
@@ -85,11 +78,12 @@ export function VaultAdmin() {
   const [note, setNote] = useState<{ tone: "up" | "down" | "note"; text: string } | null>(null);
   const [fundInput, setFundInput] = useState("");
 
-  const isAuthority = wallet !== null && data?.vault?.authority === wallet;
-  const visible =
-    isAuthority || (wallet !== null && VAULT_AUTHORITY !== "" && VAULT_AUTHORITY === wallet);
-  const publisher = data?.publisher ?? null;
-  const automatic = publisher !== null && data?.vault?.authority === publisher.address;
+  const visible = useMemo(() => {
+    if (!wallet) return false;
+    // Once the vault exists the chain decides. Before that, one named wallet does.
+    if (data?.vault) return data.vault.authority === wallet;
+    return VAULT_AUTHORITY !== "" && VAULT_AUTHORITY === wallet;
+  }, [wallet, data?.vault]);
 
   /** Every action here is the same three steps, so they share one runner. */
   const run = useCallback(
@@ -207,14 +201,6 @@ export function VaultAdmin() {
     );
   }, [draft, run, publicKey]);
 
-  /** Hand the authority to the server's publisher key, after which epochs publish every day. */
-  const onHandover = useCallback(() => {
-    if (!publisher) return;
-    return run("handover", async () =>
-      new Transaction().add(setAuthorityIx(publicKey!, MINT, new PublicKey(publisher.address))),
-    );
-  }, [run, publicKey, publisher]);
-
   const onClose = useCallback(
     (index: string) =>
       run(`close:${index}`, async () => new Transaction().add(closeEpochIx(MINT, BigInt(index)))),
@@ -284,31 +270,19 @@ export function VaultAdmin() {
             <button className="btn btn-ghost" disabled={busy !== null} onClick={onFund}>
               {busy === "fund" ? "Funding" : "Fund"}
             </button>
-            {isAuthority && (
-              <button
-                className="btn btn-ghost ml-auto"
-                disabled={busy !== null}
-                onClick={() => onDraft(false)}
-              >
-                {busy === "draft" ? "Building" : "Build the next epoch"}
-              </button>
-            )}
+            <button
+              className="btn btn-ghost ml-auto"
+              disabled={busy !== null}
+              onClick={() => onDraft(false)}
+            >
+              {busy === "draft" ? "Building" : "Build the next epoch"}
+            </button>
           </div>
           <p className="mt-3 text-[12px] leading-relaxed text-subtle">
             Funding is one way. Tokens leave the vault only through an epoch that names their
             recipient, so a mistake here can only be recovered by publishing a root that pays it
             back.
           </p>
-
-          {publisher && (
-            <PublisherCard
-              publisher={publisher}
-              automatic={automatic}
-              canHandOver={isAuthority && !automatic}
-              busy={busy}
-              onHandover={onHandover}
-            />
-          )}
         </>
       )}
 
@@ -366,73 +340,6 @@ export function VaultAdmin() {
       )}
 
       {data?.epochs && data.epochs.length > 0 && <EpochTable epochs={data.epochs} />}
-    </div>
-  );
-}
-
-function PublisherCard({
-  publisher,
-  automatic,
-  canHandOver,
-  busy,
-  onHandover,
-}: {
-  publisher: NonNullable<EpochOverview["publisher"]>;
-  automatic: boolean;
-  canHandOver: boolean;
-  busy: string | null;
-  onHandover: () => void;
-}) {
-  const due = publisher.dueAt ? new Date(publisher.dueAt) : null;
-  // Enough for a few hundred publishes, and it is only fees and the epoch account's rent.
-  const low = publisher.cook < 1;
-
-  return (
-    <div className="mt-6 border-t border-hair pt-6">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <div className="label text-[12px]">Automatic epochs</div>
-        <span className="pill pill-quiet">{automatic ? "On" : "Off"}</span>
-        <a
-          href={cookieAccountUrl(publisher.address)}
-          target="_blank"
-          rel="noreferrer"
-          className="num ml-auto text-[12px] text-subtle underline decoration-[color:var(--divider-strong)] underline-offset-4"
-        >
-          {shortAddr(publisher.address, 6)}
-        </a>
-      </div>
-
-      <p className="mt-3 max-w-2xl text-[14px] leading-[1.7] text-muted">
-        {automatic
-          ? due
-            ? `The next epoch publishes itself after ${due.toLocaleString()}, once holders have been sampled for a day.`
-            : "The next epoch starts counting a day from the first holder sample, which comes after the next fee."
-          : "The server holds a publisher key that can publish each epoch on its own once a day. It starts when this wallet hands it the authority. The authority can only publish roots, and the server refuses any epoch above its limit."}
-      </p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <span className="num text-[13px] text-muted">
-          Publisher balance {amount(publisher.cook, 4)} {COOK_SYMBOL}
-        </span>
-        {canHandOver && (
-          <button
-            className="btn btn-primary btn-sm ml-auto"
-            disabled={busy !== null}
-            onClick={onHandover}
-          >
-            {busy === "handover" ? "Handing over" : "Hand publishing to the server"}
-          </button>
-        )}
-      </div>
-
-      {low && (
-        <div className="mt-4">
-          <Notice tone="down">
-            The publisher needs a little {COOK_SYMBOL} to pay for each publish. Send it a few{" "}
-            {COOK_SYMBOL} to {publisher.address}.
-          </Notice>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,13 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { EpochError, recordHolderSample } from "@/lib/epochs";
-import { runAutoEpoch } from "@/lib/auto-epoch";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Maybe take a holder sample, then publish the open epoch if it has run for a day. Called every few
- * minutes by the scheduler (cron-job.org, or the sampler Worker in `workers/`).
+ * Maybe take a holder sample. Called every few minutes by the sampler Worker in `workers/`.
  *
  * Guarded by a shared secret rather than left open, for the same reason the draft is: whoever can
  * choose when a sample is taken can hold a token only across that moment. The secret keeps the
@@ -29,9 +27,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not authorised" }, { status: 401 });
   }
 
-  let sample;
   try {
-    sample = await recordHolderSample();
+    return NextResponse.json(await recordHolderSample());
   } catch (e) {
     const status = e instanceof EpochError ? e.status : 502;
     return NextResponse.json(
@@ -39,14 +36,4 @@ export async function POST(req: Request) {
       { status },
     );
   }
-
-  // After the sample, so an epoch that becomes due now includes it. A failed publish is reported
-  // in the body rather than as an error status: the sample itself succeeded, and the scheduler
-  // retries the epoch on its next call anyway.
-  const epoch = await runAutoEpoch().catch((e: unknown) => ({
-    published: false,
-    reason: "error",
-    error: e instanceof Error ? e.message : String(e),
-  }));
-  return NextResponse.json({ ...sample, epoch });
 }

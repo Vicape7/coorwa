@@ -125,12 +125,9 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   collecting wallets, and a wallet needs at least $1 of the token when it has a price. The pool is
   shared out by balance and the split is stored with the epoch, so the next epoch shares out only
   what is left. A token nobody holds keeps its pool for the next snapshot.
-- **Epochs publish themselves once a day.** The vault authority is a publisher key on the server,
-  and every call to the sample endpoint checks whether a day has passed since the first holder
-  sample after the last epoch; if so it builds, checks and publishes the epoch. Nobody picks that
-  moment, and the sample endpoint needs a shared secret. Before the authority is handed to the
-  server, only the vault authority can build an epoch, by signing a short-lived message the server
-  checks against the authority stored on chain.
+- **Only the vault authority can build an epoch**, by signing a short-lived message the server
+  checks against the authority stored on chain, and the sample endpoint needs a shared secret.
+  Whoever picks the moment of a snapshot can hold only across it, so neither moment is left open.
   Without the sampler an epoch still works from its own snapshot, and the operator panel says so.
 - Coorwa names itself referrer on launchpad buys, earning 20% of the 1% curve fee. That share is
   paid out of the same fee either way - with nobody named, MomoSwap keeps it - so it costs a trader
@@ -158,14 +155,9 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
 
 ## Non-custodial by construction
 
-Coorwa never co-signs a user's transaction and never takes custody. Every transaction a user makes
-is built either by an upstream service or by Coorwa's own instruction builders, then **simulated**,
-then signed by the user's wallet in their browser, then sent from there.
-
-The one key Coorwa holds is the vault's publisher key, which publishes each day's epoch. The program
-gives that key no way to move tokens itself, but a stolen one could publish a root that pays only
-the thief, so the server refuses to publish an epoch above `AUTO_EPOCH_MAX_USD` ($100 by default)
-and the vault's float stays small.
+Coorwa never holds a key, never co-signs, and never takes custody. Every transaction is built either
+by an upstream service or by Coorwa's own instruction builders, then **simulated**, then signed by
+the user's wallet in their browser, then sent from there.
 
 ### What the wallet is shown is what was asked for
 
@@ -245,11 +237,10 @@ what and holds none of the money. The two halves meet at a merkle root and nowhe
    the epoch, and freezes the result as a draft together with the holder split behind it.
    Rebuilding takes a fresh snapshot, so it can land on a different root; that is fine until the
    authority has signed, and the publish check refuses a root that no longer matches.
-2. **Publish.** The publisher key on the server signs `publish_epoch` a day after the epoch's first
-   holder sample (`src/lib/auto-epoch.ts`), or, before the authority is handed over, the authority
-   signs it in their own browser. Either way Coorwa then reads that transaction back off the chain,
-   decodes the instruction out of it, and marks the epoch published only if the root it carries
-   matches the draft byte for byte. Coorwa cannot talk an epoch into existing.
+2. **Publish.** The authority signs `publish_epoch` in their own browser. Coorwa then reads that
+   transaction back off the chain, decodes the instruction out of it, and marks the epoch published
+   only if the root it carries matches the draft byte for byte. No key ever reaches the server, and
+   Coorwa cannot talk an epoch into existing.
 3. **Claim.** The rewards page hands a wallet the proof for its own line. One transaction, signed
    by the claimant, and the program pays them. The proof is not a secret: it opens the leaf naming
    that wallet and no other.
@@ -265,9 +256,8 @@ Two things are worth knowing before running this for the first time:
 
 - **`initialize` is open to anyone**, and whoever calls it first for a mint is that vault's
   authority permanently. Deploy and initialize in the same sitting. The operator panel on the
-  rewards page is shown to the wallet named by `NEXT_PUBLIC_VAULT_AUTHORITY` and to the on-chain
-  authority. Everyone else sees nothing. That wallet hands the authority to the server's publisher
-  key from the panel, once, with `set_authority`.
+  rewards page is shown to the wallet named by `NEXT_PUBLIC_VAULT_AUTHORITY` until a vault exists,
+  and to the on-chain authority afterwards. Everyone else sees nothing.
 - **Funding is one way.** Tokens leave only through an epoch that names their recipient, so an
   overfunded vault is corrected by publishing a root that pays it back, not by withdrawing.
 
@@ -303,14 +293,12 @@ not the `-pooler` one).
 
 ```bash
 npx wrangler secret put HOLDER_SAMPLE_SECRET   # any long random string
-npx wrangler secret put VAULT_PUBLISHER_KEY    # base58 secret key of a new, empty keypair
 npx wrangler secret put JUPITER_API_KEY        # optional
 npm run deploy                                 # builds, then uploads
 ```
 
 `NEXT_PUBLIC_*` values are baked into the bundle at build time, so they come from `.env.local` on
-the machine that builds. Never put `VAULT_PUBLISHER_KEY` in `.env.local`: OpenNext bundles that file
-into the Worker. The publisher needs a few COOK for fees and epoch account rent. `npm run preview` runs the built Worker locally.
+the machine that builds. `npm run preview` runs the built Worker locally.
 
 The holder sampler is a separate Worker with a cron trigger:
 
