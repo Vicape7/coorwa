@@ -97,6 +97,15 @@
   --pane-blur: 4px;
   --bar-blur: 9px;
   /*
+   * Popups: the deposit dialog, the wallet menu, the wallet picker. They sit over dense text rather
+   * than over the shader, so the blur is heavy on purpose: a letter behind the pane has to become a
+   * smudge, or it reads as part of the dialog. The scrim blurs the page once more before that.
+   */
+  --dialog-fill: rgba(255, 252, 247, 0.6);
+  --dialog-blur: 28px;
+  --dialog-streak: rgba(255, 255, 255, 0.26);
+  --scrim-fill: rgba(29, 20, 8, 0.2);
+  /*
    * The edge does most of the work, and over the hero it does nearly all of it. Bending a smooth
    * gradient just gives you a smooth gradient, so refraction stays invisible until there is real
    * detail behind the pane. What tells the eye "this is a solid see-through object" over any
@@ -186,6 +195,9 @@
   --glass-fill: rgba(28, 24, 19, 0.42);
   --card-fill: rgba(28, 24, 19, 0.68);
   --panel-fill: rgba(37, 31, 24, 0.66);
+  --dialog-fill: rgba(28, 24, 19, 0.62);
+  --dialog-streak: rgba(255, 240, 214, 0.06);
+  --scrim-fill: rgba(8, 6, 4, 0.42);
   /* Same four layers as the light surface, but a specular catch on a dark pane is a low-alpha warm
    * white rather than a bright one - anything stronger reads as a drawn border. */
   --glass-edge:
@@ -326,10 +338,14 @@ body {
  * cost from fifty blurred ones. `.glass-pane` stays reserved for the handful of large, deliberate
  * surfaces where the bend is actually visible.
  */
+/*
+ * Write `backdrop-filter` alone, never next to `-webkit-backdrop-filter`. Lightning CSS adds the
+ * prefix itself, and given both it keeps only the prefixed one, which Chrome ignores: every card and
+ * popup here shipped without any blur that way, so text behind them read straight through.
+ */
 .card {
   background: var(--card-fill);
   backdrop-filter: saturate(160%) blur(var(--card-blur));
-  -webkit-backdrop-filter: saturate(160%) blur(var(--card-blur));
   border-radius: var(--radius-float);
   box-shadow: var(--glass-edge), var(--shadow-card);
 }
@@ -337,9 +353,30 @@ body {
 .card-float {
   background: var(--card-fill);
   backdrop-filter: saturate(160%) blur(var(--card-blur));
-  -webkit-backdrop-filter: saturate(160%) blur(var(--card-blur));
   border-radius: var(--radius-float);
   box-shadow: var(--glass-edge), var(--shadow-float);
+}
+
+/*
+ * Liquid glass for anything that opens over the page. Same edge and reflections as `.glass-pane`,
+ * painted in the background rather than in pseudo-elements so the class can go on any element,
+ * including the wallet adapter's own markup. Never nest one inside another backdrop-filtered
+ * element: the outer one becomes the backdrop root and the inner blur then sees nothing.
+ */
+.glass-dialog {
+  background:
+    linear-gradient(180deg, var(--glass-rim) 0%, transparent 34%),
+    linear-gradient(105deg, transparent 36%, var(--dialog-streak) 46%, transparent 60%),
+    var(--dialog-fill);
+  backdrop-filter: saturate(180%) blur(var(--dialog-blur));
+  border-radius: var(--radius-float);
+  box-shadow: var(--glass-edge), var(--shadow-float);
+}
+
+/* The layer between the page and a dialog. A sibling of the dialog, never its parent (see above). */
+.glass-scrim {
+  background: var(--scrim-fill);
+  backdrop-filter: saturate(140%) blur(10px);
 }
 
 /* A block inside a card. Tinted rather than blurred - it is already behind one layer of glass, and
@@ -380,7 +417,6 @@ body {
 .glass {
   background: var(--glass-fill);
   backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
   box-shadow: var(--glass-edge);
 }
 
@@ -409,7 +445,6 @@ body {
   border-radius: inherit;
   background: var(--glass-fill);
   backdrop-filter: saturate(180%) blur(var(--glass-blur));
-  -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
 }
 
 @supports (backdrop-filter: url("#lens")) {
@@ -1001,11 +1036,30 @@ body {
 
 /* --- Wallet adapter overrides ------------------------------------------------------------------ */
 
+/* The picker fades in on its own container; the overlay and the window are glass like every popup. */
+.wallet-adapter-modal {
+  background: transparent !important;
+}
+.wallet-adapter-modal-overlay {
+  background: var(--scrim-fill) !important;
+  backdrop-filter: saturate(140%) blur(10px);
+}
 .wallet-adapter-modal-wrapper {
   border-radius: var(--radius-float) !important;
-  background: var(--surface) !important;
-  box-shadow: var(--shadow-float) !important;
+  background:
+    linear-gradient(180deg, var(--glass-rim) 0%, transparent 34%),
+    linear-gradient(105deg, transparent 36%, var(--dialog-streak) 46%, transparent 60%),
+    var(--dialog-fill) !important;
+  backdrop-filter: saturate(180%) blur(var(--dialog-blur));
+  box-shadow: var(--glass-edge), var(--shadow-float) !important;
   font-family: var(--font-sans) !important;
+}
+.wallet-adapter-modal-button-close {
+  background: var(--well-fill) !important;
+  box-shadow: var(--well-edge);
+}
+.wallet-adapter-modal-button-close svg {
+  fill: var(--text-muted) !important;
 }
 .wallet-adapter-modal-title {
   font-weight: 500 !important;

@@ -635,13 +635,12 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
   const error = txError ?? current?.error ?? null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(29,20,8,0.45)] p-5"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 grid place-items-center p-5">
+      {/* The scrim is a sibling, not the parent: a blurred parent would leave the dialog's own
+          glass nothing to blur. */}
+      <div aria-hidden className="glass-scrim absolute inset-0" onClick={onClose} />
       <div
-        className="card-float w-full max-w-md p-5 sm:p-7"
-        onClick={(e) => e.stopPropagation()}
+        className="glass-dialog relative max-h-[calc(100dvh-40px)] w-full max-w-md overflow-y-auto p-5 sm:p-7"
         role="dialog"
         aria-modal="true"
       >

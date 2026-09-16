@@ -6,7 +6,8 @@
  * Cookie Chain is an SVM fork, so a Solana wallet signs for it unchanged - but the balance shown
  * here is COOK read from the Cookie Chain RPC, not SOL.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { shortAddr, amount } from "@/lib/format";
@@ -20,6 +21,9 @@ export function WalletButton() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  /** Where the menu opens, in viewport pixels, measured from the button. */
+  const [spot, setSpot] = useState<{ top: number; right: number } | null>(null);
 
   // A disconnected wallet has no balance to show, so that case is derived at render rather than
   // written back into state - the effect only ever reports what the RPC said.
@@ -45,10 +49,31 @@ export function WalletButton() {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!holder.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!holder.current?.contains(target) && !menu.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  /*
+   * The menu is portalled to <body> and placed with `position: fixed`. Inside the nav island it
+   * could not be glass: the island has its own backdrop-filter, which makes it the backdrop root, so
+   * the menu's blur saw an empty layer and the page text showed straight through it.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = holder.current?.getBoundingClientRect();
+      if (r) setSpot({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+    };
+    place();
+    window.addEventListener("scroll", place, { passive: true });
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place);
+      window.removeEventListener("resize", place);
+    };
   }, [open]);
 
   const onClick = useCallback(() => {
@@ -72,35 +97,42 @@ export function WalletButton() {
         <span className="num">{shortAddr(publicKey.toBase58())}</span>
       </button>
 
-      {open && (
-        <div className="card-float absolute right-0 z-50 mt-2 w-64 overflow-hidden p-1">
-          <div className="px-3 py-2.5">
-            <div className="label">{wallet?.adapter.name ?? "Wallet"}</div>
-            <div className="num mt-1 break-all text-[11px] text-muted">
-              {publicKey.toBase58()}
+      {open &&
+        spot &&
+        createPortal(
+          <div
+            ref={menu}
+            className="glass-dialog fixed z-50 w-64 max-w-[calc(100vw-16px)] overflow-hidden p-1"
+            style={{ top: spot.top, right: spot.right }}
+          >
+            <div className="px-3 py-2.5">
+              <div className="label">{wallet?.adapter.name ?? "Wallet"}</div>
+              <div className="num mt-1 break-all text-[11px] text-muted">
+                {publicKey.toBase58()}
+              </div>
             </div>
-          </div>
-          <button
-            className="w-full rounded-2xl px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-raised"
-            onClick={() => {
-              navigator.clipboard?.writeText(publicKey.toBase58());
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1400);
-            }}
-          >
-            {copied ? "Copied" : "Copy address"}
-          </button>
-          <button
-            className="w-full rounded-2xl px-3 py-2.5 text-left text-[13px] text-[color:var(--color-down)] transition-colors hover:bg-raised"
-            onClick={() => {
-              disconnect();
-              setOpen(false);
-            }}
-          >
-            Disconnect
-          </button>
-        </div>
-      )}
+            <button
+              className="w-full rounded-2xl px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-raised"
+              onClick={() => {
+                navigator.clipboard?.writeText(publicKey.toBase58());
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1400);
+              }}
+            >
+              {copied ? "Copied" : "Copy address"}
+            </button>
+            <button
+              className="w-full rounded-2xl px-3 py-2.5 text-left text-[13px] text-[color:var(--color-down)] transition-colors hover:bg-raised"
+              onClick={() => {
+                disconnect();
+                setOpen(false);
+              }}
+            >
+              Disconnect
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
