@@ -29,10 +29,11 @@
     }
   ],
   "vars": {
-    // The vault authority, named as referrer on launchpad buys. A public address, not a secret.
-    "COORWA_REFERRER": "CS9w7KF4FsHPY6RbPNF9YnRfZ3vfBw4P5bRXDGUxJfbn"
+    // The operator wallet, named as referrer on launchpad buys. A public address, not a secret.
+    "COORWA_REFERRER": "3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R"
   },
-  // Secrets, set with `npx wrangler secret put <NAME>`: HOLDER_SAMPLE_SECRET, JUPITER_API_KEY.
+  // Secrets, set with `npx wrangler secret put <NAME>`: HOLDER_SAMPLE_SECRET, COORWA_OPERATOR_KEY,
+  // JUPITER_API_KEY.
   // NEXT_PUBLIC_* values are baked into the bundle at build time, from .env.local.
   "observability": {
     "enabled": true

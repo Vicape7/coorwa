@@ -3,11 +3,15 @@ import { z } from "zod";
 import { type VersionedTransactionResponse } from "@solana/web3.js";
 import { recordFill, launchpadReferralFee } from "@/lib/cashback";
 import { fetchCookPriceUsd } from "@/lib/cookiescan";
-import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
-import { vaultFundsAccount } from "@/lib/swap-fee";
+import { proveTransaction, isProven, lamportsCredited } from "@/lib/onchain";
 import { tokenCreator } from "@/lib/creators";
 import { carriesBenchmark } from "@/lib/listings";
-import { COOK_DECIMALS, COOK_MINT, COORWA_REFERRER, COORWA_SWAP_FEE_BPS } from "@/lib/config";
+import {
+  COOK_DECIMALS,
+  COORWA_OPERATOR,
+  COORWA_REFERRER,
+  COORWA_SWAP_FEE_BPS,
+} from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -87,9 +91,9 @@ export async function POST(req: Request) {
       feeUsd =
         COORWA_REFERRER && proof.accounts.has(COORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
     } else {
-      // A swap earns only what the transaction actually paid the vault. A route too long to carry
+      // A swap earns only what the transaction actually paid the operator. A route too long to carry
       // the fee instruction goes through without one, and that fill is worth exactly zero here.
-      const paid = tokenCredited(proof, vaultFundsAccount().toBase58(), COOK_MINT);
+      const paid = COORWA_OPERATOR ? lamportsCredited(proof, COORWA_OPERATOR) : null;
       if (cookPriceUsd && paid != null && paid > 0n) {
         feeUsd = (Number(paid) / 10 ** COOK_DECIMALS) * cookPriceUsd;
         // The fee is a fixed share of the COOK leg, so it also proves the size of the trade. Listing

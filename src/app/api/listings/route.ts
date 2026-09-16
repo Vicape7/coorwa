@@ -1,107 +1,87 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { PublicKey } from "@solana/web3.js";
 import {
-  billableTickers,
-  carriedFor,
   cookToUsd,
+  listedFor,
   listingQuote,
   listingsFor,
-  pairsPaidFor,
-  recordListings,
+  paymentCovers,
+  recordListing,
   signatureSpent,
 } from "@/lib/listings";
-import { proveTransaction, isProven, tokenCredited } from "@/lib/onchain";
+import { proveTransaction, isProven, lamportsCredited } from "@/lib/onchain";
 import { tokenCreator } from "@/lib/creators";
 import { fetchCookPriceUsd, fetchMarkets, liquidityByMint } from "@/lib/cookiescan";
 import { benchmarks } from "@/lib/launches";
-import { fundsPda, vaultPda } from "@/lib/vault";
-import { COOK_MINT, VAULT_MINT } from "@/lib/config";
+import { rwaByTicker } from "@/lib/rwa";
+import { COORWA_OPERATOR } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
-
-/** Where a listing fee has to land: the cashback vault's own funds account. */
-function vaultFunds(): string {
-  return fundsPda(vaultPda(new PublicKey(VAULT_MINT))).toBase58();
-}
 
 /** The same floor `buildUniverse` applies, so a pair that is paid for actually appears. */
 const MIN_LIQUIDITY_USD = 1;
 
 /**
- * What a token already carries, and what more would cost.
+ * A token's pair, who may set it, and what setting it costs.
  *
  * Quoting is a read, so it needs no wallet. The COOK figure is deliberately a little above the
  * strict price: it is signed now and confirms later, and COOK moves in between.
- *
- * `liquidityUsd` is said here so the panel can refuse to take money for a token with no pool: a pair
- * on a token nobody can trade would never appear in the terminal, and the dollar would buy nothing.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const mint = url.searchParams.get("mint")?.trim();
   if (!mint) return NextResponse.json({ error: "mint is required" }, { status: 400 });
 
-  const wanted = (url.searchParams.get("tickers") ?? "")
-    .split(",")
-    .map((t) => t.trim().toUpperCase())
-    .filter(Boolean);
-
   try {
-    const [carried, pin, cookPriceUsd, history, creator, markets] = await Promise.all([
-      carriedFor(mint),
+    const [pin, listed, cookPriceUsd, history, creator, markets] = await Promise.all([
       benchmarks().then((b) => b.get(mint) ?? null),
+      listedFor(mint),
       fetchCookPriceUsd(),
       listingsFor(mint),
       tokenCreator(mint),
       fetchMarkets(),
     ]);
-    const billable = billableTickers(wanted, carried);
     const liquidityUsd = liquidityByMint(markets).get(mint) ?? 0;
 
     return NextResponse.json({
       mint,
       /** The benchmark picked at launch, when the token was launched here. */
       pin,
-      carried,
-      billable,
+      /** The token's one pair, however it was set. Null means it can still be set. */
+      pair: pin ?? listed,
       liquidityUsd,
       tradeable: liquidityUsd >= MIN_LIQUIDITY_USD,
-      // Said so the panel can name who earns the creator share, not to gate anything.
+      /** The only wallet that may set the pair. */
       creator: creator?.wallet ?? null,
       creatorSource: creator?.source ?? null,
+      operator: COORWA_OPERATOR || null,
       cookPriceUsd,
-      fundsAccount: vaultFunds(),
       history,
-      ...listingQuote(billable.length, cookPriceUsd),
+      ...listingQuote(cookPriceUsd),
     });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "could not price the listing" },
+      { error: e instanceof Error ? e.message : "could not price the pair" },
       { status: 502 },
     );
   }
 }
 
 const Body = z.object({
-  /** The `fund` transaction that paid for this batch. */
+  /** The transfer to the operator that paid for the pair. */
   signature: z.string().min(64).max(128),
   mint: z.string().min(32).max(44),
   payer: z.string().min(32).max(44),
-  tickers: z.array(z.string().min(1).max(12)).min(1).max(16),
+  ticker: z.string().min(1).max(12),
 });
 
 /**
- * Turn a payment into listings.
+ * Turn a payment into the token's pair.
  *
- * Anyone may pay for a pair on any token. The payer gains nothing by it: the dollar goes to the
- * token's holders, and the fees the pair generates go to its holders and the token's creator.
- *
- * Nothing here is taken on the client's word. The transaction is read back from the chain, has to
- * have been signed by the payer, and has to have actually credited the vault's funds account - the
- * amount that landed there is what decides how many pairs it bought, priced at the time it is read
- * rather than at whatever was quoted. One transaction buys one batch: the signature is checked
- * against the table first, so a payment cannot be presented twice.
+ * Nothing here is taken on the client's word. The payer has to be the token's creator, the token
+ * must not have a pair yet, and the transaction is read back from the chain: signed by the payer,
+ * and actually crediting the operator with enough COOK, priced when it is read. One transaction
+ * sets one pair, so a payment cannot be presented twice.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -112,28 +92,43 @@ export async function POST(req: Request) {
     );
   }
   const b = parsed.data;
+  const asset = rwaByTicker(b.ticker);
+  if (!asset) return NextResponse.json({ error: "unknown asset" }, { status: 400 });
+  if (!COORWA_OPERATOR) {
+    return NextResponse.json({ error: "no operator is configured here" }, { status: 503 });
+  }
 
   try {
-    if (await signatureSpent(b.signature)) {
+    const creator = await tokenCreator(b.mint);
+    if (!creator || creator.wallet !== b.payer) {
       return NextResponse.json(
-        { error: "that payment has already bought its pairs", recorded: 0 },
+        { error: "only the token's creator can set its pair" },
+        { status: 403 },
+      );
+    }
+    const [pin, listed] = await Promise.all([
+      benchmarks().then((m) => m.get(b.mint) ?? null),
+      listedFor(b.mint),
+    ]);
+    if (pin ?? listed) {
+      return NextResponse.json(
+        { error: `this token is already paired with ${pin ?? listed}` },
         { status: 409 },
       );
+    }
+    if (await signatureSpent(b.signature)) {
+      return NextResponse.json({ error: "that payment has already been used" }, { status: 409 });
     }
 
     const proof = await proveTransaction({ signature: b.signature, wallet: b.payer });
     if (!isProven(proof)) {
-      return NextResponse.json({ error: proof.error, recorded: 0 }, { status: proof.status });
+      return NextResponse.json({ error: proof.error }, { status: proof.status });
     }
 
-    const paidRaw = tokenCredited(proof, vaultFunds(), COOK_MINT);
+    const paidRaw = lamportsCredited(proof, COORWA_OPERATOR);
     if (paidRaw == null || paidRaw <= 0n) {
       return NextResponse.json(
-        {
-          error: "that transaction did not pay the cashback vault",
-          hint: "a listing is bought by funding the vault, which is what the panel builds",
-          recorded: 0,
-        },
+        { error: "that transaction did not pay the operator" },
         { status: 403 },
       );
     }
@@ -141,38 +136,32 @@ export async function POST(req: Request) {
     const cookPriceUsd = await fetchCookPriceUsd();
     if (!cookPriceUsd) {
       return NextResponse.json(
-        { error: "no COOK price available, so the payment cannot be valued", recorded: 0 },
+        { error: "no COOK price available, so the payment cannot be valued" },
         { status: 503 },
       );
     }
 
     const paidUsd = cookToUsd(paidRaw, cookPriceUsd);
-    // Billable first, so a payment is never spent on a pair the token already carries.
-    const billable = billableTickers(b.tickers, await carriedFor(b.mint));
-    const affordable = billable.slice(0, pairsPaidFor(paidUsd));
+    if (!paymentCovers(paidUsd)) {
+      return NextResponse.json(
+        { error: `the payment was worth $${paidUsd.toFixed(2)}, less than the pair costs` },
+        { status: 402 },
+      );
+    }
 
-    const { recorded } = await recordListings({
+    const recorded = await recordListing({
       mint: b.mint,
-      tickers: affordable,
+      ticker: asset.ticker,
       payer: b.payer,
       signature: b.signature,
       paidRaw,
       paidUsd,
     });
 
-    return NextResponse.json({
-      recorded,
-      listed: affordable.slice(0, recorded),
-      paidUsd,
-      asked: billable.length,
-      note:
-        recorded < billable.length
-          ? "the payment covered fewer pairs than were asked for, so the rest were not listed"
-          : undefined,
-    });
+    return NextResponse.json({ recorded, pair: asset.ticker, paidUsd });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "could not record the listing", recorded: 0 },
+      { error: e instanceof Error ? e.message : "could not record the pair" },
       { status: 502 },
     );
   }

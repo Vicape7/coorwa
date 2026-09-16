@@ -101,25 +101,31 @@ export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuE
 // --- Coorwa economics ---------------------------------------------------------------------------
 
 /**
+ * The operator wallet: every fee Coorwa collects lands here, and holder rewards are paid out of it.
+ *
+ * This is custodial on purpose, the way StonkFun's own payout wallets are. Rewards are paid in the
+ * pair's asset on Solana, and buying that asset on Jupiter needs a key to sign it, so the day's fees
+ * sit here between collection and payout. The key is `COORWA_OPERATOR_KEY`, a server secret; this
+ * is only its public address, needed in the browser to build a pair payment.
+ */
+export const COORWA_OPERATOR = process.env.NEXT_PUBLIC_COORWA_OPERATOR?.trim() || "";
+
+/**
  * MomoSwap pays the referrer 20% of its 1% curve trade fee, out of the same fee either way - with
  * no referrer the program folds that share into its treasury instead. So naming Coorwa costs the
- * trader nothing and is the honest source of launchpad-side cashback.
+ * trader nothing. Defaults to the operator, so the referral share lands where rewards are paid from.
  */
-export const COORWA_REFERRER = process.env.COORWA_REFERRER?.trim() || "";
+export const COORWA_REFERRER = process.env.COORWA_REFERRER?.trim() || COORWA_OPERATOR;
 export const MOMOSWAP_TRADE_FEE_BPS = 100;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
 /**
- * What one TOKEN/RWA pair costs, in USD, paid in COOK into the cashback vault, by anyone.
+ * What a token's one pair costs, in USD, paid in COOK to the operator by the token's creator.
  *
- * A token launched through Coorwa gets its first pair free, picked at launch. Every other pair, and
- * every pair on a token from anywhere else, is paid for, which is the only thing keeping the list
- * honest: a dollar is nothing to someone who means it and enough to stop a bot listing sixteen pairs
- * on a dead token.
- *
- * The money is not Coorwa's. It goes into the same vault the rewards are paid out of, through the
- * same permissionless `fund` instruction anyone can call, and joins that token's holder pool
- * (`holderPools` in `epochs.ts`), rather than going to whoever runs this.
+ * A token has exactly one pair, and the pair is the asset its holders are paid in. A token launched
+ * through Coorwa gets it free, picked at launch. A token from anywhere else gets it once its creator
+ * pays this, which keeps the list to tokens somebody actually stands behind. The dollar joins that
+ * token's holder rewards.
  */
 export const PAIR_LISTING_USD = 1;
 
@@ -157,7 +163,7 @@ export const CASHBACK_SPLIT = {
  * never clear the claim minimum anyway. Applied only when the token has a price; a token with none
  * shares its pool over every wallet holding any.
  */
-export const HOLDER_MIN_USD = 1;
+export const HOLDER_MIN_USD = 5;
 
 export const DEFAULT_SLIPPAGE_BPS = 500;
 

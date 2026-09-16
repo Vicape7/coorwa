@@ -1,25 +1,16 @@
 /**
- * Paid pairs: TOKEN/RWA pairs somebody bought for a token.
+ * A token's one pair, for tokens that were not launched through Coorwa.
  *
- * A pair only exists because somebody chose it. A token launched through Coorwa starts with the one
- * benchmark its creator picked at launch; any other token starts with none and is not in the
- * terminal at all. Every pair past that is bought at `PAIR_LISTING_USD`, by anyone, for any token
- * with a real pool. The fee is the filter: a dollar is nothing to somebody who means it, and enough
- * that nobody lists sixteen dead pairs for the sake of it.
+ * A pair is the asset a token's holders are paid in, so a token has exactly one and it belongs to the
+ * token's creator to choose. A token launched here gets it at launch (`launches.ts`). Any other token
+ * has none, and is not in the terminal, until its creator pays `PAIR_LISTING_USD` once and picks it.
+ * Nobody else can set it and it cannot be changed, because holders buy a token expecting to be paid
+ * in that asset.
  *
- * Anyone may pay, not only the token's creator, because the payer gains nothing from it. The dollar
- * goes to the token's holders, and the fees the pair then generates go to its holders and to the
- * token's creator, whoever listed it.
- *
- * The money never touches Coorwa. It is paid by calling `fund` on the cashback vault, which the
- * program lets anyone call, so it lands in the same account the rewards are paid out of. It joins
- * the token's holder pool (`holderPools` in `epochs.ts`), which each epoch shares out over whoever
- * holds the token at its snapshot.
- *
- * Optional like the rest of the database. With no DATABASE_URL nothing is listed and nothing can be
- * bought.
+ * The payment is a plain COOK transfer to the operator, and the dollar joins the token's holder
+ * rewards. Optional like the rest of the database: with no DATABASE_URL nothing can be listed.
  */
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
 import { cached } from "./http";
 import { COOK_DECIMALS, PAIR_LISTING_USD } from "./config";
@@ -37,94 +28,72 @@ export interface Listing {
 }
 
 /**
- * Which of these are worth paying for. `carried` is what the token already has: its launch
- * benchmark, if it was launched here, and anything bought before.
- */
-export function billableTickers(wanted: readonly string[], carried: readonly string[]): string[] {
-  const have = new Set<string>(carried);
-  const out: string[] = [];
-  for (const raw of wanted) {
-    const asset = rwaByTicker(raw);
-    if (!asset || have.has(asset.ticker)) continue;
-    have.add(asset.ticker);
-    out.push(asset.ticker);
-  }
-  return out;
-}
-
-/**
- * How many pairs a payment actually bought.
+ * Whether a payment covers the pair.
  *
- * Priced at what reached the vault rather than at what was quoted, because COOK moves between the
+ * Priced at what reached the operator rather than at what was quoted, because COOK moves between the
  * two and a quote is not a promise. The grace is there so a payment that was correct when it was
  * signed does not come up one cent short by the time it confirms.
  */
-export function pairsPaidFor(paidUsd: number): number {
-  if (!(paidUsd > 0)) return 0;
-  return Math.floor(paidUsd / PAIR_LISTING_USD + 0.02);
+export function paymentCovers(paidUsd: number): boolean {
+  return paidUsd > 0 && paidUsd / PAIR_LISTING_USD + 0.02 >= 1;
 }
 
-/** What to charge for a set of pairs, in COOK at the price given. */
-export function listingQuote(pairs: number, cookPriceUsd: number | null) {
-  const usd = pairs * PAIR_LISTING_USD;
-  // A little over the line, for the same reason `pairsPaidFor` forgives a little under it.
+/** What to charge for the pair, in COOK at the price given. */
+export function listingQuote(cookPriceUsd: number | null) {
+  const usd = PAIR_LISTING_USD;
+  // A little over the line, for the same reason `paymentCovers` forgives a little under it.
   const cook = cookPriceUsd && cookPriceUsd > 0 ? (usd * 1.02) / cookPriceUsd : null;
-  return { pairs, usd, cook, pricePerPairUsd: PAIR_LISTING_USD };
+  return { usd, cook };
 }
 
-export async function listedFor(mint: string): Promise<string[]> {
-  if (!dbEnabled || !db) return [];
-  const rows = await db
+/** The pair bought for a token, if one was. The oldest row wins, from before one pair was the rule. */
+export async function listedFor(mint: string): Promise<string | null> {
+  if (!dbEnabled || !db) return null;
+  const [row] = await db
     .select({ ticker: schema.listings.ticker })
     .from(schema.listings)
-    .where(eq(schema.listings.mint, mint));
-  return rows.map((r) => r.ticker);
+    .where(eq(schema.listings.mint, mint))
+    .orderBy(schema.listings.createdAt)
+    .limit(1);
+  return row?.ticker ?? null;
 }
 
 /**
- * Every paid benchmark, as mint -> tickers.
+ * Every bought pair, as mint -> ticker.
  *
  * Read on every universe build, so it is cached briefly. Small by construction: it only holds pairs
  * somebody paid for.
  */
-export async function listedByMint(): Promise<Map<string, string[]>> {
+export async function listedByMint(): Promise<Map<string, string>> {
   if (!dbEnabled || !db) return new Map();
 
   return cached("listings:byMint", 30_000, async () => {
     const rows = await db!
       .select({ mint: schema.listings.mint, ticker: schema.listings.ticker })
-      .from(schema.listings);
+      .from(schema.listings)
+      .orderBy(schema.listings.createdAt);
 
-    const out = new Map<string, string[]>();
+    const out = new Map<string, string>();
     for (const r of rows) {
       // An asset dropped from RWA_ASSETS since it was bought cannot be priced, so it is left out
       // rather than pinning the token to something the app can no longer quote.
-      if (!rwaByTicker(r.ticker)) continue;
-      const list = out.get(r.mint);
-      if (list) list.push(r.ticker);
-      else out.set(r.mint, [r.ticker]);
+      if (!rwaByTicker(r.ticker) || out.has(r.mint)) continue;
+      out.set(r.mint, r.ticker);
     }
     return out;
   });
 }
 
-/**
- * Everything a token carries: its launch benchmark, if it has one, then whatever was bought. The same
- * set `quotesFor` in `pairs.ts` builds the terminal from.
- */
-export async function carriedFor(mint: string): Promise<string[]> {
+/** A token's pair: the one picked at launch, or else the one its creator bought. */
+export async function pairFor(mint: string): Promise<string | null> {
   const [pin, listed] = await Promise.all([benchmarks().then((b) => b.get(mint)), listedFor(mint)]);
-  return pin ? [pin, ...listed.filter((t) => t !== pin)] : listed;
+  return pin ?? listed;
 }
 
-/**
- * Does this token actually carry this benchmark? Asked before a fill is attributed to a pair,
- * because the pair decides who shares that pair's listing fees.
- */
+/** Does this token's pair use this asset? Asked before a fill is attributed to a pair. */
 export async function carriesBenchmark(mint: string, ticker: string): Promise<boolean> {
   const asset = rwaByTicker(ticker);
-  if (!asset) return false;
-  return (await carriedFor(mint)).includes(asset.ticker);
+  return asset != null && (await pairFor(mint)) === asset.ticker;
 }
 
 /** Has this payment already been spent on listings? One transaction buys one batch. */
@@ -138,37 +107,26 @@ export async function signatureSpent(signature: string): Promise<boolean> {
   return row != null;
 }
 
-export async function recordListings(args: {
+export async function recordListing(args: {
   mint: string;
-  tickers: string[];
+  ticker: string;
   payer: string;
   signature: string;
   paidRaw: bigint;
   paidUsd: number;
-}): Promise<{ recorded: number }> {
-  if (!dbEnabled || !db || args.tickers.length === 0) return { recorded: 0 };
+}): Promise<boolean> {
+  if (!dbEnabled || !db) return false;
 
   const rows = await db
     .insert(schema.listings)
-    .values(
-      args.tickers.map((ticker) => ({
-        mint: args.mint,
-        ticker,
-        payer: args.payer,
-        signature: args.signature,
-        paidRaw: args.paidRaw,
-        paidUsd: args.paidUsd,
-      })),
-    )
-    // Somebody else may have bought the same pair in the meantime. Their row stands and this one is
-    // dropped, which the caller reports back rather than hiding.
+    .values(args)
     .onConflictDoNothing({ target: [schema.listings.mint, schema.listings.ticker] })
     .returning({ ticker: schema.listings.ticker });
 
-  return { recorded: rows.length };
+  return rows.length > 0;
 }
 
-/** Everything bought for one token, newest first. Backs the receipt on the listing panel. */
+/** Every payment recorded for one token, newest first. Backs the receipt on the listing panel. */
 export async function listingsFor(mint: string): Promise<Listing[]> {
   if (!dbEnabled || !db) return [];
 
@@ -187,24 +145,6 @@ export async function listingsFor(mint: string): Promise<Listing[]> {
     paidUsd: r.paidUsd,
     createdAt: r.createdAt.toISOString(),
   }));
-}
-
-/** What a set of mints has listed, for a panel showing several tokens at once. */
-export async function listedForMany(mints: string[]): Promise<Map<string, string[]>> {
-  if (!dbEnabled || !db || mints.length === 0) return new Map();
-
-  const rows = await db
-    .select({ mint: schema.listings.mint, ticker: schema.listings.ticker })
-    .from(schema.listings)
-    .where(inArray(schema.listings.mint, mints));
-
-  const out = new Map<string, string[]>();
-  for (const r of rows) {
-    const list = out.get(r.mint);
-    if (list) list.push(r.ticker);
-    else out.set(r.mint, [r.ticker]);
-  }
-  return out;
 }
 
 /** Raw COOK as a USD figure, for pricing what actually reached the vault. */

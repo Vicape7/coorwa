@@ -16,10 +16,10 @@
  * the real TOKEN/wCOOK pool, and anyone wanting true RWA exposure exits through the cross-chain
  * route in `crosschain.ts`.
  *
- * A pair exists only because somebody chose it. A token launched through Coorwa starts with the
- * benchmark its creator picked at launch (`launches.ts`); anyone can buy it more. Any other token
- * starts with no pair and is not in the terminal until somebody buys one (`listings.ts`). With no
- * database there are no pairs at all.
+ * A token has exactly one pair, chosen by its creator: at launch for a token launched through Coorwa
+ * (`launches.ts`), or once, for a dollar, for any other token (`listings.ts`). The pair's asset is
+ * what the token's holders are paid in. A token without one is not in the terminal. With no database
+ * there are no pairs at all.
  */
 import { COOK_MINT } from "./config";
 import {
@@ -96,9 +96,8 @@ export interface PairUniverse {
 }
 
 /**
- * Which assets a token may be quoted against: the benchmark its creator picked at launch, if it was
- * launched here, plus every pair somebody paid for. Nothing else, so a token nobody chose a pair for
- * is not in the terminal.
+ * Which asset a token is quoted against: the benchmark its creator picked at launch, or else the one
+ * its creator bought. At most one, and nothing for a token with neither.
  *
  * The narrowing matters: asking for one asset a token does not carry has to come back empty rather
  * than falling back to the full set, or `findPair("token-nvda")` would happily resolve a pair
@@ -106,12 +105,11 @@ export interface PairUniverse {
  */
 export function quotesFor<T extends { ticker: string }>(
   pin: string | undefined,
-  listed: readonly string[] | undefined,
+  listed: string | undefined,
   requested: readonly T[],
 ): readonly T[] {
-  const carried = new Set<string>(listed ?? []);
-  if (pin) carried.add(pin);
-  return requested.filter((a) => carried.has(a.ticker));
+  const pair = pin ?? listed;
+  return pair ? requested.filter((a) => a.ticker === pair) : [];
 }
 
 function slugify(symbol: string, ticker: string): string {

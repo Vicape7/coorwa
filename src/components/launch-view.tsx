@@ -309,10 +309,10 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             ))}
           </select>
           <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
-            Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark}, for free.
-            More pairs can be added later for $1 each, by anyone, on the pools page. Liquidity is
-            still the COOK curve, the way it is everywhere on this chain; the benchmark is what the
-            price is quoted and charted in. This first one is fixed at launch, like the name.
+            Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark}, and its
+            holders are paid their rewards in {benchmark}. It is the token&apos;s only pair and is
+            fixed at launch, like the name. Liquidity is still the COOK curve, the way it is
+            everywhere on this chain; the asset is what the price is quoted and charted in.
           </p>
         </Labeled>
 

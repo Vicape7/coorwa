@@ -72,6 +72,19 @@ export function tokenCredited(
   return BigInt(after) - BigInt(before ?? "0");
 }
 
+/**
+ * How much native COOK an address gained on this transaction, in raw units. The swap fee and the pair
+ * payment are plain transfers to the operator, so this is what proves either was paid.
+ */
+export function lamportsCredited(proof: ProvenTransaction, account: string): bigint | null {
+  const index = proof.keys.indexOf(account);
+  if (index < 0) return null;
+  const before = proof.tx.meta?.preBalances?.[index];
+  const after = proof.tx.meta?.postBalances?.[index];
+  if (typeof before !== "number" || typeof after !== "number") return null;
+  return BigInt(after) - BigInt(before);
+}
+
 export async function proveTransaction(args: {
   signature: string;
   /** The wallet asking for the credit. It has to be the fee payer. */
