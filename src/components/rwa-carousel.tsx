@@ -250,11 +250,18 @@ export function RwaCarousel() {
           >
             <div className="rwa-orbit-face">
               {/*
-                next/image here and a plain <img> in TokenMark, on purpose. Token logos come from
-                arbitrary IPFS gateways, which the optimiser's allowlist cannot cover; these come
-                from one fixed Backed host and are 400px squares drawn at about a quarter of that.
+                Local copies of the Backed logos with the xStocks "X" painted out, so the hero shows
+                the company marks alone. Everywhere else keeps `asset.logo`, where the X tells a
+                trader the token is the tokenised share. A benchmark added to `rwa.ts` needs its
+                file in public/rwa too.
               */}
-              <Image src={asset.logo} alt={asset.name} fill sizes="120px" draggable={false} />
+              <Image
+                src={`/rwa/${asset.ticker}.png`}
+                alt={asset.name}
+                fill
+                sizes="120px"
+                draggable={false}
+              />
             </div>
           </div>
         ))}
