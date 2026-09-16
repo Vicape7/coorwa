@@ -235,7 +235,7 @@ export function RewardsView() {
 
             <p className="mt-3 text-[12px] leading-relaxed text-subtle">
               {blocked ??
-                "The claim is yours to sign. Coorwa publishes a merkle root of who is owed what, and the program pays your line against your own proof - it never holds a key that could pay anyone else."}
+                "The claim is yours to sign. Every day Coorwa publishes a merkle root of who is owed what, and the program pays your line only against your own proof and your own signature."}
             </p>
 
             {vault && vault.lines.length > 0 && <EpochLines lines={vault.lines} />}

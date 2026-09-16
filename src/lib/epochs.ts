@@ -30,7 +30,9 @@ import { db, dbEnabled, schema } from "./db";
 import { buildEpochTree, verifyProof, type Entitlement } from "./merkle";
 import { fetchCookPriceUsd } from "./cookiescan";
 import { snapshotHolders } from "./holders";
+import { publisherKeypair } from "./publisher";
 import {
+  AUTO_EPOCH_EVERY_MS,
   CASHBACK_CLAIM_WINDOW_DAYS,
   CASHBACK_MIN_CLAIM_COOK,
   CASHBACK_SPLIT,
@@ -375,6 +377,22 @@ async function windowStart(asOf: Date): Promise<Date> {
     .orderBy(desc(epochs.asOf))
     .limit(1);
   return last?.asOf ?? new Date(0);
+}
+
+/**
+ * When the open epoch becomes due for automatic publishing: a full `AUTO_EPOCH_EVERY_MS` after the
+ * first real holder sample since the last published epoch. Null while no token has been sampled,
+ * which means nothing has accrued that a holder could be paid from.
+ */
+export async function autoEpochDueAt(now = new Date()): Promise<Date | null> {
+  const conn = requireDb();
+  const { holderSamples } = schema;
+  const from = await windowStart(now);
+  const [first] = await conn
+    .select({ at: sql<Date | null>`min(${holderSamples.takenAt})` })
+    .from(holderSamples)
+    .where(and(sql`${holderSamples.mint} <> ''`, gt(holderSamples.takenAt, from)));
+  return first?.at ? new Date(new Date(first.at).getTime() + AUTO_EPOCH_EVERY_MS) : null;
 }
 
 /** Every sample row for these mints inside (from, to], grouped by mint. */
@@ -1092,6 +1110,8 @@ export interface EpochOverview {
   epochs: EpochRow[];
   /** Epochs whose window has passed and whose reserve anyone may return to the vault. */
   closable: string[];
+  /** The server key that publishes epochs on its own, when this deployment has one. */
+  publisher: { address: string; cook: number; dueAt: string | null } | null;
 }
 
 export async function overview(): Promise<EpochOverview> {
@@ -1100,7 +1120,18 @@ export async function overview(): Promise<EpochOverview> {
   const snapshot = deployed ? await fetchVault(connection, MINT) : null;
   const vault = snapshot ? vaultView(snapshot) : null;
 
-  if (!dbEnabled || !db) return { configured: false, deployed, vault, epochs: [], closable: [] };
+  const key = publisherKeypair();
+  const publisherBase = key
+    ? {
+        address: key.publicKey.toBase58(),
+        cook: toCook(BigInt(await connection.getBalance(key.publicKey))),
+      }
+    : null;
+
+  if (!dbEnabled || !db) {
+    const publisher = publisherBase ? { ...publisherBase, dueAt: null } : null;
+    return { configured: false, deployed, vault, epochs: [], closable: [], publisher };
+  }
 
   const stored = await db.select().from(schema.epochs).orderBy(desc(schema.epochs.index)).limit(24);
   const chain = deployed
@@ -1129,7 +1160,12 @@ export async function overview(): Promise<EpochOverview> {
     return row;
   });
 
-  return { configured: true, deployed, vault, epochs, closable };
+  const dueAt = publisherBase ? await autoEpochDueAt() : null;
+  const publisher = publisherBase
+    ? { ...publisherBase, dueAt: dueAt?.toISOString() ?? null }
+    : null;
+
+  return { configured: true, deployed, vault, epochs, closable, publisher };
 }
 
 /**

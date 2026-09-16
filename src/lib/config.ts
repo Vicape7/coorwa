@@ -188,6 +188,23 @@ export const VAULT_MINT = COOK_MINT;
  */
 export const VAULT_AUTHORITY = process.env.NEXT_PUBLIC_VAULT_AUTHORITY?.trim() || "";
 
+/**
+ * How long an epoch runs before the server publishes it on its own. Counted from the first holder
+ * sample after the previous epoch, so an epoch is never built from one snapshot of a wallet that
+ * bought a minute earlier.
+ */
+export const AUTO_EPOCH_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The largest epoch the server publishes without a person. The publisher key lives on the server,
+ * and whoever steals it can publish a root that pays only themselves, so this caps what one stolen
+ * root can take. Raise it with AUTO_EPOCH_MAX_USD when real volume arrives.
+ */
+export const AUTO_EPOCH_MAX_USD = Number(process.env.AUTO_EPOCH_MAX_USD) || 100;
+
+/** How long the automatic run waits before rebuilding a draft another run may still be publishing. */
+export const AUTO_EPOCH_IN_FLIGHT_MS = 10 * 60 * 1000;
+
 /** How long a published epoch stays claimable before its remainder rolls into the next one. */
 export const CASHBACK_CLAIM_WINDOW_DAYS = 30;
 
