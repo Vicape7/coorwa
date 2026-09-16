@@ -131,7 +131,7 @@ Solana wallet where all of that is the issuer's problem and Jupiter's job.
   being credited. For a launchpad fill the size of the trade is capped by the COOK that actually
   moved, and the referral fee is credited only when Coorwa's referrer address is named on the
   transaction itself. For a swap, the fee is whatever the transaction actually paid the operator.
-- **Terminal swaps carry Coorwa's own 0.10% fee**, because neither Cookie Chain router will pay a
+- **Terminal swaps carry Coorwa's own 1% fee**, because neither Cookie Chain router will pay a
   referrer. Six plausible parameter names were tried on both aggregators and every quote came back
   identical, so there is nothing to collect unless Coorwa asks. It asks in the open: one COOK
   transfer to the operator appended to the aggregator's own transaction, shown on the panel before

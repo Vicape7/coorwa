@@ -129,7 +129,7 @@ export default function Home() {
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
           Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold, and
           to whoever made it. It comes from MomoSwap&apos;s referral share of the curve fee, which
-          costs a trader nothing, Coorwa&apos;s own 0.10% on a swap, and the dollar a creator pays for
+          costs a trader nothing, Coorwa&apos;s own 1% on a swap, and the dollar a creator pays for
           a pair. Once a day it is paid out in the token&apos;s stock, straight to holders&apos;
           wallets on Solana, with nothing to claim.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">

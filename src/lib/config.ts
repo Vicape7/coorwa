@@ -141,7 +141,7 @@ export const PAIR_LISTING_USD = 1;
  * the panel that it is charged, because a trader can always route around Coorwa and should be able
  * to see what routing through it costs.
  */
-export const COORWA_SWAP_FEE_BPS = 10;
+export const COORWA_SWAP_FEE_BPS = 100;
 
 /**
  * Where every fee Coorwa collects on a token goes back to: the launchpad referral share and the swap

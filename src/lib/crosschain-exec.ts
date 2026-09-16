@@ -160,7 +160,7 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
 
   let signature = await landedSignature(ctx.cookieConn, j.steps[i]?.signature);
   if (!signature) {
-    // A sale pays Coorwa's 0.10% on the COOK it produces, so the build needs the quoted output,
+    // A sale pays Coorwa's 1% on the COOK it produces, so the build needs the quoted output,
     // exactly as the terminal's own swap panel sends it.
     const quote = await getJson<{ all: { aggregator: string; outAmount: string }[] }>(
       `/api/quote?${new URLSearchParams({
