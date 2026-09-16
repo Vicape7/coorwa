@@ -46,9 +46,9 @@ export function LiveStats() {
     <div className="glass-pane rounded-[var(--radius-float)] p-2">
       <div className="grid grid-cols-2 sm:grid-cols-5">
         {cells.map((c) => (
-          <div key={c.label} className="px-5 py-4">
+          <div key={c.label} className="px-3 py-4 sm:px-5">
             <div className="label text-[12px]">{c.label}</div>
-            <div className="num mt-2 text-[19px] text-primary">
+            <div className="num mt-2 truncate text-[17px] text-primary sm:text-[19px]">
               {c.value ?? <span className="skeleton inline-block h-5 w-24 align-middle" />}
             </div>
           </div>

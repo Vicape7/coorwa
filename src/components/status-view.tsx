@@ -57,7 +57,7 @@ export function StatusView() {
         </p>
       </div>
 
-      <div className="card mt-10 p-8">
+      <div className="card mt-10 p-5 sm:p-8">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="title text-primary">Cookie Chain</h2>
           <span className="pill pill-quiet ml-auto">
@@ -70,7 +70,7 @@ export function StatusView() {
           </span>
         </div>
 
-        <div className="mt-6 grid gap-6 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
           <Figure label="Slot" value={data ? data.slot.toLocaleString("en-US") : null} />
           <Figure label="Block height" value={data ? data.blockHeight.toLocaleString("en-US") : null} />
           <Figure
@@ -87,7 +87,7 @@ export function StatusView() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div className="card p-8">
+        <div className="card p-5 sm:p-8">
           <h2 className="title text-primary">Services</h2>
           <p className="mt-1.5 text-[13px] text-muted">
             Read paths and transaction builders Coorwa calls.
@@ -102,7 +102,7 @@ export function StatusView() {
           </dl>
         </div>
 
-        <div className="card p-8">
+        <div className="card p-5 sm:p-8">
           <h2 className="title text-primary">Programs</h2>
           <p className="mt-1.5 text-[13px] text-muted">
             On-chain code Coorwa builds instructions against.
@@ -126,14 +126,14 @@ export function StatusView() {
         </div>
       </div>
 
-      <div className="card mt-4 p-8">
+      <div className="card mt-4 p-5 sm:p-8">
         <h2 className="title text-primary">Cross-chain capacity</h2>
         <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-muted">
           A cross-chain settle ends by swapping bridged COOK into an xStock on Solana, so the depth
           of COOK there is the real ceiling on trade size - not anything in Coorwa. It is shown here
           rather than discovered as slippage.
         </p>
-        <div className="mt-6 grid gap-6 sm:grid-cols-3">
+        <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
           <Figure
             label="COOK depth on Solana"
             value={data ? usd(data.bridge.cookLiquidityOnSolanaUsd) : null}
@@ -163,7 +163,8 @@ function Figure({ label, value }: { label: string; value: string | null }) {
 function Row({ label, value, note }: { label: string; value: string; note: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
-      <dt className="w-40 shrink-0 text-[14px] text-primary">{label}</dt>
+      {/* On a phone the name takes its own line, so an address is not squeezed to three letters. */}
+      <dt className="w-full text-[14px] text-primary sm:w-40 sm:shrink-0">{label}</dt>
       <dd className="num min-w-0 flex-1 truncate text-[12px] text-muted">{value}</dd>
       <dd className="text-[12px] text-subtle">{note}</dd>
     </div>

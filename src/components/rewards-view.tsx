@@ -382,13 +382,16 @@ function Fold({ title, children }: { title: string; children: React.ReactNode })
 function SimpleTable({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   return (
     <div className="mt-4 overflow-x-auto">
-      <table className="w-full min-w-[480px] text-[14px]">
+      {/* Four columns fit a phone as they are; wider tables keep their width and scroll sideways. */}
+      <table
+        className={`w-full text-[13px] sm:text-[14px] ${head.length > 4 ? "min-w-[480px]" : ""}`}
+      >
         <thead>
           <tr>
             {head.map((h, i) => (
               <th
                 key={h}
-                className={`label whitespace-nowrap py-2 text-[12px] font-normal ${
+                className={`label whitespace-nowrap py-2 pl-3 text-[12px] font-normal first:pl-0 ${
                   i === 0 ? "text-left" : "text-right"
                 }`}
               >
@@ -403,7 +406,7 @@ function SimpleTable({ head, rows }: { head: string[]; rows: React.ReactNode[][]
               {r.map((cell, j) => (
                 <td
                   key={j}
-                  className={`num py-2.5 ${j === 0 ? "text-left text-primary" : "text-right text-muted"}`}
+                  className={`num py-2.5 pl-3 first:pl-0 ${j === 0 ? "text-left text-primary" : "text-right text-muted"}`}
                 >
                   {cell}
                 </td>

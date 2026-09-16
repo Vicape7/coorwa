@@ -120,7 +120,7 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
   }, [publicKey, signTransaction, validMint, picked, quote, connection, mutate, onListed]);
 
   return (
-    <div className="card mt-10 p-7">
+    <div className="card mt-10 p-5 sm:p-7">
       <h2 className="title text-primary">Set a token&apos;s pair</h2>
       <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
         Every token has one pair, and its holders are paid in that asset. A token launched on Coorwa

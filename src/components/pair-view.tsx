@@ -51,7 +51,7 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
           </div>
         </div>
 
-        <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
           <Metric
             label="Price"
             value={rwaRatio(pair.price)}
@@ -78,28 +78,47 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
         </div>
       </div>
 
-      {/* Body */}
+      {/*
+       * Body. On a phone both columns dissolve into one list (`contents`) and `order` puts the swap
+       * panel right under the chart, instead of after every recent fill.
+       */}
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_396px]">
-        <div className="flex min-h-[460px] flex-col gap-4">
-          <RatioChart
-            mint={pair.base.mint}
-            ticker={pair.quote.ticker}
-            baseSymbol={pair.base.symbol}
-          />
-          <RecentTrades
-            mint={pair.base.mint}
-            baseSymbol={pair.base.symbol}
-            rwaPriceUsd={pair.quote.priceUsd}
-            ticker={pair.quote.ticker}
-          />
+        <div className="contents lg:flex lg:min-h-[460px] lg:flex-col lg:gap-4">
+          {/*
+            Every block is wrapped so it is the grid item itself: under `contents` the wrappers'
+            children join the grid directly, and a grid item without min-w-0 grows to its widest
+            row, which on a narrow phone pushed the chart's interval buttons past the screen. From lg
+            the wrappers are `contents` again, so the desktop columns lay out exactly as before.
+          */}
+          <div className="min-w-0 lg:contents">
+            <RatioChart
+              mint={pair.base.mint}
+              ticker={pair.quote.ticker}
+              baseSymbol={pair.base.symbol}
+            />
+          </div>
+          <div className="order-3 min-w-0 lg:contents">
+            <RecentTrades
+              mint={pair.base.mint}
+              baseSymbol={pair.base.symbol}
+              rwaPriceUsd={pair.quote.priceUsd}
+              ticker={pair.quote.ticker}
+            />
+          </div>
         </div>
 
-        <div className="space-y-4">
-          <SwapPanel pair={pair} />
+        <div className="contents lg:block lg:space-y-4">
+          <div className="order-2 min-w-0 lg:contents">
+            <SwapPanel pair={pair} />
+          </div>
 
-          <HolderRewards pair={pair} />
+          <div className="order-4 min-w-0 lg:contents">
+            <HolderRewards pair={pair} />
+          </div>
 
-          <PairFacts pair={pair} />
+          <div className="order-5 min-w-0 lg:contents">
+            <PairFacts pair={pair} />
+          </div>
         </div>
       </div>
     </div>

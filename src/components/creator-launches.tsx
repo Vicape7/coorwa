@@ -49,7 +49,7 @@ export function CreatorLaunches({
   if (!wallet || mine.length === 0) return null;
 
   return (
-    <div className="card p-7">
+    <div className="card p-5 sm:p-7">
       <h2 className="title text-primary">Your launches</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         MomoSwap pays you 0.35% of every trade on your curve. It accrues on the pool and is claimed

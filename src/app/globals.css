@@ -229,6 +229,17 @@ html {
 }
 
 /*
+ * No page ever scrolls sideways. Anything wider than the screen (a table, the ring's outer tiles)
+ * already scrolls or clips inside its own box; this is the backstop for mobile browsers that pan the
+ * whole page anyway. `clip` rather than `hidden`, because `hidden` would turn body into a scroll
+ * container and break the sticky nav.
+ */
+html,
+body {
+  overflow-x: clip;
+}
+
+/*
  * No background on body, deliberately. The page tint lives on <html> and reaches the canvas from
  * there; painting it again here would sit on top of the negative-z-index aurora field, which is a
  * descendant of body and therefore renders *behind* body's own background.
@@ -242,6 +253,22 @@ body {
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * A grid item's minimum width defaults to its content, so one long address or table in a single
+ * column grid pushed the whole page wider than a phone. Letting items shrink keeps every grid
+ * inside the screen; anything that really needs width scrolls in its own overflow wrapper.
+ */
+.grid > * {
+  min-width: 0;
+}
+
+/* Room under the last line of every page for the tab bar that holds the links on a phone. */
+@media (max-width: 1023px) {
+  body {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
 }
 
 /* --- Typography ------------------------------------------------------------------------------ */
@@ -833,6 +860,9 @@ body {
     linear-gradient(180deg, #000 62%, transparent 98%);
   -webkit-mask-composite: source-in;
   overflow: hidden;
+  /* Paint containment clips the moving tiles even where Safari lets a masked, composited child
+   * escape `overflow: hidden` and widen the page. */
+  contain: paint;
 }
 
 .rwa-orbit-track {
@@ -879,8 +909,11 @@ body {
 }
 
 @media (max-width: 640px) {
+  /* Out to the screen edges, past the section's 20px gutter, so tiles fade out at the glass edge
+   * instead of being cut off 20px inside it. */
   .rwa-orbit {
     --rwa-tile: 68px;
+    margin-inline: -20px;
   }
 
   .rwa-orbit-track {

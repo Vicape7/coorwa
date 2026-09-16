@@ -46,21 +46,34 @@ export function Nav() {
         </div>
       </div>
 
-      {/* Below lg the links move to their own scrollable row so the island never wraps. */}
-      <nav className="mx-auto mt-2 flex max-w-[1240px] items-center gap-1.5 overflow-x-auto pb-1 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {LINKS.map((l) => {
-          const active = isActive(pathname, l.href);
-          return (
-            <Link
-              key={l.href}
-              href={l.href}
-              aria-current={active ? "page" : undefined}
-              className={active ? "pill pill-active shrink-0" : "pill glass shrink-0"}
-            >
-              {l.label}
-            </Link>
-          );
-        })}
+      {/*
+       * Below lg the links live in a glass tab bar at the bottom of the screen, where a thumb reaches
+       * them. As a second row under the island they scrolled over the page with nothing behind the
+       * text, and the sticky header took a sixth of a phone screen.
+       */}
+      <nav
+        aria-label="Sections"
+        className="fixed inset-x-3 bottom-[calc(12px+env(safe-area-inset-bottom))] z-40 lg:hidden"
+      >
+        <div className="glass glass-bar mx-auto flex max-w-[480px] items-center gap-1 rounded-full p-1.5 shadow-[var(--shadow-soft)]">
+          {LINKS.map((l) => {
+            const active = isActive(pathname, l.href);
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                aria-current={active ? "page" : undefined}
+                className={
+                  active
+                    ? "nav-chip flex-1 rounded-full py-2.5 text-center text-[13px] font-medium text-primary"
+                    : "flex-1 rounded-full py-2.5 text-center text-[13px] text-muted"
+                }
+              >
+                {l.label}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
     </header>
   );

@@ -132,7 +132,18 @@ export function PairList({
       )}
 
       <div className="card mt-4 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* On a phone seven columns only ever showed two, so each pair becomes one compact row. */}
+        <ul className="sm:hidden">
+          {isLoading && !data
+            ? Array.from({ length: 6 }).map((_, i) => (
+                <li key={i} className="border-b border-hair px-4 py-4 last:border-0">
+                  <div className="skeleton h-8 w-full" />
+                </li>
+              ))
+            : rows.map((p) => <MobileRow key={p.slug} pair={p} />)}
+        </ul>
+
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[900px] text-[14px]">
             <thead>
               <tr className="border-b border-hair">
@@ -173,7 +184,7 @@ export function PairList({
 
       {data && (
         <p className="mt-4 text-[12px] text-subtle">
-          {data.pairs.length} pairs · COOK at <span className="num">{usd(data.cookPriceUsd)}</span>{" "}
+          {data.pairs.length} {data.pairs.length === 1 ? "pair" : "pairs"} · COOK at <span className="num">{usd(data.cookPriceUsd)}</span>{" "}
           · refreshed every 20s. Liquidity is summed across every pool a token trades in.
         </p>
       )}
@@ -241,6 +252,40 @@ function Row({ pair }: { pair: CoorwaPair }) {
         <span className="pill pill-quiet text-[11px]">{pair.venue ?? "—"}</span>
       </td>
     </tr>
+  );
+}
+
+function MobileRow({ pair }: { pair: CoorwaPair }) {
+  return (
+    <li className="border-b border-hair last:border-0">
+      <Link
+        href={`/terminal/${pair.slug}`}
+        className="row-hover flex items-center gap-3 px-4 py-3.5"
+      >
+        <TokenMark logo={pair.base.logo} symbol={pair.base.symbol} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] text-primary">
+            {pair.base.symbol}
+            <span className="text-subtle"> / {pair.quote.ticker}</span>
+          </span>
+          <span className="block truncate text-[12px] text-subtle">
+            Liq <span className="num">{usd(pair.base.liquidityUsd)}</span>
+            {pair.base.volume24h ? (
+              <>
+                {" "}
+                · Vol <span className="num">{usd(pair.base.volume24h)}</span>
+              </>
+            ) : null}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="num block text-[15px] text-primary">{rwaRatio(pair.price)}</span>
+          <span className={`num block text-[12px] ${toneClass(pair.change24h)}`}>
+            {pair.change24h == null ? "—" : pct(pair.change24h)}
+          </span>
+        </span>
+      </Link>
+    </li>
   );
 }
 

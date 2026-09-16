@@ -254,7 +254,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
   const unavailable = config?.paused || config?.momoReady === 0;
 
   return (
-    <div className="card p-7">
+    <div className="card p-5 sm:p-7">
       <h2 className="title text-primary">Create</h2>
       <p className="mt-1.5 text-[13px] text-muted">
         Metadata is immutable once minted - the logo and name cannot be changed later.
@@ -447,7 +447,7 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
   ];
 
   return (
-    <div className="card p-7">
+    <div className="card p-5 sm:p-7">
       <h2 className="title text-primary">Where the {fees.totalPct.toFixed(0)}% trade fee goes</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         Percentages are of the trade, not of the fee. The referral slice is paid out of the same fee
@@ -457,10 +457,10 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
 
       <dl className="mt-5 divide-y divide-[color:var(--divider)]">
         {rows.map(([label, pct, note]) => (
-          <div key={label} className="flex items-baseline gap-4 py-3">
-            <dt className="w-36 shrink-0 text-[14px] text-primary">{label}</dt>
-            <dd className="num w-16 shrink-0 text-[14px] text-primary">{pct}</dd>
-            <dd className="text-[13px] text-muted">{note}</dd>
+          <div key={label} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-3">
+            <dt className="flex-1 text-[14px] text-primary sm:w-36 sm:flex-none">{label}</dt>
+            <dd className="num shrink-0 text-[14px] text-primary sm:w-16">{pct}</dd>
+            <dd className="w-full text-[13px] text-muted sm:w-auto sm:flex-1">{note}</dd>
           </div>
         ))}
       </dl>
@@ -502,7 +502,7 @@ function LivePools({
   onSelect: (pubkey: string | null) => void;
 }) {
   return (
-    <div className="card p-7">
+    <div className="card p-5 sm:p-7">
       <h2 className="title text-primary">On the curve</h2>
       <p className="mt-1.5 text-[13px] text-muted">
         Pools climbing toward graduation. Pick one to trade it.

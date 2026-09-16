@@ -77,7 +77,66 @@ export function PoolsView() {
       </div>
 
       <div className="card mt-4 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* A phone gets one card per pair: what it is, its pool, its depth, and the Deposit button. */}
+        <ul className="sm:hidden">
+          {loading &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="border-b border-hair px-4 py-4 last:border-0">
+                <div className="skeleton h-10 w-full" />
+              </li>
+            ))}
+          {pools.map((p) => (
+            <li key={p.slug} className="border-b border-hair px-4 py-3.5 last:border-0">
+              <div className="flex items-center gap-3">
+                <a href={`/terminal/${p.slug}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <TokenMark logo={p.base.logo} symbol={p.base.symbol} size={32} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] text-primary">
+                      {p.base.symbol}
+                      <span className="text-subtle"> / {p.rwa.ticker}</span>
+                    </span>
+                    <span className="block truncate text-[12px] text-subtle">
+                      {p.base.symbol} / {p.quote.symbol} · {p.venue}
+                    </span>
+                  </span>
+                </a>
+                {p.manageable ? (
+                  <button className="btn btn-ghost btn-sm shrink-0" onClick={() => setSelected(p)}>
+                    Deposit
+                  </button>
+                ) : (
+                  <span className="label shrink-0 text-[12px]">View only</span>
+                )}
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted">
+                <span>
+                  Liq <span className="num text-primary">{usd(p.liquidityUsd)}</span>
+                </span>
+                <span>
+                  24h{" "}
+                  <span
+                    className="num"
+                    style={{
+                      color:
+                        p.change24h == null
+                          ? "var(--text-subtle)"
+                          : p.change24h >= 0
+                            ? "var(--color-up)"
+                            : "var(--color-down)",
+                    }}
+                  >
+                    {p.change24h == null ? "—" : pct(p.change24h)}
+                  </span>
+                </span>
+                <span>
+                  Vol <span className="num">{p.volume24h ? usd(p.volume24h) : "—"}</span>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[820px] text-[14px]">
             <thead>
               <tr>
@@ -170,7 +229,7 @@ export function PoolsView() {
 
       {data && pools.length > 0 && (
         <p className="mt-4 text-[12px] text-subtle">
-          {data.count} pairs · {data.manageableCount} backed by a Cookiebox DAMM v2 pool Coorwa can
+          {data.count} {data.count === 1 ? "pair" : "pairs"} · {data.manageableCount} backed by a Cookiebox DAMM v2 pool Coorwa can
           manage. A token with more than one pair shares one pool between them. Other venues are
           read-only here and managed in their own app.
         </p>
@@ -336,7 +395,7 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
 
   if (!publicKey) {
     return (
-      <div className="card mt-10 flex flex-wrap items-center gap-4 p-7">
+      <div className="card mt-10 flex flex-wrap items-center gap-4 p-5 sm:p-7">
         <div>
           <div className="text-[15px] text-primary">Your positions</div>
           <p className="mt-1 text-[14px] text-muted">
@@ -357,7 +416,7 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
   const positions = current?.positions ?? previous?.positions ?? null;
 
   return (
-    <div className="card mt-10 p-7">
+    <div className="card mt-10 p-5 sm:p-7">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="title text-primary">Your positions</h2>
         <button
@@ -406,7 +465,7 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
             const hasFees = p.value.feeA > 0 || p.value.feeB > 0;
             const symbols = { a: symbolOf(p.mints.a), b: symbolOf(p.mints.b) };
             return (
-              <li key={id} className="panel p-5">
+              <li key={id} className="panel p-4 sm:p-5">
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="min-w-0 flex-1">
                     <a
@@ -420,7 +479,7 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
                     <div className="num mt-2 text-[15px] text-primary">
                       {fmt(p.value.amountA)} {symbols.a} + {fmt(p.value.amountB)} {symbols.b}
                     </div>
-                    <div className="num mt-1 text-[13px] text-muted">
+                    <div className="num mt-1 break-words text-[13px] text-muted">
                       Fees pending: {fmt(p.value.feeA, 8)} {symbols.a} / {fmt(p.value.feeB, 8)}{" "}
                       {symbols.b}
                     </div>
@@ -431,10 +490,15 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
                     )}
                   </div>
 
-                  <div className="flex shrink-0 gap-2">
+                  {/*
+                    Three buttons never fit one phone row, and a row that cannot wrap widened the
+                    page. On a phone the stock payout takes the full width and the other two share
+                    the row under it; from sm they sit side by side as before.
+                  */}
+                  <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
                     {/* The stock payout comes first: settling into a real asset is what Coorwa is for. */}
                     <button
-                      className="btn btn-primary btn-sm"
+                      className="btn btn-primary btn-sm col-span-2"
                       disabled={(!hasFees && payoutFor !== id) || busy !== null}
                       onClick={() => setPayoutFor((open) => (open === id ? null : id))}
                       aria-expanded={payoutFor === id}
@@ -576,7 +640,7 @@ function DepositDialog({ pool, onClose }: { pool: PoolRow; onClose: () => void }
       onClick={onClose}
     >
       <div
-        className="card-float w-full max-w-md p-7"
+        className="card-float w-full max-w-md p-5 sm:p-7"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
