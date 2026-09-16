@@ -3,7 +3,7 @@ import { RewardsView } from "@/components/rewards-view";
 
 export const metadata = {
   title: "Rewards · Coorwa",
-  description: "Cashback on the fees you generate, as a trader and as a creator.",
+  description: "Hold a token, get paid in its stock: fees go to its holders and its creator once a day.",
 };
 
 export default function RewardsPage() {

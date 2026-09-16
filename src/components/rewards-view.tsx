@@ -19,6 +19,22 @@ import type { CashbackSummary } from "@/lib/cashback";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
+/** The worked example on the page: this much traded on one token. */
+const EXAMPLE_VOLUME_USD = 100;
+
+/**
+ * One line per token this wallet has something coming from, as a holder or as its creator. The page
+ * used to show these as two tables with different columns; one list reads faster.
+ */
+interface MyLine {
+  key: string;
+  token: string;
+  ticker: string | null;
+  role: "Holder" | "Creator";
+  nextUsd: number;
+  detail: string;
+}
+
 export function RewardsView() {
   const { publicKey } = useWallet();
   const { setVisible } = useWalletModal();
@@ -30,176 +46,245 @@ export function RewardsView() {
     { refreshInterval: 30_000 },
   );
 
-  const pendingUsd = data?.pending.reduce((sum, p) => sum + p.usd, 0) ?? 0;
+  const feePct = COORWA_SWAP_FEE_BPS / 100;
+  const exampleFee = (EXAMPLE_VOLUME_USD * COORWA_SWAP_FEE_BPS) / 10_000;
+
   const paidUsd = data?.paid.reduce((sum, p) => sum + p.usd, 0) ?? 0;
-  const estimatedUsd = data?.estimates.reduce((sum, e) => sum + e.estimatedUsd, 0) ?? 0;
-  const paidToHolders = data?.pools.reduce((sum, p) => sum + p.holdersPaidUsd, 0) ?? 0;
-  const waiting = data?.pools.reduce((sum, p) => sum + p.holdersWaitingUsd, 0) ?? 0;
+  const pendingUsd = data?.pending.reduce((sum, p) => sum + p.usd, 0) ?? 0;
+
+  const lines: MyLine[] = [
+    ...(data?.estimates ?? []).map((e) => ({
+      key: `h:${e.mint}`,
+      token: e.symbol ?? shortAddr(e.mint, 4),
+      ticker: e.ticker,
+      role: "Holder" as const,
+      nextUsd: e.estimatedUsd,
+      detail: `${(e.share * 100).toFixed(2)}% of ${usd(e.waitingUsd)}`,
+    })),
+    ...(data?.created ?? []).map((p) => ({
+      key: `c:${p.mint}`,
+      token: p.symbol ?? shortAddr(p.mint, 4),
+      ticker: p.ticker,
+      role: "Creator" as const,
+      nextUsd: Math.max(0, p.creatorAccruedUsd - p.creatorAllocatedUsd),
+      detail: `${usd(p.creatorAccruedUsd)} earned, ${usd(p.creatorPaidUsd)} paid`,
+    })),
+  ].sort((a, b) => b.nextUsd - a.nextUsd);
+  const nextUsd = lines.reduce((sum, l) => sum + l.nextUsd, 0);
+
+  const nextRun = data?.nextRunAt ? new Date(data.nextRunAt) : null;
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
+      {/* Header */}
       <div className="max-w-2xl">
         <span className="label text-[12px]">Rewards</span>
         <h1 className="display mt-3 text-[clamp(2rem,4.5vw,3.25rem)] text-primary">
           Hold a token, get paid in its stock.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Every token on Coorwa is paired with a stock, and the fees it earns are paid out once a day
-          to the wallets holding it, in that stock, straight to the same address on Solana. There is
-          nothing to claim. {pct(CASHBACK_SPLIT.holders)} goes to holders and{" "}
-          {pct(CASHBACK_SPLIT.creator)} to the token&apos;s creator, paid the same way.
+          Fees from a token go to that token&apos;s holders and its creator, once a day, in the
+          token&apos;s stock. Nothing to claim.
         </p>
       </div>
 
-      {/* Platform totals, before anything wallet-specific. */}
-      <div className="card mt-10 grid gap-8 p-8 sm:grid-cols-3">
-        <Figure label="Paid to holders" value={usd(paidToHolders)} sub="Across every token" />
-        <Figure label="Waiting to distribute" value={usd(waiting)} sub="Shared out at the next run" />
-        <Figure
-          label="Next run"
-          value={data?.nextRunAt ? new Date(data.nextRunAt).toLocaleString() : "-"}
-          sub={data?.nextRunAt ? "A day after the first holder snapshot" : "Starts after the next fee"}
+      {/* How it works */}
+      <div className="mt-10 grid gap-3 md:grid-cols-3">
+        <Step
+          n={1}
+          title="A token is traded"
+          body={`Every swap on Coorwa pays a ${feePct}% fee. The fee belongs to the token that was traded, and to no other token.`}
+        />
+        <Step
+          n={2}
+          title="The fee is split"
+          body={`${pct(CASHBACK_SPLIT.holders)} to wallets holding at least ${plain(HOLDER_MIN_USD)} of that token, by how much they hold through the day. ${pct(CASHBACK_SPLIT.creator)} to its creator.`}
+        />
+        <Step
+          n={3}
+          title="Paid once a day"
+          body="In the token's pair stock, for example NVDAx, sent to your same address on Solana. Coorwa keeps nothing."
         />
       </div>
 
-      {/* This wallet */}
-      <div className="card mt-4 p-8">
+      <div className="panel mt-3 px-6 py-4 text-[14px] leading-[1.7] text-muted">
+        <span className="text-primary">Example:</span> {plain(EXAMPLE_VOLUME_USD)} traded on CHAT
+        pays {plain(exampleFee)}.{" "}
+        <span className="num text-primary">{plain(exampleFee * CASHBACK_SPLIT.holders)}</span> goes
+        to CHAT holders and{" "}
+        <span className="num text-primary">{plain(exampleFee * CASHBACK_SPLIT.creator)}</span> to
+        CHAT&apos;s creator. Holders of other tokens get nothing from it.
+      </div>
+
+      {/* You */}
+      <div className="card mt-10 p-7 sm:p-8">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h2 className="title text-primary">Your rewards</h2>
+          {nextRun && (
+            <span className="text-[13px] text-muted">
+              Next payout {untilText(nextRun)} · {nextRun.toLocaleString()}
+            </span>
+          )}
+        </div>
+
         {!wallet ? (
-          <div className="flex flex-wrap items-center gap-5">
-            <div>
-              <div className="text-[15px] text-primary">Your rewards</div>
-              <p className="mt-1 text-[14px] text-muted">
-                Connect to see what you have been paid as a holder and as a creator.
-              </p>
-            </div>
+          <div className="mt-4 flex flex-wrap items-center gap-5">
+            <p className="text-[14px] text-muted">
+              Connect to see what you get as a holder and as a creator.
+            </p>
             <button className="btn btn-primary ml-auto" onClick={() => setVisible(true)}>
               Connect wallet
             </button>
           </div>
         ) : !data ? (
-          <div className="skeleton h-24 w-full" />
+          <div className="skeleton mt-5 h-24 w-full" />
         ) : !data.configured ? (
-          <div>
-            <div className="text-[15px] text-primary">Accounting is not configured here</div>
-            <p className="mt-2 max-w-2xl text-[14px] leading-[1.7] text-muted">
-              Rewards need history, so they need a database. Set{" "}
-              <span className="num text-primary">DATABASE_URL</span> to enable this page.
-            </p>
-          </div>
+          <p className="mt-4 text-[14px] text-muted">
+            Rewards need a database. Set <span className="num text-primary">DATABASE_URL</span> to
+            enable this page.
+          </p>
         ) : (
           <>
-            <div className="grid gap-8 sm:grid-cols-3">
-              <Figure label="Paid to you" value={usd(paidUsd)} sub="Sent to your wallet on Solana" emphasis />
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <Figure
-                label="Owed, under the minimum"
-                value={usd(pendingUsd)}
-                sub={`Sent once it reaches ${usd(PAYOUT_MIN_USD)} in one stock`}
+                label="Next payout"
+                value={usd(nextUsd)}
+                sub="Estimated, from today so far"
+                emphasis
               />
+              <Figure label="Paid to you" value={usd(paidUsd)} sub="Already on Solana" />
               <Figure
-                label="Next run, estimated"
-                value={usd(estimatedUsd)}
-                sub="From the holder snapshots so far"
+                label="Carried over"
+                value={usd(pendingUsd)}
+                sub={`Sent once it reaches ${plain(PAYOUT_MIN_USD)} in one stock`}
               />
             </div>
 
-            {data.estimates.length > 0 && (
-              <Table
-                title="Your share of what is waiting"
-                note="An estimate. Snapshots are taken at random moments through the day, so holding the whole time is what keeps your share."
-                head={["Token", "Paid in", "Waiting", "Your share", "About"]}
-                rows={data.estimates.map((e) => [
-                  e.symbol ?? shortAddr(e.mint, 4),
-                  e.ticker,
-                  usd(e.waitingUsd),
-                  `${(e.share * 100).toFixed(2)}%`,
-                  usd(e.estimatedUsd),
-                ])}
-              />
-            )}
-
-            {data.paid.length > 0 ? (
-              <Table
-                title="Payouts to you"
-                head={["When", "Stock", "As", "Value", "Transaction"]}
-                rows={data.paid.map((p) => [
-                  new Date(p.at).toLocaleDateString(),
-                  p.ticker,
-                  p.role,
-                  usd(p.usd),
-                  p.signature ? (
-                    <a
-                      key={p.signature}
-                      href={solanaTxUrl(p.signature)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="num underline decoration-[color:var(--divider-strong)] underline-offset-4"
-                    >
-                      {shortAddr(p.signature, 5)}
-                    </a>
-                  ) : (
-                    "-"
-                  ),
-                ])}
-              />
+            {lines.length > 0 ? (
+              <ul className="mt-6 divide-y divide-[color:var(--divider)] border-t border-hair">
+                {lines.map((l) => (
+                  <li key={l.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3.5">
+                    <span className="min-w-[72px] text-[15px] text-primary">{l.token}</span>
+                    <span className="pill pill-quiet text-[11px]">{l.role}</span>
+                    <span className="text-[13px] text-muted">
+                      {l.ticker ? `paid in ${l.ticker}x` : "no pair yet, kept until one is picked"}
+                    </span>
+                    <span className="ml-auto text-right">
+                      <span className="num block text-[15px] text-primary">{usd(l.nextUsd)}</span>
+                      <span className="num block text-[12px] text-subtle">{l.detail}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p className="mt-6 border-t border-hair pt-5 text-[14px] leading-relaxed text-muted">
-                Nothing sent to you yet. Hold at least {usd(HOLDER_MIN_USD)} of a{" "}
+                Nothing coming yet. Hold at least {plain(HOLDER_MIN_USD)} of a{" "}
                 <Link href="/terminal" className="text-primary underline underline-offset-4">
                   token on Coorwa
                 </Link>{" "}
-                and your share arrives in its stock after the next run.
+                that people trade, and your share shows up here.
               </p>
+            )}
+
+            {data.paid.length > 0 && (
+              <Fold title={`Payouts to you (${data.paid.length})`}>
+                <SimpleTable
+                  head={["When", "Token", "Stock", "As", "Value", "Transaction"]}
+                  rows={data.paid.map((p) => [
+                    new Date(p.at).toLocaleDateString(),
+                    shortAddr(p.mint, 4),
+                    p.ticker,
+                    p.role,
+                    usd(p.usd),
+                    p.signature ? (
+                      <a
+                        key={p.signature}
+                        href={solanaTxUrl(p.signature)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline decoration-[color:var(--divider-strong)] underline-offset-4"
+                      >
+                        {shortAddr(p.signature, 5)}
+                      </a>
+                    ) : (
+                      "-"
+                    ),
+                  ])}
+                />
+              </Fold>
             )}
           </>
         )}
       </div>
 
-      {/* Tokens */}
-      <div className="card mt-4 overflow-hidden">
-        <div className="px-6 pt-6">
-          <h2 className="title text-primary">Holder rewards by token</h2>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-            Waiting is shared out at the next run over whoever held the token through the day. A token
-            without a pair keeps its rewards until its creator picks one.
-          </p>
-        </div>
+      {/* Every token */}
+      <div className="card mt-4 p-7 sm:p-8">
+        <h2 className="title text-primary">Every token</h2>
+        <p className="mt-1.5 text-[13px] text-muted">
+          What each token&apos;s holders get at the next payout, and what they have been paid.
+        </p>
         {!data?.pools?.length ? (
-          <p className="px-6 pb-6 pt-4 text-[14px] text-muted">No fees earned on any token yet.</p>
+          <p className="mt-4 text-[14px] text-muted">No fees earned on any token yet.</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[520px] text-[14px]">
-              <thead>
-                <tr>
-                  <Th>Token</Th>
-                  <Th>Paid in</Th>
-                  <Th align="right">Waiting</Th>
-                  <Th align="right">Paid to holders</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.pools.map((p) => (
-                  <tr key={p.mint} className="row-hover">
-                    <td className="px-6 py-2.5 text-primary">{p.symbol ?? shortAddr(p.mint, 4)}</td>
-                    <td className="num px-6 py-2.5 text-muted">{p.ticker ?? "no pair yet"}</td>
-                    <td className="num px-6 py-2.5 text-right text-primary">
-                      {usd(p.holdersWaitingUsd)}
-                    </td>
-                    <td className="num px-6 py-2.5 text-right text-muted">{usd(p.holdersPaidUsd)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SimpleTable
+            head={["Token", "Paid in", "Next payout", "Paid so far"]}
+            rows={data.pools.map((p) => [
+              p.symbol ?? shortAddr(p.mint, 4),
+              p.ticker ? `${p.ticker}x` : "no pair yet",
+              usd(p.holdersWaitingUsd),
+              usd(p.holdersPaidUsd),
+            ])}
+          />
         )}
       </div>
 
-      {/* Runs, so every payout can be checked */}
-      <div className="card mt-4 overflow-hidden">
-        <div className="px-6 pt-6">
-          <h2 className="title text-primary">Payout runs</h2>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-            Each run bridges the day&apos;s fees from{" "}
-            {data?.operator ? (
+      {/* The details, for whoever wants to check */}
+      <div className="card mt-4 p-7 sm:p-8">
+        <h2 className="title text-primary">Details</h2>
+
+        <Fold title="Where the fees come from">
+          <ul className="space-y-3 text-[14px] leading-[1.7] text-muted">
+            <li>
+              <span className="text-primary">Swaps on Coorwa:</span> {feePct}% of the COOK side,
+              shown in the swap panel before you sign. Trading the same pool elsewhere pays Coorwa
+              nothing, and earns its holders nothing either.
+            </li>
+            <li>
+              <span className="text-primary">Launchpad buys:</span> MomoSwap pays Coorwa a share of
+              its own 1% curve fee. It costs the trader nothing extra.
+            </li>
+            <li>
+              <span className="text-primary">Setting a pair:</span> a creator of a token from
+              outside Coorwa pays {plain(PAIR_LISTING_USD)} once. All of it goes to that
+              token&apos;s holders.
+            </li>
+          </ul>
+        </Fold>
+
+        <Fold title="Rules">
+          <ul className="list-disc space-y-2 pl-5 text-[14px] leading-[1.7] text-muted">
+            <li>
+              Anyone holding at least {plain(HOLDER_MIN_USD)} counts, wherever they bought. Pools,
+              programs and Coorwa&apos;s own wallets never do.
+            </li>
+            <li>
+              Balances are sampled at random moments through the day, so buying just before the
+              payout does not help. Holding all day does.
+            </li>
+            <li>
+              A creator is paid from fees only, and is not counted as a holder of their own token.
+            </li>
+            <li>
+              Amounts under {plain(PAYOUT_MIN_USD)} in one stock carry over to the next day. Network
+              and bridge costs come out of the payout and are shown below.
+            </li>
+          </ul>
+        </Fold>
+
+        <Fold title={`Payout runs${data?.runs?.length ? ` (${data.runs.length})` : ""}`}>
+          <p className="text-[13px] leading-relaxed text-muted">
+            Fees wait in the operator wallet{" "}
+            {data?.operator && (
               <a
                 href={cookieAccountUrl(data.operator)}
                 target="_blank"
@@ -208,141 +293,51 @@ export function RewardsView() {
               >
                 {shortAddr(data.operator, 5)}
               </a>
-            ) : (
-              "the operator wallet"
             )}{" "}
-            to Solana, buys each stock on Jupiter and sends it out. Its network costs come out of the
-            pot and are shown here.
+            until the daily run bridges them to Solana, buys each stock on Jupiter and sends it out.
           </p>
-        </div>
-        {!data?.runs?.length ? (
-          <p className="px-6 pb-6 pt-4 text-[14px] text-muted">No runs yet.</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-[14px]">
-              <thead>
-                <tr>
-                  <Th>Run</Th>
-                  <Th>State</Th>
-                  <Th align="right">Paid</Th>
-                  <Th align="right">Wallets</Th>
-                  <Th align="right">Costs</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.runs.map((r) => (
-                  <tr key={r.id} className="row-hover">
-                    <td className="num px-6 py-2.5 text-primary">
-                      {r.bridgeSignature ? (
-                        <a
-                          href={cookieTxUrl(r.bridgeSignature)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline decoration-[color:var(--divider-strong)] underline-offset-4"
-                        >
-                          {new Date(r.asOf).toLocaleDateString()}
-                        </a>
-                      ) : (
-                        new Date(r.asOf).toLocaleDateString()
-                      )}
-                    </td>
-                    <td className="px-6 py-2.5 text-[13px] text-muted" title={r.note ?? undefined}>
-                      {r.status}
-                    </td>
-                    <td className="num px-6 py-2.5 text-right text-primary">{usd(r.totalUsd)}</td>
-                    <td className="num px-6 py-2.5 text-right text-muted">{r.wallets}</td>
-                    <td className="num px-6 py-2.5 text-right text-muted">
-                      {r.costsUsd == null ? "-" : usd(r.costsUsd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Where it comes from */}
-      <div className="card mt-4 p-8">
-        <h2 className="title text-primary">Where rewards come from</h2>
-        <dl className="mt-6 divide-y divide-[color:var(--divider)]">
-          <Source
-            label="Launchpad fills"
-            state="Free to you"
-            tone="up"
-            body="Every buy Coorwa routes on a MomoSwap curve names Coorwa as referrer, which pays 20% of the 1% trade fee. MomoSwap pays that out of the same fee whether or not anyone is named, so it costs the trader nothing."
-          />
-          <Source
-            label="Swap fills"
-            state={`${(COORWA_SWAP_FEE_BPS / 100).toFixed(2)}% fee`}
-            tone="muted"
-            body="Neither Cookie Chain router pays a referrer, so Coorwa charges its own fee on a terminal swap. It is a fee: it comes out of the trade and is shown before signing. A trader who also holds the token gets part of it back as a holder."
-          />
-          <Source
-            label="Pairs"
-            state="To the token's holders"
-            tone="up"
-            body={`A token from outside Coorwa gets its one pair when its creator pays $${PAIR_LISTING_USD}. All of it goes to the token's holders.`}
-          />
-          <Source
-            label="LP fees"
-            state="Yours already"
-            tone="muted"
-            body="Fees on a position you own are paid to you by the pool directly, and Coorwa takes nothing from them."
-          />
-        </dl>
-        <p className="mt-6 text-[13px] leading-relaxed text-muted">
-          Fees reach the operator wallet and wait there until the day&apos;s run pays them out, the same
-          way StonkFun pays its holders. A wallet needs at least {usd(HOLDER_MIN_USD)} of a token to
-          count, and pool vaults and programs never do.
-        </p>
+          {!data?.runs?.length ? (
+            <p className="mt-3 text-[14px] text-muted">No runs yet.</p>
+          ) : (
+            <SimpleTable
+              head={["Run", "State", "Paid", "Wallets", "Costs"]}
+              rows={data.runs.map((r) => [
+                r.bridgeSignature ? (
+                  <a
+                    key={r.id}
+                    href={cookieTxUrl(r.bridgeSignature)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline decoration-[color:var(--divider-strong)] underline-offset-4"
+                  >
+                    {new Date(r.asOf).toLocaleDateString()}
+                  </a>
+                ) : (
+                  new Date(r.asOf).toLocaleDateString()
+                ),
+                <span key={`s${r.id}`} title={r.note ?? undefined}>
+                  {r.status}
+                </span>,
+                usd(r.totalUsd),
+                String(r.wallets),
+                r.costsUsd == null ? "-" : usd(r.costsUsd),
+              ])}
+            />
+          )}
+        </Fold>
       </div>
     </div>
   );
 }
 
-function Table({
-  title,
-  note,
-  head,
-  rows,
-}: {
-  title: string;
-  note?: string;
-  head: string[];
-  rows: React.ReactNode[][];
-}) {
+function Step({ n, title, body }: { n: number; title: string; body: string }) {
   return (
-    <div className="mt-8 border-t border-hair pt-6">
-      <div className="label text-[12px]">{title}</div>
-      {note && <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{note}</p>}
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[480px] text-[14px]">
-          <thead>
-            <tr>
-              {head.map((h, i) => (
-                <Th key={h} align={i === 0 ? "left" : "right"} flush>
-                  {h}
-                </Th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="row-hover">
-                {r.map((cell, j) => (
-                  <td
-                    key={j}
-                    className={`num py-2 ${j === 0 ? "text-left text-primary" : "text-right text-muted"}`}
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="glass-pane rounded-[var(--radius-float)] p-6">
+      <div className="num grid h-8 w-8 place-items-center rounded-full text-[14px] text-primary [background:var(--well-fill)] [box-shadow:var(--well-edge)]">
+        {n}
       </div>
+      <div className="mt-4 text-[16px] text-primary">{title}</div>
+      <p className="mt-1.5 text-[14px] leading-[1.65] text-muted">{body}</p>
     </div>
   );
 }
@@ -359,46 +354,64 @@ function Figure({
   emphasis?: boolean;
 }) {
   return (
-    <div>
+    <div className="panel p-5">
       <div className="label text-[12px]">{label}</div>
-      <div className={`num display mt-2 text-primary ${emphasis ? "text-[40px]" : "text-[28px]"}`}>
+      <div className={`num display mt-2 text-primary ${emphasis ? "text-[34px]" : "text-[26px]"}`}>
         {value}
       </div>
-      <div className="mt-1.5 text-[13px] text-muted">{sub}</div>
+      <div className="mt-1 text-[13px] text-muted">{sub}</div>
     </div>
   );
 }
 
-function Source({
-  label,
-  state,
-  tone,
-  body,
-}: {
-  label: string;
-  state: string;
-  tone: "up" | "muted";
-  body: string;
-}) {
+/** A section closed by default, so the page leads with the numbers rather than the fine print. */
+function Fold({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 py-4 sm:flex-row sm:gap-6">
-      <div className="w-44 shrink-0">
-        <dt className="text-[14px] text-primary">{label}</dt>
-        <span
-          className="pill mt-1.5"
-          style={
-            tone === "up"
-              ? {
-                  background: "color-mix(in srgb, var(--color-up) 12%, transparent)",
-                  color: "var(--color-up)",
-                }
-              : { background: "var(--surface-raised)", color: "var(--text-muted)" }
-          }
-        >
-          {state}
+    <details className="group mt-5 border-t border-hair pt-5">
+      <summary className="flex cursor-pointer list-none items-center justify-between text-[15px] text-primary">
+        {title}
+        <span className="text-muted transition-transform group-open:rotate-45" aria-hidden>
+          +
         </span>
-      </div>
-      <dd className="text-[14px] leading-[1.7] text-muted">{body}</dd>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
+  );
+}
+
+function SimpleTable({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[480px] text-[14px]">
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th
+                key={h}
+                className={`label whitespace-nowrap py-2 text-[12px] font-normal ${
+                  i === 0 ? "text-left" : "text-right"
+                }`}
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="row-hover">
+              {r.map((cell, j) => (
+                <td
+                  key={j}
+                  className={`num py-2.5 ${j === 0 ? "text-left text-primary" : "text-right text-muted"}`}
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -407,22 +420,15 @@ function pct(share: number): string {
   return `${Number((share * 100).toFixed(1))}%`;
 }
 
-function Th({
-  children,
-  align = "left",
-  flush,
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-  flush?: boolean;
-}) {
-  return (
-    <th
-      className={`label whitespace-nowrap py-2 text-[12px] font-normal ${flush ? "" : "px-6"} ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </th>
-  );
+/** "in 5 h", "in 40 min", or "any moment now" once it is due. */
+function untilText(at: Date): string {
+  const min = Math.round((at.getTime() - Date.now()) / 60_000);
+  if (min <= 0) return "any moment now";
+  if (min < 60) return `in ${min} min`;
+  return `in ${Math.round(min / 60)} h`;
+}
+
+/** A round figure in the copy: $5, $1, $0.625. `usd` would print $5.00 and $0.6250. */
+function plain(n: number): string {
+  return `$${Number(n.toFixed(3))}`;
 }
