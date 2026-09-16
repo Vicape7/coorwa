@@ -70,7 +70,7 @@ export function PoolsView() {
 
       <ListPair onListed={() => void mutate()} />
 
-      <MyPositions pools={pools} />
+      <MyPositions pools={data ? pools : null} />
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
         <h2 className="title text-primary">Pairs</h2>
@@ -208,7 +208,7 @@ interface LoadedPosition {
   mints: { a: string; b: string };
 }
 
-function MyPositions({ pools }: { pools: PoolRow[] }) {
+function MyPositions({ pools }: { pools: PoolRow[] | null }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -218,7 +218,7 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
   /** Symbols from the pool list, so a position reads "CHAT / wCOOK" rather than two addresses. */
   const symbolOf = useMemo(() => {
     const known = new Map<string, string>();
-    for (const p of pools) {
+    for (const p of pools ?? []) {
       known.set(p.base.mint, p.base.symbol);
       known.set(p.quote.mint, p.quote.symbol);
     }
@@ -243,21 +243,32 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
+  /**
+   * The pools behind Coorwa's listed pairs, as one stable string. Only positions in these pools are
+   * shown: fees a wallet earns on some other Cookie Chain pool are not Coorwa's to pay out. Null until
+   * the pair list has loaded, so a wallet is never scanned against an empty list.
+   */
+  const listed = useMemo(
+    () => (pools ? [...new Set(pools.map((p) => p.poolId))].sort().join(",") : null),
+    [pools],
+  );
+
   const wallet = publicKey?.toBase58() ?? null;
-  const key = wallet ? `${wallet}|${nonce}` : null;
+  const key = wallet && listed !== null ? `${wallet}|${nonce}|${listed}` : null;
   const rescan = useCallback(() => setNonce((n) => n + 1), []);
   const current = key && scan?.key === key ? scan : null;
-  const loading = key !== null && current === null;
+  const loading = wallet !== null && current === null;
 
   useEffect(() => {
-    if (!publicKey || !key) return;
+    if (!publicKey || !key || listed === null) return;
     let alive = true;
+    const pairPools = new Set(listed.split(","));
 
     (async () => {
       try {
         const found = await findUserPositions(deps, publicKey);
         const loaded: LoadedPosition[] = [];
-        for (const p of found) {
+        for (const p of found.filter((f) => pairPools.has(f.pool.toBase58()))) {
           try {
             const ctx = await loadPool(deps, p.pool.toBase58());
             loaded.push({
@@ -282,7 +293,7 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
     return () => {
       alive = false;
     };
-  }, [publicKey, deps, key]);
+  }, [publicKey, deps, key, listed]);
 
   const act = useCallback(
     async (p: LoadedPosition, action: "claim" | "withdraw") => {
@@ -324,7 +335,8 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
         <div>
           <div className="text-[15px] text-primary">Your positions</div>
           <p className="mt-1 text-[14px] text-muted">
-            Connect to see the DAMM v2 positions this wallet holds and the fees waiting on them.
+            Connect to see this wallet&apos;s positions in the pools behind Coorwa&apos;s pairs and the
+            fees waiting on them.
           </p>
         </div>
         <button className="btn btn-primary ml-auto" onClick={() => setVisible(true)}>
@@ -377,8 +389,8 @@ function MyPositions({ pools }: { pools: PoolRow[] }) {
 
       {positions !== null && positions.length === 0 && (
         <p className="mt-4 text-[14px] leading-relaxed text-muted">
-          No DAMM v2 positions in this wallet. Positions are held as Token-2022 NFTs, so Coorwa
-          finds them by scanning what you own rather than by keeping its own records.
+          No positions in the pools behind Coorwa&apos;s pairs. Positions in other Cookie Chain pools
+          are not shown here, because their fees are not Coorwa&apos;s to pay out.
         </p>
       )}
 
