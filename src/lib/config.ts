@@ -165,6 +165,28 @@ export const CASHBACK_SPLIT = {
  */
 export const HOLDER_MIN_USD = 5;
 
+/**
+ * How often holder rewards are paid out: this long after the first holder sample since the last run,
+ * so a run always has a day of samples behind it rather than one snapshot a buyer could time.
+ */
+export const PAYOUT_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The least a wallet is sent in one asset. Below it the balance waits for later runs: the first
+ * payout of an xStock opens a token account on Solana for about 0.002 SOL of rent, and under a dollar
+ * that would eat most of what arrives.
+ */
+export const PAYOUT_MIN_USD = 1;
+
+/** Slippage allowed on the operator's own Jupiter swaps. */
+export const PAYOUT_SLIPPAGE_BPS = 300;
+
+/** Native COOK the operator keeps on Cookie Chain for fees and rent, never bridged. */
+export const OPERATOR_COOK_RESERVE = 5_000;
+
+/** SOL the operator keeps on Solana for fees, before any is bought out of a run's cost budget. */
+export const OPERATOR_SOL_FLOOR = 0.02;
+
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
 // --- Cashback vault ----------------------------------------------------------------------------

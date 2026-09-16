@@ -30,6 +30,7 @@ import { db, dbEnabled, schema } from "./db";
 import { buildEpochTree, verifyProof, type Entitlement } from "./merkle";
 import { fetchCookPriceUsd } from "./cookiescan";
 import { snapshotHolders } from "./holders";
+import { rewardPools } from "./rewards-ledger";
 import {
   CASHBACK_CLAIM_WINDOW_DAYS,
   CASHBACK_MIN_CLAIM_COOK,
@@ -378,7 +379,7 @@ async function windowStart(asOf: Date): Promise<Date> {
 }
 
 /** Every sample row for these mints inside (from, to], grouped by mint. */
-async function samplesIn(mints: readonly string[], from: Date, to: Date) {
+export async function samplesIn(mints: readonly string[], from: Date, to: Date) {
   const out = new Map<string, { takenAt: Date; wallet: string; balanceRaw: bigint }[]>();
   if (mints.length === 0) return out;
   const conn = requireDb();
@@ -435,7 +436,8 @@ export async function recordHolderSample(
     return { sampled: false, reason: "not this time", takenAt: null, mints: 0, rows: 0 };
   }
 
-  const waiting = (await holderPools(now)).filter((p) => p.waitingUsd > 0);
+  // Only tokens that have a pair can be paid, so only those are worth sampling.
+  const waiting = (await rewardPools(now)).filter((p) => p.ticker && p.holdersWaitingUsd > 0);
   const snapshots = await snapshotHolders(waiting.map((p) => p.mint));
   const rows = snapshots.flatMap((s) =>
     [...s.holders].map(([wallet, balanceRaw]) => ({ takenAt: now, mint: s.mint, wallet, balanceRaw })),

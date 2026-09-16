@@ -1,11 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { EpochError, recordHolderSample } from "@/lib/epochs";
+import { runPayoutStep } from "@/lib/payout-cycle";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Maybe take a holder sample. Called every few minutes by the sampler Worker in `workers/`.
+ * Maybe take a holder sample, then advance the daily payout run by one step. Called every few
+ * minutes by the scheduler (cron-job.org, or the sampler Worker in `workers/`).
  *
  * Guarded by a shared secret rather than left open, for the same reason the draft is: whoever can
  * choose when a sample is taken can hold a token only across that moment. The secret keeps the
@@ -27,8 +29,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not authorised" }, { status: 401 });
   }
 
+  let sample;
   try {
-    return NextResponse.json(await recordHolderSample());
+    sample = await recordHolderSample();
   } catch (e) {
     const status = e instanceof EpochError ? e.status : 502;
     return NextResponse.json(
@@ -36,4 +39,12 @@ export async function POST(req: Request) {
       { status },
     );
   }
+
+  // After the sample, so a run that becomes due now includes it. A failed step is reported in the
+  // body rather than as an error status: the sample succeeded, and the next call retries the step.
+  const payout = await runPayoutStep().catch((e: unknown) => ({
+    action: "error",
+    detail: e instanceof Error ? e.message : String(e),
+  }));
+  return NextResponse.json({ ...sample, payout });
 }

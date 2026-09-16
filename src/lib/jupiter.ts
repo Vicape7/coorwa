@@ -5,7 +5,7 @@
  * a cross-chain route (bridged COOK -> xStock). The keyless tier allows 0.5 req/s, so every call
  * here is cached and callers must go through our API routes rather than hitting it from a browser.
  */
-import { JUPITER_API, COOK_SOLANA_MINT } from "./config";
+import { JUPITER_API, COOK_SOLANA_MINT, WSOL_MINT } from "./config";
 import { fetchJson, cachedStale } from "./http";
 import { RWA_ASSETS } from "./rwa";
 
@@ -80,6 +80,17 @@ export async function fetchCookOnSolana(): Promise<JupToken | null> {
       { headers: authHeaders },
     );
     return res?.find((x) => x.id === COOK_SOLANA_MINT) ?? null;
+  });
+}
+
+/** SOL's USD price on Solana mainnet, for valuing what a payout run spends on fees and rent. */
+export async function fetchSolUsd(): Promise<number | null> {
+  return cachedStale("jupiter:sol", 60_000, async () => {
+    const res = await fetchJson<JupToken[]>(`${JUPITER_API}/tokens/v2/search?query=${WSOL_MINT}`, {
+      headers: authHeaders,
+    });
+    const price = res?.find((x) => x.id === WSOL_MINT)?.usdPrice;
+    return typeof price === "number" && price > 0 ? price : null;
   });
 }
 

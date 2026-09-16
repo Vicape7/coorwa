@@ -23,6 +23,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { eq } from "drizzle-orm";
 import {
   COOKIE_RPC_URL,
+  COORWA_OPERATOR,
   COORWA_REFERRER,
   HOLDER_MIN_USD,
   VAULT_AUTHORITY,
@@ -39,7 +40,7 @@ const TOKEN_PROGRAMS = [
 
 /** Wallets that never share a holder pool, whatever they hold. */
 export function excludedOwners(): Set<string> {
-  return new Set([COORWA_REFERRER, VAULT_AUTHORITY].filter(Boolean));
+  return new Set([COORWA_OPERATOR, COORWA_REFERRER, VAULT_AUTHORITY].filter(Boolean));
 }
 
 /** A wallet is an address somebody holds a key to, which a program address never is. */

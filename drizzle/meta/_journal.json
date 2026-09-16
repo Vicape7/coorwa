@@ -50,6 +50,20 @@
       "when": 1789472871446,
       "tag": "0006_holder_samples",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789568747439,
+      "tag": "0007_payouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789568928009,
+      "tag": "0008_payout_step_at",
+      "breakpoints": true
     }
   ]
 }

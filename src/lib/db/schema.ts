@@ -256,3 +256,99 @@ export const holderSamples = pgTable(
     index("holder_samples_wallet_idx").on(t.wallet),
   ],
 );
+
+/**
+ * One daily payout run: fees shared out, bridged to Solana, swapped into each pair's asset and sent.
+ *
+ * A run crosses two chains and several transactions, so it is a row that advances one status at a
+ * time (`payout-cycle.ts`), and a run that stops halfway resumes from the status it reached rather
+ * than starting again. Every transaction it sends is written here before it is confirmed.
+ */
+export const payoutCycles = pgTable(
+  "payout_cycles",
+  {
+    id: serial("id").primaryKey(),
+    /** Fills, listings and holder samples up to this moment belong to this run. */
+    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    /** allocated, bridging, bridged, sending, done, or empty when nothing was due to anyone. */
+    status: text("status").notNull(),
+    cookPriceUsd: doublePrecision("cook_price_usd").notNull(),
+    /** USD of every line this run pays. */
+    totalUsd: doublePrecision("total_usd").notNull().default(0),
+    /** USD set aside from the pot for network costs: Solana fees and new token accounts. */
+    costBudgetUsd: doublePrecision("cost_budget_usd").notNull().default(0),
+    /** Raw COOK sent across the bridge, in Cookie Chain units. */
+    bridgeCookRaw: bigint("bridge_cook_raw", { mode: "bigint" }),
+    bridgeSignature: text("bridge_signature"),
+    /** The operator's COOK on Solana before the bridge, in Solana units, to see the arrival. */
+    solanaCookBefore: bigint("solana_cook_before", { mode: "bigint" }),
+    /** The operator's SOL before swapping and sending, to measure what the run really cost. */
+    solBefore: bigint("sol_before", { mode: "bigint" }),
+    costsUsd: doublePrecision("costs_usd"),
+    /** When the step waiting on a transaction sent it, so a dropped one can be told from a slow one. */
+    stepAt: timestamp("step_at", { withTimezone: true }),
+    /** The last reason the run did not advance, for the operator panel. */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("payout_cycles_status_idx").on(t.status)],
+);
+
+/**
+ * What one wallet is owed from one token, and whether it has been paid.
+ *
+ * Written when a run shares the pools out, as "allocated". A wallet's allocated lines in one asset
+ * are paid together once they add up to `PAYOUT_MIN_USD`; until then they wait for later runs, so a
+ * small holder is paid late rather than never. Everything allocated for a token, paid or not, is what
+ * that token's pool has already given away.
+ */
+export const payoutLines = pgTable(
+  "payout_lines",
+  {
+    id: serial("id").primaryKey(),
+    /** The run that shared this out. */
+    allocatedIn: integer("allocated_in").notNull(),
+    /** The run that pays it. Null while it waits for the minimum. */
+    paidIn: integer("paid_in"),
+    wallet: text("wallet").notNull(),
+    mint: text("mint").notNull(),
+    /** The pair's asset the line is paid in. */
+    ticker: text("ticker").notNull(),
+    /** "holder" or "creator". */
+    role: text("role").notNull(),
+    /** Average balance across the run's samples, for a holder line. */
+    balanceRaw: bigint("balance_raw", { mode: "bigint" }).notNull(),
+    amountUsd: doublePrecision("amount_usd").notNull(),
+    /** allocated, queued, or sent. */
+    status: text("status").notNull().default("allocated"),
+    /** Raw units of the asset this line received, once sent. */
+    assetRaw: bigint("asset_raw", { mode: "bigint" }),
+    /** The Solana transaction that sent it. Written before confirming, so a retry can check it. */
+    signature: text("signature"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("payout_lines_wallet_idx").on(t.wallet),
+    index("payout_lines_mint_idx").on(t.mint),
+    index("payout_lines_paid_in_idx").on(t.paidIn),
+    index("payout_lines_status_idx").on(t.status),
+  ],
+);
+
+/** One Jupiter swap a run made on Solana: COOK into a pair's asset, or into SOL for costs. */
+export const payoutSwaps = pgTable(
+  "payout_swaps",
+  {
+    id: serial("id").primaryKey(),
+    cycleId: integer("cycle_id").notNull(),
+    /** The asset bought, or "SOL" for the cost budget. */
+    ticker: text("ticker").notNull(),
+    cookRaw: bigint("cook_raw", { mode: "bigint" }).notNull(),
+    /** Raw units received, read from the transaction once it confirmed. */
+    assetRaw: bigint("asset_raw", { mode: "bigint" }),
+    signature: text("signature").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("payout_swaps_cycle_ticker_idx").on(t.cycleId, t.ticker)],
+);

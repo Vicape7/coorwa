@@ -1,0 +1,1 @@
+ALTER TABLE "payout_cycles" ADD COLUMN "step_at" timestamp with time zone;
