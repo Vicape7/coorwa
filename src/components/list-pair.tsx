@@ -95,6 +95,9 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
     try {
       const raw = BigInt(Math.ceil(quote.cook * 10 ** COOK_DECIMALS));
       const tx = await fundTransaction(connection, publicKey, new PublicKey(VAULT_MINT), raw);
+      const { blockhash } = await connection.getLatestBlockhash("confirmed");
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
       const sent = await signSendConfirm(connection, tx, signTransaction);
 
       // The pairs are recorded against the payment, not against this request: the server reads what
