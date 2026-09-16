@@ -252,6 +252,11 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
     () => (pools ? [...new Set(pools.map((p) => p.poolId))].sort().join(",") : null),
     [pools],
   );
+  /** Each pool's pair asset. A token has one pair, so its pool pays LP fees in that stock only. */
+  const tickerOfPool = useMemo(
+    () => new Map((pools ?? []).map((p) => [p.poolId, p.rwa.ticker])),
+    [pools],
+  );
 
   const wallet = publicKey?.toBase58() ?? null;
   const key = wallet && listed !== null ? `${wallet}|${nonce}|${listed}` : null;
@@ -454,28 +459,30 @@ function MyPositions({ pools }: { pools: PoolRow[] | null }) {
                 </div>
 
                 {/* A payout that stopped on an earlier visit shows itself without being asked. */}
-                {(payoutFor === id || isResumable(loadJourney(wallet!, lpPayoutSlug(id)))) && (
-                  <LpPayout
-                    p={{
-                      pool: p.position.pool.toBase58(),
-                      position: id,
-                      positionNftAccount: p.position.positionNftAccount.toBase58(),
-                      a: {
-                        mint: p.mints.a,
-                        symbol: symbols.a,
-                        decimals: p.ctx.aDecimals,
-                        feeRaw: p.value.feeARaw,
-                      },
-                      b: {
-                        mint: p.mints.b,
-                        symbol: symbols.b,
-                        decimals: p.ctx.bDecimals,
-                        feeRaw: p.value.feeBRaw,
-                      },
-                    }}
-                    onSettled={rescan}
-                  />
-                )}
+                {(payoutFor === id || isResumable(loadJourney(wallet!, lpPayoutSlug(id)))) &&
+                  tickerOfPool.has(p.position.pool.toBase58()) && (
+                    <LpPayout
+                      ticker={tickerOfPool.get(p.position.pool.toBase58())!}
+                      p={{
+                        pool: p.position.pool.toBase58(),
+                        position: id,
+                        positionNftAccount: p.position.positionNftAccount.toBase58(),
+                        a: {
+                          mint: p.mints.a,
+                          symbol: symbols.a,
+                          decimals: p.ctx.aDecimals,
+                          feeRaw: p.value.feeARaw,
+                        },
+                        b: {
+                          mint: p.mints.b,
+                          symbol: symbols.b,
+                          decimals: p.ctx.bDecimals,
+                          feeRaw: p.value.feeBRaw,
+                        },
+                      }}
+                      onSettled={rescan}
+                    />
+                  )}
               </li>
             );
           })}

@@ -80,6 +80,12 @@ export interface PayoutSpec {
   /** Journey key in place of a pair, so each payout resumes on its own. */
   slug: string;
   source: "cashback" | "lp-fees";
+  /**
+   * The one stock this payout buys, when it is not the user's choice. LP fees on a token's pool are
+   * paid in that token's pair asset. A payout resumed from an earlier visit keeps the stock it
+   * started with, since its COOK may already be on the way to that swap.
+   */
+  ticker?: string;
   /** What is owed, in COOK, for the "nothing yet" check. Only its sign matters to the gate. */
   owedCook: number;
   pricings: PayoutPricing[];
@@ -158,7 +164,7 @@ export function StockPayout({
   // The Solana legs need their own connection: the wallet's provider points at Cookie Chain.
   const solanaConn = useMemo(() => new Connection(SOLANA_RPC_URL, "confirmed"), []);
 
-  const [ticker, setTicker] = useState(DEFAULT_RWA.ticker);
+  const [ticker, setTicker] = useState(spec.ticker ?? DEFAULT_RWA.ticker);
   const asset = rwaByTicker(ticker) ?? DEFAULT_RWA;
   const [journey, setJourney] = useState<Journey | null>(null);
   const [running, setRunning] = useState(false);
@@ -366,21 +372,27 @@ export function StockPayout({
           <div className="text-[15px] text-primary">{spec.copy.title}</div>
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted">{spec.copy.body}</p>
         </div>
-        <label className="shrink-0">
-          <span className="sr-only">Stock to receive</span>
-          <select
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value)}
-            disabled={running || journey !== null}
-            className="num glass-select rounded-full px-3 py-2 text-[13px] text-primary outline-none disabled:opacity-50"
-          >
-            {RWA_ASSETS.map((a) => (
-              <option key={a.ticker} value={a.ticker}>
-                {a.symbol} · {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {spec.ticker ? (
+          <span className="num shrink-0 rounded-full px-3 py-2 text-[13px] text-primary [background:var(--well-fill)] [box-shadow:var(--well-edge)]">
+            {asset.symbol} · {asset.name}
+          </span>
+        ) : (
+          <label className="shrink-0">
+            <span className="sr-only">Stock to receive</span>
+            <select
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              disabled={running || journey !== null}
+              className="num glass-select rounded-full px-3 py-2 text-[13px] text-primary outline-none disabled:opacity-50"
+            >
+              {RWA_ASSETS.map((a) => (
+                <option key={a.ticker} value={a.ticker}>
+                  {a.symbol} · {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {plan && !journey && (

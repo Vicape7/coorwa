@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { COOK_DECIMALS, COOK_MINT, COOK_SYMBOL } from "@/lib/config";
 import { lpClaimLeg, lpPayoutSlug } from "@/lib/payout";
 import { rawToUi } from "@/lib/format";
+import { rwaByTicker } from "@/lib/rwa";
 import { StockPayout, type PayoutPricing, type PayoutSpec } from "./rwa-payout";
 import { Notice } from "./notice";
 
@@ -22,7 +23,16 @@ export interface LpPayoutPosition {
   b: { mint: string; symbol: string; decimals: number; feeRaw: string };
 }
 
-export function LpPayout({ p, onSettled }: { p: LpPayoutPosition; onSettled: () => void }) {
+export function LpPayout({
+  p,
+  ticker,
+  onSettled,
+}: {
+  p: LpPayoutPosition;
+  /** The pair asset of the pool's token. The fees are paid in it and in nothing else. */
+  ticker: string;
+  onSettled: () => void;
+}) {
   const cookSide = p.a.mint === COOK_MINT ? p.a : p.b.mint === COOK_MINT ? p.b : null;
   const tokenSide = cookSide === p.a ? p.b : p.a;
 
@@ -31,6 +41,7 @@ export function LpPayout({ p, onSettled }: { p: LpPayoutPosition; onSettled: () 
     const cookFee = rawToUi(cookSide.feeRaw, COOK_DECIMALS);
     const tokenFee = rawToUi(tokenSide.feeRaw, tokenSide.decimals);
     const token = { mint: tokenSide.mint, symbol: tokenSide.symbol, decimals: tokenSide.decimals };
+    const stock = rwaByTicker(ticker)?.symbol ?? ticker;
 
     const pricings: PayoutPricing[] = [];
     if (tokenFee > 0) {
@@ -60,6 +71,7 @@ export function LpPayout({ p, onSettled }: { p: LpPayoutPosition; onSettled: () 
     return {
       slug: lpPayoutSlug(p.position),
       source: "lp-fees",
+      ticker,
       owedCook: cookFee + tokenFee,
       pricings,
       token,
@@ -70,9 +82,9 @@ export function LpPayout({ p, onSettled }: { p: LpPayoutPosition; onSettled: () 
         body:
           (tokenFee > 0
             ? `Claim the fees, sell the ${token.symbol} side for COOK, bridge it to Solana, and ` +
-              "buy a real xStock into this same wallet there. "
-            : "Claim the fees, bridge the COOK to Solana, and buy a real xStock into this same " +
-              "wallet there. ") +
+              `buy ${stock}, this pair's stock, into this same wallet there. `
+            : `Claim the fees, bridge the COOK to Solana, and buy ${stock}, this pair's stock, ` +
+              "into this same wallet there. ") +
           "Each step is its own signature, and a payout that stops halfway picks up where it left off.",
         action: "Claim fees as",
         done: "Paid out in full.",
@@ -81,7 +93,7 @@ export function LpPayout({ p, onSettled }: { p: LpPayoutPosition; onSettled: () 
           "go out once.",
       },
     };
-  }, [cookSide, tokenSide, p.pool, p.position, p.positionNftAccount]);
+  }, [cookSide, tokenSide, p.pool, p.position, p.positionNftAccount, ticker]);
 
   if (!spec) {
     return (
