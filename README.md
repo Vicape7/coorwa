@@ -24,6 +24,7 @@
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
   <img src="https://img.shields.io/badge/tests-115%20passing-3fb950?style=flat-square" alt="115 tests passing">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
 ---
@@ -375,7 +376,8 @@ npm run program:test     # integration tests against a throwaway validator and P
 Reference implementations for several on-chain flows come from
 [`cookiechain/cookie-mcp`](https://github.com/cookiechain/cookie-mcp).
 
-Made by [Vicape7](https://github.com/Vicape7) · [@xVicape](https://x.com/xVicape)
+Made by [Vicape7](https://github.com/Vicape7) · [@xVicape](https://x.com/xVicape) · Open source
+under the [MIT license](LICENSE)
 
 ---
 
