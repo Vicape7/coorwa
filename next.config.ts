@@ -14,11 +14,46 @@ const nextConfig: NextConfig = {
    * here yet because the wallet adapters, the theme script and token logos from arbitrary IPFS
    * gateways each need their own allowance, and a policy that blocks a trade is worse than none.
    */
+  /*
+   * Plain HTTP is answered with a redirect to HTTPS, in the app rather than in the zone's settings.
+   * Cloudflare's own "Always Use HTTPS" never sees these requests: coorwa.fun is a Workers custom
+   * domain, so the Worker answers before the zone's redirect would happen, and the site served a
+   * 200 over HTTP with the setting switched on.
+   *
+   * The scheme comes from the `cf-visitor` header Cloudflare puts on every request it forwards.
+   * Nothing matches without that header, so a local dev server on http://localhost is untouched.
+   */
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [
+          { type: "header" as const, key: "cf-visitor", value: '.*"scheme":"http".*' },
+          { type: "host" as const, value: "(www\\.)?coorwa\\.fun" },
+        ],
+        destination: "https://coorwa.fun/:path*",
+        permanent: true,
+      },
+    ];
+  },
+
   async headers() {
     return [
       {
         source: "/:path*",
         headers: [
+          /*
+           * Six months, subdomains included. After one visit over HTTPS a browser will not use plain
+           * HTTP for this domain again, which is the half of the problem a redirect cannot fix: the
+           * first request of a session is the one somebody on the same network could answer.
+           *
+           * Set here for the same reason as the redirect above. Turning HTTPS off for coorwa.fun
+           * after this ships would make the site unreachable until the six months run out.
+           */
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=15552000; includeSubDomains",
+          },
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
