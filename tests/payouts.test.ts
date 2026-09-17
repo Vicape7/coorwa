@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { lineAmounts, payableLines, splitRaw, withoutCreators } from "../src/lib/rewards-ledger";
+import { MAX_CYCLE_ATTEMPTS, MAX_LINE_ATTEMPTS, sendBatch } from "../src/lib/payout-cycle";
 
 const sum = (m: Map<unknown, bigint>) => [...m.values()].reduce((a, b) => a + b, 0n);
 
@@ -84,4 +85,46 @@ test("the creator is paid from fees only, never as a holder of their own token",
   ]);
   const out = withoutCreators(weights, new Set(["creator"]));
   assert.deepEqual([...out], [["holder", 100n]]);
+});
+
+// --- a run that cannot finish -----------------------------------------------------------------------
+
+/**
+ * One wallet that cannot receive must not stop the run, and through it every later run: a step only
+ * ever works on the oldest open run, so a send that fails forever means nobody is paid again.
+ */
+test("a batch is one transaction's worth of recipients, a wallet's lines together", () => {
+  const pending = [
+    { id: 1, wallet: "a", ticker: "NVDA", attempts: 0 },
+    { id: 2, wallet: "a", ticker: "NVDA", attempts: 0 },
+    { id: 3, wallet: "b", ticker: "NVDA", attempts: 0 },
+    { id: 4, wallet: "a", ticker: "TSLA", attempts: 0 },
+    { id: 5, wallet: "c", ticker: "NVDA", attempts: 0 },
+  ];
+  const batch = sendBatch(pending, 2);
+  assert.equal(batch.length, 2);
+  assert.deepEqual(batch[0].map((l) => l.id), [1, 2]);
+  assert.deepEqual(batch[1].map((l) => l.id), [3]);
+});
+
+test("a recipient whose send failed is sent on its own, so it cannot take the others down", () => {
+  const pending = [
+    { id: 1, wallet: "good", ticker: "NVDA", attempts: 0 },
+    { id: 2, wallet: "bad", ticker: "NVDA", attempts: 2 },
+    { id: 3, wallet: "alsogood", ticker: "NVDA", attempts: 0 },
+  ];
+  const batch = sendBatch(pending, 5);
+  assert.deepEqual(batch, [[pending[1]]]);
+
+  // Once it is left behind, the rest go together again.
+  assert.equal(sendBatch(pending.filter((l) => l.id !== 2), 5).length, 2);
+});
+
+test("nothing pending is nothing to send", () => {
+  assert.deepEqual(sendBatch([], 5), []);
+});
+
+test("a wallet is given up on before the run that is trying to pay it", () => {
+  // The other way round, every run would stop on the same wallet and start over on the next one.
+  assert.ok(MAX_LINE_ATTEMPTS < MAX_CYCLE_ATTEMPTS);
 });

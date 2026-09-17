@@ -488,7 +488,9 @@ export async function walletRewards(wallet: string): Promise<WalletRewards> {
         role: r.role,
         mint: r.mint,
       });
-    } else {
+    } else if (r.status !== "failed") {
+      // A failed line is neither waiting nor paid: the run could not reach the account, and the
+      // amount stays counted as the pool's so it is never handed out a second time.
       const key = `${r.mint}|${r.role}`;
       const line = pending.get(key) ?? { mint: r.mint, ticker: r.ticker, role: r.role, usd: 0 };
       line.usd += r.amountUsd;

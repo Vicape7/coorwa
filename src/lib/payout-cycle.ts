@@ -34,7 +34,7 @@ import {
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { and, asc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db, schema } from "./db";
 import { buildBridgeTransfer, scaleRaw } from "./bridge";
 import { fetchSolUsd, jupQuote, jupSwapTx } from "./jupiter";
@@ -70,6 +70,14 @@ const DROPPED_AFTER_MS = 3 * 60 * 1000;
 const LEASE_MS = 90 * 1000;
 /** How long one call keeps sending before it leaves the rest to the next call. */
 const SEND_BUDGET_MS = 25 * 1000;
+/** Steps that may fail in a row before the run is given up on, about an hour of calls. */
+export const MAX_CYCLE_ATTEMPTS = 10;
+/**
+ * Sends a line may be part of that do not land before the wallet is left unpaid. Lower than the
+ * run's own limit on purpose: the run has to outlive the wallet that is holding it up, or it gives
+ * up first and the next run walks into the same wallet again.
+ */
+export const MAX_LINE_ATTEMPTS = 5;
 
 const UNITS = 10n ** BigInt(COOK_DECIMALS);
 
@@ -154,12 +162,36 @@ export async function runPayoutStep(now = new Date()): Promise<PayoutStepResult>
           : open.status === "bridged"
             ? await swap(open, signer)
             : await send(open, signer, now);
+    // The step got through, so whatever failed before it was a bad minute rather than a dead run.
+    if (open.attempts > 0) await update(open.id, { attempts: 0 });
     return { action: open.status, cycleId: open.id, detail };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    await update(open.id, { note: message.slice(0, 500) });
+    const attempts = open.attempts + 1;
+    if (attempts >= MAX_CYCLE_ATTEMPTS) {
+      await giveUp(open, message);
+      return { action: "stuck", cycleId: open.id, detail: message };
+    }
+    await update(open.id, { note: message.slice(0, 500), attempts });
     return { action: "error", cycleId: open.id, detail: message };
   }
+}
+
+/**
+ * Stop a run that cannot be finished, so the next one is not held up behind it.
+ *
+ * A step always takes the oldest run still open, so a bridge that never arrives, a route that keeps
+ * dying or any other step that fails every time would mean nobody is ever paid again. What the run
+ * had queued goes back to waiting and a later run shares it out again; what it already sent stays
+ * sent, and the reason it stopped stays in `note` for the operator.
+ */
+async function giveUp(cycle: Cycle, reason: string) {
+  const { payoutLines } = schema;
+  await requireDb()
+    .update(payoutLines)
+    .set({ status: "allocated", paidIn: null, signature: null, assetRaw: null, attempts: 0 })
+    .where(and(eq(payoutLines.paidIn, cycle.id), eq(payoutLines.status, "queued")));
+  await update(cycle.id, { status: "stuck", note: reason.slice(0, 500), stepAt: null });
 }
 
 // --- allocated: cost budget and bridge ---------------------------------------------------------------
@@ -448,6 +480,54 @@ async function swap(cycle: Cycle, signer: Keypair): Promise<string> {
 
 // --- sending: pay the wallets ---------------------------------------------------------------------------
 
+/** A line as the batching rule sees it: which wallet, which asset, and how it has gone so far. */
+export interface SendCandidate {
+  id: number;
+  wallet: string;
+  ticker: string;
+  attempts: number;
+}
+
+/**
+ * The recipients one transaction pays: a wallet's lines in one asset go together, and a wallet whose
+ * send has already failed goes on its own.
+ *
+ * Batching is what keeps a run affordable, but it also means one account that cannot receive takes
+ * four innocent ones down with it, every call, for as long as it fails. Once a recipient has a
+ * failure behind it, it is sent alone: either it lands, or it is plainly the one at fault and the
+ * others are paid meanwhile.
+ */
+export function sendBatch<T extends SendCandidate>(pending: readonly T[], batchSize: number): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const l of pending) {
+    const key = `${l.wallet}|${l.ticker}`;
+    groups.set(key, [...(groups.get(key) ?? []), l]);
+  }
+  const all = [...groups.values()];
+  const troubled = all.find((g) => g.some((l) => l.attempts > 0));
+  return troubled ? [troubled] : all.slice(0, batchSize);
+}
+
+/**
+ * Count a send that did not land against its lines, and give up on a wallet that has failed too often.
+ *
+ * A failed line keeps its share out of the token's pool rather than returning it: the wallet was
+ * owed the money and only the send could not be made, so returning it would pay the amount twice.
+ */
+async function sendFailed(ids: number[]) {
+  if (ids.length === 0) return;
+  const conn = requireDb();
+  const { payoutLines } = schema;
+  await conn
+    .update(payoutLines)
+    .set({ signature: null, attempts: sql`${payoutLines.attempts} + 1` })
+    .where(inArray(payoutLines.id, ids));
+  await conn
+    .update(payoutLines)
+    .set({ status: "failed" })
+    .where(and(inArray(payoutLines.id, ids), gte(payoutLines.attempts, MAX_LINE_ATTEMPTS)));
+}
+
 async function send(cycle: Cycle, signer: Keypair, now: Date): Promise<string> {
   const conn = requireDb();
   const sol = solanaConn();
@@ -479,10 +559,11 @@ async function send(cycle: Cycle, signer: Keypair, now: Date): Promise<string> {
         .set({ status: "sent" })
         .where(eq(payoutLines.signature, signature!));
     } else if (lost) {
-      await conn
-        .update(payoutLines)
-        .set({ signature: null })
+      const carried = await conn
+        .select({ id: payoutLines.id })
+        .from(payoutLines)
         .where(eq(payoutLines.signature, signature!));
+      await sendFailed(carried.map((l) => l.id));
     } else {
       return "waiting for a send to confirm";
     }
@@ -513,12 +594,7 @@ async function send(cycle: Cycle, signer: Keypair, now: Date): Promise<string> {
     if (Date.now() - started > SEND_BUDGET_MS) return `sent to ${sentWallets} wallets, more next call`;
 
     // One recipient is one wallet in one asset, however many tokens its lines came from.
-    const groups = new Map<string, typeof pending>();
-    for (const l of pending) {
-      const key = `${l.wallet}|${l.ticker}`;
-      groups.set(key, [...(groups.get(key) ?? []), l]);
-    }
-    const batch = [...groups.values()].slice(0, SEND_BATCH);
+    const batch = sendBatch(pending, SEND_BATCH);
 
     const tx = new Transaction();
     const ids: number[] = [];
@@ -576,7 +652,7 @@ async function send(cycle: Cycle, signer: Keypair, now: Date): Promise<string> {
     await sol.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
     const confirmed = await sol.confirmTransaction({ signature, ...latest }, "confirmed");
     if (confirmed.value.err) {
-      await conn.update(payoutLines).set({ signature: null }).where(inArray(payoutLines.id, ids));
+      await sendFailed(ids);
       throw new Error(`a payout send failed: ${JSON.stringify(confirmed.value.err)}`);
     }
     await conn.update(payoutLines).set({ status: "sent" }).where(inArray(payoutLines.id, ids));

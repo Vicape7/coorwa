@@ -300,6 +300,13 @@ export const payoutCycles = pgTable(
     stepAt: timestamp("step_at", { withTimezone: true }),
     /** The last reason the run did not advance, for the operator panel. */
     note: text("note"),
+    /**
+     * Steps that have failed in a row. Reset whenever one gets through, so this counts a run that
+     * cannot move rather than one that has had a bad minute. A run that reaches the limit is given
+     * up on, because the step picks the oldest open run and a stuck one would hold up every later
+     * run behind it.
+     */
+    attempts: integer("attempts").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -331,8 +338,10 @@ export const payoutLines = pgTable(
     /** Average balance across the run's samples, for a holder line. */
     balanceRaw: bigint("balance_raw", { mode: "bigint" }).notNull(),
     amountUsd: doublePrecision("amount_usd").notNull(),
-    /** allocated, queued, or sent. */
+    /** allocated, queued, sent, or failed: a wallet the run could not pay. */
     status: text("status").notNull().default("allocated"),
+    /** Sends this line has been part of that did not land, so one wallet cannot stop a run forever. */
+    attempts: integer("attempts").notNull().default(0),
     /** Raw units of the asset this line received, once sent. */
     assetRaw: bigint("asset_raw", { mode: "bigint" }),
     /** The Solana transaction that sent it. Written before confirming, so a retry can check it. */
