@@ -39,7 +39,8 @@
     "COORWA_REFERRER": "3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R"
   },
   // Secrets, set with `npx wrangler secret put <NAME>`: HOLDER_SAMPLE_SECRET, COORWA_OPERATOR_KEY,
-  // SOLANA_SERVER_RPC_URL, JUPITER_API_KEY.
+  // SOLANA_SERVER_RPC_URL, JUPITER_API_KEY, and optionally SOLANA_BROWSER_RPC_URL, a second Solana
+  // key for the browser's relay so the site's traffic cannot eat the payout run's rate limit.
   // NEXT_PUBLIC_* values are baked into the bundle at build time, from .env.local.
   "observability": {
     "enabled": true
