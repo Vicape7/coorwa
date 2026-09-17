@@ -91,6 +91,23 @@ export default function PrivacyPage() {
             title: "Changes",
             body: <p>We may update this page. The date at the top shows the latest version.</p>,
           },
+          {
+            title: "Contact",
+            body: (
+              <p>
+                Questions about your data go to{" "}
+                <a
+                  href="https://x.com/xVicape"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-4"
+                >
+                  @xVicape on X
+                </a>
+                .
+              </p>
+            ),
+          },
         ]}
       />
     </SiteShell>

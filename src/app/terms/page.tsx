@@ -182,6 +182,23 @@ export default function TermsPage() {
               </p>
             ),
           },
+          {
+            title: "Contact",
+            body: (
+              <p>
+                Questions about these terms or about Coorwa go to{" "}
+                <a
+                  href="https://x.com/xVicape"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-4"
+                >
+                  @xVicape on X
+                </a>
+                .
+              </p>
+            ),
+          },
         ]}
       />
     </SiteShell>
