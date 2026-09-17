@@ -209,12 +209,11 @@ function PairFacts({ pair }: { pair: CoorwaPair }) {
     <div className="card p-5">
       <div className="label">How this pair is priced</div>
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
-        There is no {pair.base.symbol}/{pair.quote.ticker} pool anywhere, and Coorwa does not pretend
-        otherwise. The price is <span className="num text-primary">USD({pair.base.symbol})</span>{" "}
-        &divide; <span className="num text-primary">USD({pair.quote.symbol})</span> - the first from
-        real reserves in the {pair.venue ?? "Cookie Chain"} pool, the second from real Solana
-        liquidity. Both are live market prices, so the ratio is a change of units, not a synthetic
-        instrument.
+        {pair.base.symbol} trades in its {pair.venue ?? "Cookie Chain"} pool and is priced live in{" "}
+        {pair.quote.ticker} shares: <span className="num text-primary">USD({pair.base.symbol})</span>{" "}
+        &divide; <span className="num text-primary">USD({pair.quote.symbol})</span>, real reserves on
+        Cookie Chain over real {pair.quote.symbol} liquidity on Solana. Nothing is modelled, so the
+        number is exact.
       </p>
 
       <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">
