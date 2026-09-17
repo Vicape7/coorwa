@@ -10,8 +10,10 @@
  * settled through the vault on the rewards page, not here.
  *
  * The list comes from the pool feed rather than from Coorwa's own records, so a token launched
- * before any of this existed still shows up and can still be claimed.
+ * before any of this existed still shows up and can still be claimed. Once the token has a pair, the
+ * same fees can also be taken as that pair's stock on Solana.
  */
+import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -20,6 +22,8 @@ import { amount, usd, shortAddr } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { verifyLaunchpadBuild } from "@/lib/expectation";
 import { Notice } from "./notice";
+import { TokenMark } from "./token-mark";
+import { CreatorPayout } from "./creator-payout";
 import type { LaunchpadPool } from "@/lib/launchpad";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -39,13 +43,6 @@ export function CreatorLaunches({
     [pools, wallet],
   );
 
-  // Only for the benchmark label. The pools themselves come from the chain's own feed.
-  const { data: recorded } = useSWR<{ launches: { mint: string; ticker: string }[] }>(
-    wallet ? `/api/launchpad/launches?creator=${wallet}` : null,
-    fetcher,
-  );
-  const tickerByMint = new Map((recorded?.launches ?? []).map((l) => [l.mint, l.ticker]));
-
   if (!wallet || mine.length === 0) return null;
 
   return (
@@ -61,7 +58,7 @@ export function CreatorLaunches({
           <LaunchRow
             key={p.pubkey}
             pool={p}
-            ticker={tickerByMint.get(p.tokenMint) ?? null}
+            ticker={p.ticker ?? null}
             cookPriceUsd={cookPriceUsd}
           />
         ))}
@@ -132,8 +129,9 @@ function LaunchRow({
 
   return (
     <li className="panel p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-center justify-between gap-3">
+        <TokenMark logo={pool.logo ?? null} symbol={pool.symbol} size={40} />
+        <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] text-primary">
             {pool.name} <span className="text-subtle">{pool.symbol}</span>
           </div>
@@ -143,7 +141,9 @@ function LaunchRow({
                 {pool.symbol}/{ticker}
               </>
             ) : (
-              <span className="text-subtle">no benchmark</span>
+              <Link href="/pools" className="underline underline-offset-4">
+                no pair yet, choose one
+              </Link>
             )}
             {" · "}
             {usd(Number(pool.paymentRaisedNet) / 1e9)} raised
@@ -167,7 +167,7 @@ function LaunchRow({
           disabled={busy || !(pending > 0) || !publicKey}
           onClick={claim}
         >
-          {busy ? "Confirm in your wallet" : "Claim"}
+          {busy ? "Confirm in your wallet" : ticker ? "Claim as COOK" : "Claim"}
         </button>
       </div>
 
@@ -176,6 +176,15 @@ function LaunchRow({
           <Notice tone="down">{error}</Notice>
         </div>
       )}
+      {ticker && (
+        <CreatorPayout
+          pool={pool.pubkey}
+          pendingCook={pending}
+          ticker={ticker}
+          onSettled={() => void mutate()}
+        />
+      )}
+
       {claimed && (
         <div className="mt-3">
           <Notice tone="up">

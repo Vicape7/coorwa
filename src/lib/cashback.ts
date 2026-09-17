@@ -12,6 +12,7 @@ import { dbEnabled, db, schema } from "./db";
 import { feeShareSql } from "./epochs";
 import { fetchTokens } from "./cookiescan";
 import { createdBy } from "./creators";
+import { logosByMint } from "./token-logos";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
 import { COORWA_OPERATOR, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
@@ -47,6 +48,8 @@ export interface CashbackSummary {
    */
   created: RewardPool[];
   pools: RewardPool[];
+  /** A logo per mint for every token named above, where one is known. */
+  logos: Record<string, string>;
   runs: RunRow[];
   /** Across every token, for the landing page. */
   totals: RewardTotals;
@@ -71,6 +74,7 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   estimates: [],
   created: [],
   pools: [],
+  logos: {},
   runs: [],
   totals: { paidUsd: 0, waitingUsd: 0, tokensPaired: 0 },
 });
@@ -98,7 +102,7 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     runs,
     totals: rewardTotals(pools, new Set([...pinned.keys(), ...listed.keys()]).size),
   };
-  if (!wallet) return base;
+  if (!wallet) return { ...base, logos: await logosFor(base.pools) };
 
   const [mine, estimates, made, tokens] = await Promise.all([
     walletRewards(wallet),
@@ -113,7 +117,13 @@ export async function summarise(wallet: string | null): Promise<CashbackSummary>
     .map((mint) => poolOf.get(mint) ?? emptyPool(mint, pinned.get(mint) ?? listed.get(mint) ?? null))
     .map((p) => ({ ...p, symbol: p.symbol ?? symbolOf.get(p.mint) ?? null }))
     .sort((a, b) => b.creatorAccruedUsd - a.creatorAccruedUsd);
-  return { ...base, pending: mine.pending, paid: mine.paid, estimates, created };
+  const logos = await logosFor([...base.pools, ...created, ...estimates, ...mine.paid]);
+  return { ...base, pending: mine.pending, paid: mine.paid, estimates, created, logos };
+}
+
+async function logosFor(tokens: readonly { mint: string }[]): Promise<Record<string, string>> {
+  const mints = [...new Set(tokens.map((t) => t.mint))];
+  return Object.fromEntries(await logosByMint(mints.map((mint) => ({ mint }))));
 }
 
 /** A token with no fees yet, so a creator still sees it listed. */

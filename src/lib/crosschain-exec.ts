@@ -121,6 +121,7 @@ function legRunners(j: Journey): LegRunner[] {
   return j.legs.map(({ kind }) => {
     if (kind === "claim") return claimCashback;
     if (kind === "lp-claim") return claimLpFees;
+    if (kind === "creator-claim") return claimCreatorFees;
     if (kind === "bridge") return bridgeLeg;
     if (j.direction === "buy") return kind === "cookie-swap" ? sellTokenForCook : deliverThenBuyRwa;
     return kind === "solana-swap" ? sellRwaForCook : deliverThenBuyToken;
@@ -459,6 +460,83 @@ const claimLpFees: LegRunner = async (ctl, ctx, i) => {
       tokenRaw > 0n
         ? `${fmtAmount(rawToUi(tokenRaw, j.token.decimals))} ${j.token.symbol} and ${cook} claimed`
         : `${cook} claimed`,
+  });
+};
+
+// --- Leg 1, creator fees: claim what a launchpad pool owes its creator ---------------------------
+
+/**
+ * Claim a launchpad pool's creator fees through MomoSwap, then read what the claim paid.
+ *
+ * The build is checked against MomoSwap's own declaration and against the claim the user asked for
+ * before the wallet signs, as on the launch page. Like an LP claim, the pool pays whatever accrued
+ * again on a second claim, so the stored signature is what stops a resume claiming twice.
+ */
+const claimCreatorFees: LegRunner = async (ctl, ctx, i) => {
+  const j = ctl.get();
+  const claim = j.creatorClaim;
+  if (!claim) {
+    throw new CoorwaError(
+      "This payout names no pool to claim from.",
+      "Nothing has been signed. Discard it and start again from the launch page.",
+    );
+  }
+
+  let signature = await landedSignature(ctx.cookieConn, j.steps[i]?.signature);
+  if (!signature) {
+    ctl.setStep(i, { state: "running", detail: "Building the claim" });
+    const intent = {
+      action: "claim-creator-fees" as const,
+      wallet: ctx.owner.toBase58(),
+      pool: claim.pool,
+    };
+    const built = await postJson<{
+      transactionBase64?: string;
+      expectation?: unknown;
+      error?: string;
+      hint?: string;
+    }>("/api/launchpad/trade", intent);
+    if (built.error || !built.transactionBase64) {
+      throw new CoorwaError(
+        built.error ?? "MomoSwap returned no claim transaction.",
+        built.hint ?? "Nothing has been signed. Try again in a moment.",
+      );
+    }
+    const { verifyLaunchpadBuild } = await import("./expectation");
+    await verifyLaunchpadBuild(built as Parameters<typeof verifyLaunchpadBuild>[0], intent);
+
+    ctl.setStep(i, { state: "running", detail: "Claiming your creator fees" });
+    signature = await sendAndRecord(
+      ctx.cookieConn,
+      decodeTx(built.transactionBase64),
+      ctx,
+      ctl,
+      i,
+      "cookie",
+    );
+  }
+
+  const parsed = await fetchParsed(ctx.cookieConn, signature);
+  const ownerDelta = cookieNativeLamports(parsed, ctx.owner);
+  if (!parsed || ownerDelta === null) {
+    throw new CoorwaError(
+      "The claim landed, but what it paid could not be read back.",
+      "Nothing is lost and nothing was sent twice. The fees are in your Cookie Chain wallet. Resume " +
+        "the payout and it will read them again without re-signing this leg.",
+    );
+  }
+  const wrapped = getAssociatedTokenAddressSync(new PublicKey(COOK_MINT), ctx.owner, true);
+  const claimed = lpClaimedCook(ownerDelta, accountLamportsBefore(parsed, wrapped));
+  const reserve = BigInt(uiToRaw(COOKIE_GAS_RESERVE, COOK_DECIMALS));
+  const toBridge = lpToBridge(claimed, 0n, reserve);
+  if (toBridge <= 0n) throw tooLittleToBridge();
+
+  ctl.update({ bridgeAmount: rawToUi(toBridge, COOK_DECIMALS) });
+  ctl.setStep(i, {
+    state: "done",
+    signature,
+    chain: "cookie",
+    detail: `${fmtAmount(rawToUi(claimed > 0n ? claimed : 0n, COOK_DECIMALS))} COOK claimed`,
   });
 };
 
@@ -926,7 +1004,8 @@ function tokenDelta(
  * signature makes harmless, and a failure costs the record, never the route.
  */
 function reportSwap(ctx: RunContext, j: Journey, signature: string, side: "buy" | "sell"): void {
-  const payout = j.legs[0]?.kind === "claim" || j.legs[0]?.kind === "lp-claim";
+  const first = j.legs[0]?.kind;
+  const payout = first === "claim" || first === "lp-claim" || first === "creator-claim";
   void fetch("/api/rewards/record", {
     method: "POST",
     headers: { "content-type": "application/json" },

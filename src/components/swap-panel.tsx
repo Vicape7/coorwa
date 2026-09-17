@@ -18,7 +18,7 @@ import {
   cookieTxUrl,
   DEFAULT_SLIPPAGE_BPS,
 } from "@/lib/config";
-import { rawToUi, uiToRaw, amount, pct, shortAddr } from "@/lib/format";
+import { rawToUi, uiToRaw, amount, pct, shortAddr, tinyNumber } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { Notice } from "./notice";
 import type { SwapRoute } from "@/lib/swap";
@@ -315,7 +315,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
             <div className="mt-2 text-[12px] text-muted">
               &asymp;{" "}
               <span className="num text-primary">
-                {shares < 0.0001 ? shares.toExponential(3) : shares.toFixed(6)}
+                {tinyNumber(shares)}
               </span>{" "}
               {pair.quote.ticker} shares
             </div>

@@ -11,6 +11,8 @@ import assert from "node:assert/strict";
 import {
   claimLeg,
   claimedToBridge,
+  creatorClaimLeg,
+  creatorPayoutSlug,
   lpClaimLeg,
   lpClaimedCook,
   lpPayoutSlug,
@@ -160,4 +162,27 @@ test("a stopped LP payout says where the fees are at each step", () => {
   assert.match(fundsLocation({ ...journey, cursor: 1 }), /as CHAT and COOK/);
   assert.match(fundsLocation({ ...journey, cursor: 2 }), /still on Cookie Chain, as COOK/);
   assert.match(fundsLocation({ ...journey, cursor: 3, bridgeAmount: 7 }), /taken 7 COOK/);
+});
+
+test("a creator payout claims from its own pool and says where the fees are", () => {
+  const first = creatorClaimLeg(5594);
+  assert.equal(first.kind, "creator-claim");
+  assert.notEqual(creatorPayoutSlug("pool"), lpPayoutSlug("pool"));
+  assert.match(payoutBlocked({ ...base, owedCook: 0, source: "creator-fees" })!, /No fees/);
+
+  const leg = (kind: RouteLeg["kind"]): RouteLeg => ({ ...claimLeg(10), kind });
+  const journey = newJourney({
+    direction: "buy",
+    owner: "owner",
+    pairSlug: creatorPayoutSlug("pool"),
+    ticker: "NVDA",
+    rwaMint: "mint",
+    rwaDecimals: 8,
+    token: { mint: "cook", symbol: "COOK", decimals: 9 },
+    input: { amount: 5594, symbol: "COOK" },
+    legs: [first, leg("bridge"), leg("solana-swap")],
+    creatorClaim: { pool: "pool" },
+  });
+  assert.match(fundsLocation({ ...journey, cursor: 0 }), /still on your launchpad pool/);
+  assert.match(fundsLocation({ ...journey, cursor: 1 }), /still on Cookie Chain, as COOK/);
 });

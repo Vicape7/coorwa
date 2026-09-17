@@ -25,7 +25,7 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Connection } from "@solana/web3.js";
 import { DEFAULT_SLIPPAGE_BPS, SOLANA_RPC_IS_PUBLIC, SOLANA_RPC_URL } from "@/lib/config";
 import { RWA_DECIMALS } from "@/lib/rwa";
-import { amount as fmtAmount, shortAddr, timeAgo, usd } from "@/lib/format";
+import { amount as fmtAmount, shortAddr, timeAgo, tinyNumber, usd } from "@/lib/format";
 import { sharesToRaw, type RwaHolding } from "@/lib/rwa-holding";
 import {
   clearJourney,
@@ -404,7 +404,7 @@ export function CrossChainPanel({ pair }: { pair: CoorwaPair }) {
             <div className="label text-[12px]">You end up holding</div>
             <div className="num mt-1.5 flex items-baseline gap-2">
               <span className="text-[26px] text-primary">
-                {plan.outAmount < 0.0001 ? plan.outAmount.toExponential(4) : plan.outAmount.toFixed(6)}
+                {tinyNumber(plan.outAmount)}
               </span>
               <span className="text-[14px] text-muted">{plan.outSymbol}</span>
             </div>

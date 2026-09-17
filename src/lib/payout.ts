@@ -93,10 +93,10 @@ export function payoutBlocked(args: {
   /** What the route says arrives, in USD. Null while it is being priced. */
   valueUsd: number | null;
   sol: SolanaReadiness | null;
-  /** Cashback out of the vault, or the fees on an LP position. Only the wording differs. */
-  source?: "cashback" | "lp-fees";
+  /** Cashback out of the vault, or fees on an LP position or a launchpad pool. Only the wording differs. */
+  source?: "cashback" | "lp-fees" | "creator-fees";
 }): string | null {
-  const lp = args.source === "lp-fees";
+  const lp = args.source === "lp-fees" || args.source === "creator-fees";
   if (args.rpcIsPublic) {
     return "No dedicated Solana RPC is configured, so the Solana legs cannot be signed from this browser.";
   }
@@ -215,6 +215,41 @@ export function lpClaimLeg(args: {
     note: args.token
       ? `plus ${amount(args.token.amount)} ${args.token.symbol}, sold for COOK next`
       : "this pool pays its fees in COOK",
+  };
+}
+
+// --- Launchpad creator fees ---------------------------------------------------------------------
+
+/**
+ * A launchpad creator's fees taken as a stock:
+ *
+ *   pool --[claim creator fees]--> COOK --[bridge]--> COOK (Solana) --[Jupiter]--> xSTOCK
+ *
+ * MomoSwap's claim pays wrapped COOK into the creator's own account and closes it in the same
+ * transaction, the way an LP claim does, so what it brought in is measured with `lpClaimedCook`.
+ */
+export interface CreatorClaim {
+  pool: string;
+}
+
+/** One payout in flight per pool. */
+export function creatorPayoutSlug(pool: string): string {
+  return `creator:${pool}`;
+}
+
+/** The creator fee claim, drawn as the first leg of the route. */
+export function creatorClaimLeg(cookFee: number): RouteLeg {
+  return {
+    kind: "creator-claim",
+    label: "Claim your creator fees",
+    venue: "MomoSwap launchpad",
+    inSymbol: "COOK",
+    outSymbol: "COOK",
+    inAmount: cookFee,
+    outAmount: cookFee,
+    priceImpactPct: 0,
+    etaSeconds: 5,
+    note: "checked against MomoSwap's declaration before you sign",
   };
 }
 

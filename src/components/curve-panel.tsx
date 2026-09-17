@@ -11,6 +11,7 @@
  * MomoSwap builds the transaction and the user's own wallet signs it. Coorwa quotes the curve
  * locally beforehand, because the launchpad has no quote endpoint - see `src/lib/curve.ts`.
  */
+import { TokenMark } from "./token-mark";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -209,7 +210,8 @@ export function CurvePanel({
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-start gap-3 border-b border-hair px-5 py-4">
+      <div className="flex items-center gap-3 border-b border-hair px-5 py-4">
+        <TokenMark logo={pool.logo ?? null} symbol={pool.symbol} size={40} />
         <div className="min-w-0">
           <div className="truncate text-[15px] text-primary">
             {pool.name} <span className="text-subtle">{pool.symbol}</span>

@@ -4,6 +4,7 @@
  * Launchpad. Creating a pool is signature-gated by MomoSwap, so the flow is:
  * sign a login message (no chain fee, nothing submitted) -> build -> wallet signs the transaction.
  */
+import { TokenMark } from "./token-mark";
 import { useCallback, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -523,8 +524,9 @@ function LivePools({
                 data-active={selected === p.pubkey}
                 className="panel w-full p-4 text-left transition-colors data-[active=true]:border-[color:var(--color-cookie)]"
               >
-                <div className="flex items-baseline justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex items-center justify-between gap-3">
+                  <TokenMark logo={p.logo ?? null} symbol={p.symbol} size={36} />
+                  <div className="min-w-0 flex-1">
                     <div className="truncate text-[14px] text-primary">
                       {p.name} <span className="text-subtle">{p.symbol}</span>
                     </div>

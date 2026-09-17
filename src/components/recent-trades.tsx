@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { usd, amount, timeAgo, shortAddr } from "@/lib/format";
+import { usd, amount, timeAgo, shortAddr, tinyNumber } from "@/lib/format";
 import { cookieTxUrl } from "@/lib/config";
 import type { Trade } from "@/lib/candles";
 
@@ -75,11 +75,7 @@ export function RecentTrades({
                     {amount(t.base_amount)}
                   </td>
                   <td className="num hidden px-5 py-2 text-right text-muted sm:table-cell">
-                    {inShares == null
-                      ? "—"
-                      : inShares >= 0.0001
-                        ? inShares.toFixed(8)
-                        : inShares.toExponential(3)}
+                    {inShares ? tinyNumber(inShares, 4, false) : "—"}
                   </td>
                   <td className="num px-3 py-2 text-right text-primary sm:px-5">{usd(t.value_usd)}</td>
                   <td className="num px-3 py-2 text-right text-muted sm:px-5">{timeAgo(t.ts)}</td>

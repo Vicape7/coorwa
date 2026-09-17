@@ -26,7 +26,7 @@
  * never be offered to a different wallet than the one that signed it.
  */
 import type { RouteLeg } from "./crosschain";
-import type { LpClaim, PayoutClaim } from "./payout";
+import type { CreatorClaim, LpClaim, PayoutClaim } from "./payout";
 
 export type JourneyDirection = "buy" | "sell";
 export type StepState = "idle" | "running" | "done" | "failed";
@@ -92,6 +92,8 @@ export interface Journey {
 
   /** LP payout only: the position whose fees are claimed. */
   lpClaim?: LpClaim;
+  /** Creator payout only: the launchpad pool whose creator fees are claimed. */
+  creatorClaim?: CreatorClaim;
   /**
    * LP payout only, measured from the claim transaction: the COOK it brought in, in lamports (may be
    * negative, see `lpToBridge`), and the raw amount of the other side it paid, which the swap leg
@@ -174,6 +176,7 @@ export function newJourney(args: {
   legs: RouteLeg[];
   claims?: PayoutClaim[];
   lpClaim?: LpClaim;
+  creatorClaim?: CreatorClaim;
 }): Journey {
   const now = Date.now();
   return {
@@ -197,6 +200,9 @@ export function fundsLocation(j: Journey): string {
   const next = j.legs[j.cursor]?.kind;
   if (next === "claim") {
     return "Nothing has crossed yet. Whatever has been claimed is in your Cookie Chain wallet as COOK, and the rest is still in the vault.";
+  }
+  if (next === "creator-claim") {
+    return "Nothing has crossed yet. The fees are still on your launchpad pool, or already in your Cookie Chain wallet as COOK if the claim landed.";
   }
   if (next === "lp-claim") {
     return "Nothing has crossed yet. The fees are still in your position, or already in your Cookie Chain wallet if the claim landed.";

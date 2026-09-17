@@ -48,6 +48,10 @@ export interface LaunchpadPool {
   name: string;
   symbol: string;
   uri: string;
+  /** The image from the token's metadata, added by `/api/launchpad/pools`. */
+  logo?: string | null;
+  /** The token's pair asset, added by `/api/launchpad/pools`. Null until one is chosen. */
+  ticker?: string | null;
   tokenMint: string;
   launchTs: number;
   endTs: number;

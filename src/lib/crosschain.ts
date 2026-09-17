@@ -32,7 +32,7 @@ export interface RouteLeg {
    * "claim" and "lp-claim" only ever open a payout: this route with the vault, or an LP position's
    * fees, in front of it.
    */
-  kind: "claim" | "lp-claim" | "cookie-swap" | "bridge" | "solana-swap";
+  kind: "claim" | "lp-claim" | "creator-claim" | "cookie-swap" | "bridge" | "solana-swap";
   label: string;
   venue: string;
   inSymbol: string;

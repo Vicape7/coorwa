@@ -8,6 +8,7 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { usd, shortAddr } from "@/lib/format";
 import { HOLDER_MIN_USD, PAYOUT_MIN_USD, solanaTxUrl } from "@/lib/config";
 import type { CashbackSummary } from "@/lib/cashback";
+import { TokenMark } from "./token-mark";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
@@ -43,6 +44,12 @@ export function RewardsView() {
     if (p.symbol) symbolOf.set(p.mint, p.symbol);
   }
   const tokenName = (mint: string) => symbolOf.get(mint) ?? shortAddr(mint, 4);
+  const tokenCell = (mint: string, size = 24) => (
+    <span key={mint} className="inline-flex items-center gap-2.5">
+      <TokenMark logo={data?.logos?.[mint] ?? null} symbol={tokenName(mint)} size={size} />
+      {tokenName(mint)}
+    </span>
+  );
 
   const lines: MyLine[] =
     role === "holder"
@@ -140,7 +147,9 @@ export function RewardsView() {
               <ul className="mt-6 divide-y divide-[color:var(--divider)] border-t border-hair">
                 {lines.map((l) => (
                   <li key={l.mint} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3.5">
-                    <span className="min-w-[72px] text-[15px] text-primary">{l.token}</span>
+                    <span className="min-w-[72px] text-[15px] text-primary">
+                      {tokenCell(l.mint, 32)}
+                    </span>
                     {l.ticker ? (
                       <span className="text-[13px] text-muted">paid in {l.ticker}x</span>
                     ) : (
@@ -175,7 +184,7 @@ export function RewardsView() {
                   head={["When", "Token", "Paid in", "Value", "Transaction"]}
                   rows={paid.map((p) => [
                     new Date(p.at).toLocaleDateString(),
-                    tokenName(p.mint),
+                    tokenCell(p.mint),
                     `${p.ticker}x`,
                     usd(p.usd),
                     p.signature ? (
@@ -210,7 +219,7 @@ export function RewardsView() {
           <SimpleTable
             head={["Token", "Paid in", "Next payout", "Paid so far"]}
             rows={data.pools.map((p) => [
-              p.symbol ?? shortAddr(p.mint, 4),
+              tokenCell(p.mint, 28),
               p.ticker ? `${p.ticker}x` : "no pair yet",
               usd(p.holdersWaitingUsd),
               usd(p.holdersPaidUsd),

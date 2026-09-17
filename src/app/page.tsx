@@ -9,6 +9,7 @@ import { HeroSearch } from "@/components/hero-search";
 import { LiveStats } from "@/components/live-stats";
 import { RewardsCalculator } from "@/components/rewards-calculator";
 import { RwaCarousel } from "@/components/rwa-carousel";
+import { SiteFooter } from "@/components/site-footer";
 import { AuroraField, GlassEffect } from "@/components/ui/liquid-glass";
 import { GradientWave } from "@/components/ui/gradient-wave";
 
@@ -139,28 +140,7 @@ export default function Home() {
         </p>
       </Section>
 
-      <footer className="mx-auto mt-auto w-full max-w-[1160px] px-5 pb-12 pt-6">
-        <div className="flex flex-wrap items-center gap-x-7 gap-y-3 text-[14px] text-muted">
-          <span className="title text-primary">coorwa</span>
-          <span>Built on Cookie Chain.</span>
-          <div className="ml-auto flex flex-wrap gap-6">
-            <FooterLink href="https://www.cookiechain.wtf">Cookie Chain</FooterLink>
-            <FooterLink href="https://cookiescan.io">Explorer</FooterLink>
-            <Link
-              href="/status"
-              className="transition-colors hover:text-[color:var(--text-primary)]"
-            >
-              Status
-            </Link>
-          </div>
-        </div>
-        <p className="mt-5 max-w-[80ch] text-[12px] leading-[1.7] text-subtle">
-          Coorwa never holds your tokens and never signs for you. Fees it collects wait in its
-          operator wallet until the daily payout sends them to holders.
-          Tokens on Cookie Chain are volatile and can lose all value; tokenised equities carry
-          issuer and transfer-restriction risk of their own. Nothing here is investment advice.
-        </p>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
@@ -208,15 +188,3 @@ function Tool({
   );
 }
 
-function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="transition-colors hover:text-[color:var(--text-primary)]"
-    >
-      {children}
-    </a>
-  );
-}

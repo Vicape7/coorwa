@@ -41,6 +41,7 @@ import {
   claimLeg,
   payoutBlocked,
   solanaReadiness,
+  type CreatorClaim,
   type LpClaim,
   type PayoutClaim,
   type SolanaReadiness,
@@ -79,7 +80,7 @@ export interface PayoutPricing {
 export interface PayoutSpec {
   /** Journey key in place of a pair, so each payout resumes on its own. */
   slug: string;
-  source: "cashback" | "lp-fees";
+  source: "cashback" | "lp-fees" | "creator-fees";
   /**
    * The one stock this payout buys, when it is not the user's choice. LP fees on a token's pool are
    * paid in that token's pair asset. A payout resumed from an earlier visit keeps the stock it
@@ -94,6 +95,7 @@ export interface PayoutSpec {
   input: { amount: number; symbol: string };
   claims?: PayoutClaim[];
   lpClaim?: LpClaim;
+  creatorClaim?: CreatorClaim;
   copy: {
     title: string;
     body: string;
@@ -348,6 +350,7 @@ export function StockPayout({
         legs: plan.legs,
         claims: spec.claims,
         lpClaim: spec.lpClaim,
+        creatorClaim: spec.creatorClaim,
       }),
     );
   }, [owner, plan, asset, slug, spec, drive]);

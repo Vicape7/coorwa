@@ -23,7 +23,7 @@ export function usd(n: number | null | undefined): string {
   if (abs >= 1) return `$${n.toFixed(2)}`;
   if (abs >= 0.01) return `$${n.toFixed(4)}`;
   if (abs === 0) return "$0";
-  return `$${n.toPrecision(4)}`;
+  return `${n < 0 ? "-" : ""}$${tinyNumber(abs)}`;
 }
 
 /** Token amounts: keeps precision on tiny numbers without printing 18 zeros. */
@@ -35,7 +35,7 @@ export function amount(n: number | null | undefined, maxFrac = 6): string {
   if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (abs >= 1e3) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (abs >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: maxFrac });
-  return n.toPrecision(4).replace(/\.?0+$/, "");
+  return tinyNumber(n);
 }
 
 /**
