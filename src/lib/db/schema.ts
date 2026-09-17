@@ -352,3 +352,17 @@ export const payoutSwaps = pgTable(
   },
   (t) => [uniqueIndex("payout_swaps_cycle_ticker_idx").on(t.cycleId, t.ticker)],
 );
+
+/**
+ * A token's logo, kept once it has been read.
+ *
+ * Logos come from the Cookiescan registry or from the token's IPFS metadata, and IPFS reads from a
+ * Worker fail often enough that a token missing from the registry lost its logo on some requests and
+ * not others. Written whenever a read finds one, and read first next time, so a logo seen once
+ * stays.
+ */
+export const tokenLogos = pgTable("token_logos", {
+  mint: text("mint").primaryKey(),
+  logo: text("logo").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

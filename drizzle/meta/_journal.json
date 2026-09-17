@@ -64,6 +64,13 @@
       "when": 1789568928009,
       "tag": "0008_payout_step_at",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789653596476,
+      "tag": "0009_token_logos",
+      "breakpoints": true
     }
   ]
 }
