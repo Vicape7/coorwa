@@ -11,7 +11,7 @@
  * the terminal, launchpad and pools sign against. The Solana leg of a cross-chain route uses its
  * own connection, created on demand in the route executor.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { ConnectionProvider, WalletProvider, useWallet } from "@solana/wallet-adapter-react";
@@ -46,21 +46,61 @@ export function WalletProviders({ children }: { children: ReactNode }) {
  */
 function WalletModalProvider({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(false);
+  const { wallets } = useWallet();
+
+  // Still inside the tap that asked for a wallet, so the phone lets the link open the Nightly app.
+  const show = useCallback(
+    (open: boolean) => {
+      if (open && isPhone() && usable(wallets).length === 0) window.location.href = nightlyLink();
+      setVisible(open);
+    },
+    [wallets],
+  );
 
   return (
-    <WalletModalContext.Provider value={{ visible, setVisible }}>
+    <WalletModalContext.Provider value={{ visible, setVisible: show }}>
       {children}
       {visible && <ConnectDialog onClose={() => setVisible(false)} />}
     </WalletModalContext.Provider>
   );
 }
 
+/**
+ * Android Chrome adds the Mobile Wallet Adapter, which only opens the system's own list of every
+ * Solana wallet on the phone. Coorwa sends a phone to Nightly instead, so that entry is left out.
+ */
+const MOBILE_ADAPTERS = new Set(["Mobile Wallet Adapter", "Remote Mobile Wallet Adapter"]);
+
+function usable(wallets: ReturnType<typeof useWallet>["wallets"]) {
+  return wallets.filter(
+    (w) =>
+      !MOBILE_ADAPTERS.has(w.adapter.name) &&
+      (w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable),
+  );
+}
+
+function isPhone() {
+  if (typeof navigator === "undefined") return false;
+  // iPadOS reports itself as a Mac, and only its touch points give it away.
+  return (
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+/**
+ * Nightly's universal link opens this page in the app's own browser, where the wallet is injected.
+ * Without the app installed, the same link shows Nightly's page with the download buttons.
+ */
+function nightlyLink() {
+  const url = encodeURIComponent(window.location.href);
+  return `https://nightly.app/v1?network=solana&cluster=mainnet&url=${url}`;
+}
+
 function ConnectDialog({ onClose }: { onClose: () => void }) {
   const { wallets, select } = useWallet();
-  const found = wallets.filter(
-    (w) =>
-      w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable,
-  );
+  const found = usable(wallets);
+  const phone = isPhone();
 
   return createPortal(
     <div className="fixed inset-0 z-50 grid place-items-center p-5">
@@ -75,7 +115,7 @@ function ConnectDialog({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-start gap-3">
           <h3 id="connect-title" className="title min-w-0 flex-1 text-primary">
-            {found.length ? "Connect a wallet" : "No wallet found"}
+            {found.length ? "Connect a wallet" : phone ? "Opening Nightly" : "No wallet found"}
           </h3>
           <button className="btn btn-quiet btn-sm" onClick={onClose}>
             Close
@@ -102,6 +142,26 @@ function ConnectDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
+        ) : phone ? (
+          <>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted">
+              On a phone, Coorwa opens inside the Nightly app, where your wallet connects. If
+              Nightly is not installed, the link takes you to its download page.
+            </p>
+            <div className="mt-5 grid gap-2">
+              <a href={nightlyLink()} className="btn btn-primary w-full">
+                Open in Nightly
+              </a>
+              <a
+                href="https://nightly.app/download?tab=mobile"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost w-full"
+              >
+                Get Nightly
+              </a>
+            </div>
+          </>
         ) : (
           <>
             <p className="mt-2 text-[13px] leading-relaxed text-muted">
