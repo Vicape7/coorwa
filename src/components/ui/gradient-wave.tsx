@@ -20,8 +20,8 @@ import { useEffect, useRef } from "react";
 import { useTheme } from "@/lib/use-theme";
 
 /*
- * The recipe. Everything tuneable lives here rather than in props, the way the mesh-drift shader
- * keeps its UNIFORMS block, so a change of look is a diff in one place.
+ * The recipe. Everything tuneable lives here rather than in props, so a change of look is a diff in
+ * one place.
  *
  * The first colour is the sheet; the rest are the layers folded over it. Warm paper, then the two
  * ambers out of the logo, then the near-white tint on top so the highlights sit above the amber
@@ -59,7 +59,7 @@ const WAVE = {
   shadowPower: 6,
   // Milliseconds of simulated time per frame, capped so a stalled tab does not jump the field.
   maxFrameMs: 1000 / 15,
-  // Same budget as the mesh-drift shader: a retina hero is not worth 8M fragments.
+  // A retina hero is not worth 8M fragments.
   maxPixels: 2_000_000,
 };
 
