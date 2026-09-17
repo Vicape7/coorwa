@@ -106,24 +106,26 @@ test("a wallet that held for part of the day weighs that part of one that held t
     // Bought just before one sample and sold after it.
     { takenAt: at(2), wallet: "flipper", balanceRaw: 100n },
   ];
-  const { weights, samples } = holderWeightsFrom(rows, new Map([["steady", 100n]]));
-  assert.equal(samples, 4, "three samples plus the snapshot taken as the run is allocated");
-  assert.equal(weights.get("steady"), 400n);
+  const { weights, samples } = holderWeightsFrom(rows);
+  assert.equal(samples, 3);
+  assert.equal(weights.get("steady"), 300n);
   assert.equal(weights.get("flipper"), 100n);
 
   const rewards = holderAllocationsFrom({
-    waitingByMint: new Map([["mintA", 5]]),
+    waitingByMint: new Map([["mintA", 4]]),
     holders: new Map([["mintA", weights]]),
   });
   const by = new Map(rewards.map((r) => [r.wallet, r.amountUsd]));
-  assert.equal(by.get("steady"), 4);
+  assert.equal(by.get("steady"), 3);
   assert.equal(by.get("flipper"), 1);
 });
 
-test("with no samples the run falls back to the snapshot it takes itself", () => {
-  const { weights, samples } = holderWeightsFrom([], new Map([["alice", 7n]]));
-  assert.equal(samples, 1);
-  assert.deepEqual([...weights], [["alice", 7n]]);
+test("a wallet that appears only at the moment the run is due weighs nothing", () => {
+  // The run's own moment is published as nextRunAt, so a balance read there could be arranged.
+  // Buying into a token after its last sample earns from the next run, once samples have seen it.
+  const { weights, samples } = holderWeightsFrom([]);
+  assert.equal(samples, 0);
+  assert.equal(weights.size, 0);
 });
 
 test("a sample is never taken twice inside the minimum gap, and always after the maximum", () => {

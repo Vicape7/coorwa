@@ -18,7 +18,6 @@
  */
 import { and, desc, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { db, schema } from "./db";
-import { snapshotHolders } from "./holders";
 import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./holder-samples";
 import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
@@ -306,9 +305,10 @@ const RUN_LOCK = 8_190_119;
 /**
  * Share every waiting pool out, and queue whatever has reached the minimum, as one new run.
  *
- * Holders are weighed by their balances across the samples since the last run plus a snapshot taken
- * now. A token without a pair keeps its pool until it has one, because there is no asset to pay it
- * in; a token nobody eligible holds keeps its pool for the next run.
+ * Holders are weighed by their balances across the samples since the last run, and by nothing else:
+ * the moment a run happens is public, so anything read at that moment could be held across on
+ * purpose. A token without a pair keeps its pool until it has one, because there is no asset to pay
+ * it in; a token nobody eligible held keeps its pool for the next run.
  */
 export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<AllocatedRun> {
   const conn = requireDb();
@@ -319,18 +319,17 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
 
   const waiting = pools.filter((p) => p.ticker && p.holdersWaitingUsd > 0);
   const mints = waiting.map((p) => p.mint);
-  const [snapshots, sampled, creators] = await Promise.all([
-    snapshotHolders(mints),
+  const [sampled, creators] = await Promise.all([
     samplesIn(mints, from, asOf),
     creatorsByMint(waiting),
   ]);
 
   const weights = new Map<string, Map<string, bigint>>();
   const counts = new Map<string, number>();
-  for (const snap of snapshots) {
-    const w = holderWeightsFrom(sampled.get(snap.mint) ?? [], snap.holders);
-    weights.set(snap.mint, withoutCreators(w.weights, creators.get(snap.mint) ?? new Set()));
-    counts.set(snap.mint, w.samples);
+  for (const mint of mints) {
+    const w = holderWeightsFrom(sampled.get(mint) ?? []);
+    weights.set(mint, withoutCreators(w.weights, creators.get(mint) ?? new Set()));
+    counts.set(mint, w.samples);
   }
   const holderLines = holderAllocationsFrom({
     waitingByMint: new Map(waiting.map((p) => [p.mint, p.holdersWaitingUsd])),
@@ -513,7 +512,7 @@ export interface HolderEstimate {
 
 /**
  * What a wallet would get from each waiting pool if the run happened now, from the samples so far.
- * An estimate: the run adds a snapshot of its own, and holdings keep changing until then.
+ * An estimate: more samples are taken before the run, and holdings keep changing until then.
  */
 export async function holderEstimates(wallet: string): Promise<HolderEstimate[]> {
   const waiting = (await rewardPools()).filter((p) => p.ticker && p.holdersWaitingUsd > 0);
@@ -528,7 +527,7 @@ export async function holderEstimates(wallet: string): Promise<HolderEstimate[]>
 
   const out: HolderEstimate[] = [];
   for (const pool of waiting) {
-    const sampled = holderWeightsFrom(samples.get(pool.mint) ?? [], null);
+    const sampled = holderWeightsFrom(samples.get(pool.mint) ?? []);
     const weights = withoutCreators(sampled.weights, creators.get(pool.mint) ?? new Set());
     const count = sampled.samples;
     const mine = weights.get(wallet);

@@ -117,13 +117,16 @@ export function shouldSample(lastAt: Date | null, now: Date, roll: number): bool
  * One token's holder weights over a run's window: every sample's balance, summed per wallet.
  *
  * A wallet absent from a sample held nothing then and adds nothing for it, so a wallet that held for
- * a tenth of the samples weighs a tenth of one that held throughout. `current` is a snapshot taken
- * as the run is allocated, counted as one more sample. `samples` is how many went in, which turns a
- * summed weight back into an average balance for the record.
+ * a tenth of the samples weighs a tenth of one that held throughout. `samples` is how many went in,
+ * which turns a summed weight back into an average balance for the record.
+ *
+ * Only stored samples count. The run could take a snapshot of its own as it allocates, and used to,
+ * but the moment it runs is public in `nextRunAt`, so that one snapshot was the one moment a wallet
+ * could hold across on purpose. The samples it does count are taken at moments nobody knows in
+ * advance.
  */
 export function holderWeightsFrom(
   rows: readonly { takenAt: Date; wallet: string; balanceRaw: bigint }[],
-  current: ReadonlyMap<string, bigint> | null,
 ): { weights: Map<string, bigint>; samples: number } {
   const weights = new Map<string, bigint>();
   const moments = new Set<number>();
@@ -131,12 +134,7 @@ export function holderWeightsFrom(
     moments.add(r.takenAt.getTime());
     if (r.balanceRaw > 0n) weights.set(r.wallet, (weights.get(r.wallet) ?? 0n) + r.balanceRaw);
   }
-  if (current) {
-    for (const [wallet, raw] of current) {
-      if (raw > 0n) weights.set(wallet, (weights.get(wallet) ?? 0n) + raw);
-    }
-  }
-  return { weights, samples: moments.size + (current ? 1 : 0) };
+  return { weights, samples: moments.size };
 }
 
 /** Every sample row for these mints inside (from, to], grouped by mint. */
