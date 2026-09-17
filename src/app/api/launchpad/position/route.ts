@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchConfig, fetchPosition } from "@/lib/launchpad";
+import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,11 @@ export async function GET(req: Request) {
   const pool = url.searchParams.get("pool")?.trim();
   const wallet = url.searchParams.get("wallet")?.trim();
 
-  if (!pool || !wallet) {
-    return NextResponse.json({ error: "pool and wallet are both required" }, { status: 400 });
+  if (!pool || !wallet || !ADDRESS_RE.test(pool) || !ADDRESS_RE.test(wallet)) {
+    return NextResponse.json(
+      { error: "pool and wallet are both required, as addresses" },
+      { status: 400 },
+    );
   }
 
   try {

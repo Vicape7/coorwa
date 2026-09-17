@@ -115,6 +115,12 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
       setError("Image must be under 2 MB.");
       return;
     }
+    // The same four the launchpad's pinning service is asked for, refused here so the message says
+    // what to do rather than arriving as a rejected launch.
+    if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) {
+      setError("Logo must be a PNG, JPEG, GIF or WebP.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const url = String(reader.result);

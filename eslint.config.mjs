@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Build output, none of it written here: the bundled worker, wrangler's state and the compiled
+    // program. Linting a build is thousands of findings about code nobody can fix.
+    ".open-next/**",
+    ".wrangler/**",
+    "target/**",
   ]),
 ]);
 

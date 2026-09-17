@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchPendingCreatorFees } from "@/lib/launchpad";
+import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   const pool = new URL(req.url).searchParams.get("pool")?.trim();
-  if (!pool) return NextResponse.json({ error: "pool is required" }, { status: 400 });
+  if (!pool || !ADDRESS_RE.test(pool)) {
+    return NextResponse.json({ error: "pool must be an address" }, { status: 400 });
+  }
 
   try {
     return NextResponse.json({ pool, pendingCook: await fetchPendingCreatorFees(pool) });

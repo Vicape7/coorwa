@@ -8,6 +8,9 @@ import { CoorwaError } from "@/lib/http";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Base64 for the 2 MB the form already refuses to go over, with room for the encoding. */
+const MAX_IMAGE_BASE64 = 3_000_000;
+
 const Body = z.object({
   creator: z.string().min(32).max(44),
   /** Session token from /api/launchpad/session - the launch path is signature-gated. */
@@ -19,10 +22,14 @@ const Body = z.object({
     .max(10)
     .regex(/^[A-Za-z0-9]+$/, "symbol must be letters and digits"),
   description: z.string().max(500).optional(),
-  /** Data URL or bare base64. Pinned to IPFS by the launchpad; metadata is immutable afterwards. */
-  imageBase64: z.string().optional(),
-  imageContentType: z.string().optional(),
-  imageUrl: z.string().url().optional(),
+  /**
+   * Data URL or bare base64. Pinned to IPFS by the launchpad; metadata is immutable afterwards.
+   * Capped, and limited to image types, because this route hands it to the launchpad's pinning
+   * service and the pin outlives the request: unbounded, it would be a free place to park files.
+   */
+  imageBase64: z.string().max(MAX_IMAGE_BASE64).optional(),
+  imageContentType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]).optional(),
+  imageUrl: z.string().url().max(500).startsWith("https://").optional(),
   /** Hours the curve stays open. */
   durationHours: z.number().min(1).max(720).default(72),
   expiryMode: z.enum(["dead", "fair", "jackpot", "survivor"]).default("fair"),

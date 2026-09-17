@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildBuyTx, buildSellTx, buildClaimCreatorFeesTx } from "@/lib/launchpad";
-import { COOK_DECIMALS, COORWA_REFERRER } from "@/lib/config";
+import { ADDRESS_RE, COOK_DECIMALS, COORWA_REFERRER } from "@/lib/config";
 import { uiToRaw } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -9,22 +9,22 @@ export const dynamic = "force-dynamic";
 const Body = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("buy"),
-    wallet: z.string().min(32).max(44),
-    pool: z.string().min(32).max(44),
+    wallet: z.string().regex(ADDRESS_RE, "not an address"),
+    pool: z.string().regex(ADDRESS_RE, "not an address"),
     /** COOK to spend on the curve. */
     amount: z.number().positive(),
   }),
   z.object({
     action: z.literal("sell"),
-    wallet: z.string().min(32).max(44),
-    pool: z.string().min(32).max(44),
+    wallet: z.string().regex(ADDRESS_RE, "not an address"),
+    pool: z.string().regex(ADDRESS_RE, "not an address"),
     /** Raw curve shares - these are program-tracked, not SPL tokens. */
     shares: z.string().regex(/^\d+$/),
   }),
   z.object({
     action: z.literal("claim-creator-fees"),
-    wallet: z.string().min(32).max(44),
-    pool: z.string().min(32).max(44),
+    wallet: z.string().regex(ADDRESS_RE, "not an address"),
+    pool: z.string().regex(ADDRESS_RE, "not an address"),
   }),
 ]);
 

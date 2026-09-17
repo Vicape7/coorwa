@@ -117,7 +117,7 @@ are.
       <h3>Launchpad</h3>
       <ul>
         <li>Launch on a COOK bonding curve through MomoSwap and pick your token's stock at launch, for free.</li>
-        <li>The pair is recorded only after the launch transaction is read back from the chain and found to name that mint, so nobody can pin a token they did not create.</li>
+        <li>The pair is recorded only after the launch transaction is read back from the chain and found to be the launch itself: the launchpad's own create instruction over that mint and pool, signed by the mint. A trade that merely names the token is not enough, so nobody can pin a token they did not create.</li>
         <li>Buy and sell on any curve, priced before you sign. Coorwa rebuilds the curve from the pool's own reserves and matches settled fills to the raw unit.</li>
         <li>Creators claim their curve fees in COOK, or take them as their token's stock on Solana.</li>
       </ul>
@@ -254,9 +254,12 @@ user's own wallet.
   symbol must match, and no priority fee above 0.001 COOK. Anything else stops with a sentence
   saying what differed. Tested on six captured MomoSwap responses and tampered copies of them.
 - **Nothing is credited on the client's word.** A reported trade is re-read on chain before it is
-  written: it has to exist, to have succeeded, and to be signed by the wallet being credited. A
-  referral fee counts only when Coorwa is named on the transaction, and a swap fee is whatever the
-  transaction really paid (`src/lib/onchain.ts`).
+  written: it has to exist, to have succeeded, and to be signed by the wallet reporting it. Which
+  token it traded is read from the transaction too, from the balance that moved for a swap and from
+  the launchpad's own instruction for a curve fill, so a fill cannot be pointed at a token it never
+  touched. Every fee is measured rather than worked out: a swap fee is the COOK that reached the
+  operator, a referral is the wrapped COOK that reached it, and a transaction that merely names
+  Coorwa has paid it nothing (`src/lib/onchain.ts`, `src/app/api/rewards/record/route.ts`).
 - **The swap fee is in plain sight.** Neither Cookie Chain router pays a referrer, so Coorwa appends
   one COOK transfer to the router's own transaction, server side, and shows it on the panel before
   signing. A route too long to carry it within the 1,232-byte limit goes through without the fee
@@ -268,6 +271,11 @@ user's own wallet.
 - **Routes resume from the middle.** A cross-chain payout is written to storage leg by leg, so a
   rejected signature, a closed tab or a browser restart picks up where it stopped, with the COOK
   already on the other chain (`src/lib/journey.ts`).
+- **No RPC key in the page.** Solana needs a keyed endpoint, and a key shipped to a browser is a
+  public key whatever domain rules it carries, because a rule only stops other websites and not a
+  script that sets the header itself. So the browser calls Coorwa's own relay instead
+  (`src/app/api/solana-rpc/route.ts`), which passes on a short list of read and send calls and adds
+  the key server side.
 - **Checked against the live network.** Every address in `src/lib/config.ts` was verified on chain:
   the bridge PDAs match the published collateral accounts, the transfer instruction encodes to
   exactly 77 bytes, the DAMM v2 vault PDAs match real pools, and every xStock was read from its own
@@ -338,8 +346,8 @@ these in `.env.local`:
 | Variable | What it enables |
 | --- | --- |
 | `DATABASE_URL` | Pairs, fills and rewards. Create the tables with `npm run db:push` |
-| `NEXT_PUBLIC_SOLANA_RPC_URL` | Solana legs in the browser. The public Solana RPC refuses browser requests, so use a provider such as Helius |
-| `SOLANA_SERVER_RPC_URL` | Solana RPC for server code (payouts, payment checks). Server only; set it when the public key above is locked to your domains, since server requests carry no domain. Defaults to the public one |
+| `SOLANA_SERVER_RPC_URL` | Solana RPC for every Solana call: payouts, payment checks, and the browser's own reads through `/api/solana-rpc`. Server only, never `NEXT_PUBLIC`. Use a provider such as Helius; without it the public endpoint is used, which is heavily throttled |
+| `SOLANA_BROWSER_RPC_URL` | Optional second Solana key for the browser relay, so traffic from the site cannot eat the rate limit the payout run needs. Defaults to the one above |
 | `NEXT_PUBLIC_COORWA_OPERATOR` | The operator wallet's public address, which receives fees and pays holders |
 | `COORWA_OPERATOR_KEY` | The operator keypair (base58 or JSON array). Server only; without it payout runs stay off |
 | `HOLDER_SAMPLE_SECRET` | Bearer secret for `POST /api/cashback/sample`, the holder sampler's endpoint |
@@ -364,7 +372,7 @@ client over warm connections. Replace the `hyperdrive` id with your own
 ```bash
 npx wrangler secret put HOLDER_SAMPLE_SECRET   # any long random string
 npx wrangler secret put COORWA_OPERATOR_KEY    # the operator keypair
-npx wrangler secret put SOLANA_SERVER_RPC_URL  # Solana RPC without domain rules
+npx wrangler secret put SOLANA_SERVER_RPC_URL  # Solana RPC for server code and the browser relay
 npx wrangler secret put JUPITER_API_KEY        # optional
 npm run deploy                                 # builds, then uploads
 ```
