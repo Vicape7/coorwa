@@ -921,12 +921,7 @@ function reportSwap(ctx: RunContext, j: Journey, signature: string, side: "buy" 
       source: "swap",
       mint: j.token.mint,
       ticker: payout ? undefined : j.ticker,
-      symbol: j.token.symbol,
       side,
-      // Derived server-side from the fee the transaction paid.
-      valueUsd: 0,
-      feeUsd: 0,
-      chain: "cookie",
     }),
   }).catch(() => undefined);
 }

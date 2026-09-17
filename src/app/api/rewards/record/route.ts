@@ -1,57 +1,123 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { type VersionedTransactionResponse } from "@solana/web3.js";
-import { recordFill, launchpadReferralFee } from "@/lib/cashback";
-import { fetchCookPriceUsd } from "@/lib/cookiescan";
-import { proveTransaction, isProven, lamportsCredited } from "@/lib/onchain";
-import { tokenCreator } from "@/lib/creators";
-import { carriesBenchmark } from "@/lib/listings";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
+import { recordFill } from "@/lib/cashback";
+import { fetchCookPriceUsd, fetchTokens } from "@/lib/cookiescan";
 import {
+  isProven,
+  lamportsCredited,
+  proveTransaction,
+  tokenCredited,
+  tokenMoved,
+  tradesOnCurve,
+  type ProvenTransaction,
+} from "@/lib/onchain";
+import { tokenCreator } from "@/lib/creators";
+import { carriesBenchmark, signatureSpent } from "@/lib/listings";
+import { fetchPool } from "@/lib/launchpad";
+import {
+  ADDRESS_RE,
   COOK_DECIMALS,
+  COOK_MINT,
   COORWA_OPERATOR,
   COORWA_REFERRER,
   COORWA_SWAP_FEE_BPS,
+  MOMOSWAP_REFERRAL_SHARE,
+  MOMOSWAP_TRADE_FEE_BPS,
 } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
   signature: z.string().min(64).max(128),
-  wallet: z.string().min(32).max(44),
+  wallet: z.string().regex(ADDRESS_RE, "not an address"),
   source: z.enum(["swap", "launchpad"]),
-  mint: z.string().min(32).max(44),
+  mint: z.string().regex(ADDRESS_RE, "not an address"),
+  /** The curve the trade happened on. Launchpad fills only, where shares are not SPL tokens. */
+  pool: z.string().regex(ADDRESS_RE, "not an address").optional(),
   /** The benchmark of the pair traded on, for a swap made on a pair. */
   ticker: z.string().min(1).max(10).optional(),
-  symbol: z.string().max(32).optional(),
   side: z.enum(["buy", "sell"]),
-  valueUsd: z.number().nonnegative().max(1e9),
-  feeUsd: z.number().nonnegative().max(1e7),
-  creator: z.string().min(32).max(44).optional(),
-  chain: z.enum(["cookie", "solana"]).default("cookie"),
 });
 
-/**
- * What the fee payer's COOK balance actually did, in UI units and always positive.
- *
- * COOK is Cookie Chain's native unit, so a curve trade shows up as a plain lamport movement on the
- * payer. The network fee is added back because it is not part of the trade.
- */
-function cookMoved(tx: VersionedTransactionResponse, side: "buy" | "sell"): number | null {
-  const pre = tx.meta?.preBalances?.[0];
-  const post = tx.meta?.postBalances?.[0];
-  if (typeof pre !== "number" || typeof post !== "number") return null;
+/** Raw COOK as dollars. */
+const cookUsd = (raw: bigint, priceUsd: number) => (Number(raw) / 10 ** COOK_DECIMALS) * priceUsd;
 
-  const fee = tx.meta?.fee ?? 0;
-  const moved = side === "buy" ? pre - post - fee : post - pre + fee;
-  return moved > 0 ? moved / 10 ** COOK_DECIMALS : 0;
+/** The wrapped COOK account the launchpad pays a referrer into. */
+function wrappedCookAccount(owner: string): string {
+  return getAssociatedTokenAddressSync(new PublicKey(COOK_MINT), new PublicKey(owner)).toBase58();
+}
+
+/** The token's symbol as the chain's own registry has it. Never taken from the caller. */
+async function registrySymbol(mint: string): Promise<string | null> {
+  const tokens = await fetchTokens().catch(() => []);
+  return tokens.find((t) => t.mint === mint)?.metadata?.symbol?.trim() || null;
 }
 
 /**
- * Report a confirmed fill for cashback accrual.
+ * What a swap on Coorwa earned, and proof that it was a swap of this token.
  *
- * A client could otherwise claim any trade it liked, so the transaction is proved against the chain
- * before anything is written. Combined with the unique index on the signature, that makes the
- * accrual table an index of provable events rather than a claim log.
+ * Two things have to hold, and neither is taken from the caller. The fee payer's balance of the
+ * token has to have moved on this transaction, which is what ties the fill to a token instead of
+ * letting a caller name whichever one pays them best. And the fee is whatever COOK the transaction
+ * really put into the operator wallet, which is zero for a route too long to carry the fee.
+ */
+function swapFill(
+  proof: ProvenTransaction,
+  wallet: string,
+  mint: string,
+  cookPriceUsd: number | null,
+) {
+  const moved = tokenMoved(proof, wallet, mint);
+  if (moved === 0n) return null;
+
+  const paid = COORWA_OPERATOR ? lamportsCredited(proof, COORWA_OPERATOR) : null;
+  const feeUsd = cookPriceUsd && paid && paid > 0n ? cookUsd(paid, cookPriceUsd) : 0;
+  return {
+    side: moved > 0n ? ("buy" as const) : ("sell" as const),
+    feeUsd,
+    // The fee is a fixed share of the COOK leg, so it also sizes the trade.
+    valueUsd: feeUsd ? (feeUsd * 10_000) / COORWA_SWAP_FEE_BPS : 0,
+  };
+}
+
+/**
+ * What a curve trade earned, and proof that it was a trade on this token's curve.
+ *
+ * Curve shares are tracked by the launchpad rather than held as SPL tokens, so there is no balance
+ * to read. Instead the transaction has to carry the launchpad's own buy or sell over this pool, and
+ * the launchpad has to agree that the pool belongs to this mint. The referral is then measured as
+ * the wrapped COOK that actually reached Coorwa's referrer account, rather than worked out from the
+ * size of the trade: a transaction that merely names the referrer has paid it nothing.
+ */
+async function launchpadFill(
+  proof: ProvenTransaction,
+  mint: string,
+  pool: string,
+  cookPriceUsd: number | null,
+) {
+  if (!tradesOnCurve(proof, pool)) return null;
+
+  const curve = await fetchPool(pool).catch(() => null);
+  if (!curve || curve.tokenMint !== mint) return null;
+
+  const referralRaw = COORWA_REFERRER
+    ? tokenCredited(proof, wrappedCookAccount(COORWA_REFERRER), COOK_MINT)
+    : null;
+  const feeUsd =
+    cookPriceUsd && referralRaw && referralRaw > 0n ? cookUsd(referralRaw, cookPriceUsd) : 0;
+  const share = (MOMOSWAP_TRADE_FEE_BPS / 10_000) * MOMOSWAP_REFERRAL_SHARE;
+  return { feeUsd, valueUsd: share > 0 ? feeUsd / share : 0, symbol: curve.symbol };
+}
+
+/**
+ * Report a confirmed fill for holder rewards.
+ *
+ * Nothing here is a claim. The transaction is read back from the chain, has to have been signed by
+ * the wallet reporting it, has to be a trade of the token being named, and the fee it earned is
+ * measured on the transaction itself. Combined with the unique index on the signature, that makes
+ * the fills table an index of provable events rather than a log of what clients said happened.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -64,43 +130,40 @@ export async function POST(req: Request) {
   const b = parsed.data;
 
   try {
-    const proof = await proveTransaction({
-      signature: b.signature,
-      wallet: b.wallet,
-      chain: b.chain,
-    });
+    const proof = await proveTransaction({ signature: b.signature, wallet: b.wallet });
     if (!isProven(proof)) {
       return NextResponse.json({ error: proof.error, recorded: false }, { status: proof.status });
     }
 
-    // Neither the size of a trade nor the fee it earned is taken on the client's word, whichever
-    // path it came from. Both are re-derived from what the transaction actually did.
-    const cookPriceUsd = await fetchCookPriceUsd();
-    let valueUsd = b.valueUsd;
-    let feeUsd = 0;
+    // A pair payment is already the token's income, in `listings`. Counting it again here would pay
+    // its holders twice for one dollar.
+    if (await signatureSpent(b.signature)) {
+      return NextResponse.json(
+        { error: "that transaction paid for a pair, and is not a trade", recorded: false },
+        { status: 409 },
+      );
+    }
 
-    if (b.source === "launchpad") {
-      const moved = cookMoved(proof.tx, b.side);
-      if (cookPriceUsd && moved != null) {
-        // Rent for a token account the buy had to open moves in the same balance, so this is a
-        // ceiling on the trade rather than the trade itself, which is all it has to be.
-        valueUsd = Math.min(valueUsd, moved * cookPriceUsd);
-      }
-      // MomoSwap pays the referral share only to an address named on the transaction, and it names
-      // it as an account. Not there, no revenue, so nothing to rebate.
-      feeUsd =
-        COORWA_REFERRER && proof.accounts.has(COORWA_REFERRER) ? launchpadReferralFee(valueUsd) : 0;
-    } else {
-      // A swap earns only what the transaction actually paid the operator. A route too long to carry
-      // the fee instruction goes through without one, and that fill is worth exactly zero here.
-      const paid = COORWA_OPERATOR ? lamportsCredited(proof, COORWA_OPERATOR) : null;
-      if (cookPriceUsd && paid != null && paid > 0n) {
-        feeUsd = (Number(paid) / 10 ** COOK_DECIMALS) * cookPriceUsd;
-        // The fee is a fixed share of the COOK leg, so it also proves the size of the trade. Listing
-        // fees are shared out by what each wallet paid on a pair, and a size reported by the client
-        // would let anyone claim a bigger share than they traded for.
-        valueUsd = (feeUsd * 10_000) / COORWA_SWAP_FEE_BPS;
-      }
+    const cookPriceUsd = await fetchCookPriceUsd();
+    const fill =
+      b.source === "launchpad"
+        ? b.pool
+          ? await launchpadFill(proof, b.mint, b.pool, cookPriceUsd)
+          : null
+        : swapFill(proof, b.wallet, b.mint, cookPriceUsd);
+
+    if (!fill) {
+      return NextResponse.json(
+        {
+          error: "that transaction did not trade this token",
+          hint:
+            b.source === "launchpad"
+              ? "a launchpad fill has to name the pool it traded on, and the launchpad has to agree the pool belongs to this mint"
+              : "the wallet's balance of the token has to move on the transaction being reported",
+          recorded: false,
+        },
+        { status: 422 },
+      );
     }
 
     // A pair the token does not carry is dropped rather than refused: the fill still accrues its
@@ -108,21 +171,28 @@ export async function POST(req: Request) {
     const ticker =
       b.ticker && (await carriesBenchmark(b.mint, b.ticker)) ? b.ticker.toUpperCase() : null;
 
-    // Resolved here rather than sent, so a client cannot name whoever it likes as the creator and
-    // route somebody else's share to them.
+    // Both resolved here rather than sent, so a client cannot name whoever it likes as the creator,
+    // nor rename somebody else's token on the rewards page.
     const creator = (await tokenCreator(b.mint))?.wallet ?? null;
+    const symbol =
+      ("symbol" in fill ? fill.symbol : null) || (await registrySymbol(b.mint)) || null;
 
     const res = await recordFill({
-      ...b,
+      signature: b.signature,
+      wallet: b.wallet,
+      source: b.source,
+      mint: b.mint,
       ticker,
-      valueUsd,
-      feeUsd,
+      symbol,
+      side: "side" in fill ? fill.side : b.side,
+      valueUsd: fill.valueUsd,
+      feeUsd: fill.feeUsd,
       creator: creator ?? undefined,
     });
     return NextResponse.json({
       ...res,
-      valueUsd,
-      feeUsd,
+      valueUsd: fill.valueUsd,
+      feeUsd: fill.feeUsd,
       ticker,
       creator,
       note: res.recorded

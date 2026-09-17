@@ -171,13 +171,9 @@ export function CurvePanel({
             wallet: publicKey.toBase58(),
             source: "launchpad",
             mint: pool.tokenMint,
-            symbol: pool.symbol,
+            // The curve the trade ran on. The server checks the launchpad agrees it holds this mint.
+            pool: pool.pubkey,
             side,
-            valueUsd: Math.max(0, legUsd ?? 0),
-            // Derived server-side for launchpad fills; nothing sent from here is trusted.
-            feeUsd: 0,
-            creator: pool.creator,
-            chain: "cookie",
           }),
         }).then((r) => r.json());
         if (typeof recorded?.feeUsd === "number") {
@@ -204,7 +200,6 @@ export function CurvePanel({
     decimals,
     pool,
     connection,
-    legUsd,
     refreshPosition,
   ]);
 

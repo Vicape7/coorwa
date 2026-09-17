@@ -201,10 +201,6 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
       // Report the fill for cashback accounting. The server re-reads the transaction on chain and
       // works out both the fee and the token's creator itself, so a failure here costs the record
       // and never the trade.
-      const notional =
-        side === "buy"
-          ? amountNum * (pair.base.priceCook ? pair.base.priceUsd / pair.base.priceCook : 0)
-          : amountNum * pair.base.priceUsd;
       fetch("/api/rewards/record", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -214,12 +210,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
           source: "swap",
           mint: pair.base.mint,
           ticker: pair.quote.ticker,
-          symbol: pair.base.symbol,
           side,
-          valueUsd: Number.isFinite(notional) ? Math.max(0, notional) : 0,
-          // Derived server-side from what the transaction actually paid the operator.
-          feeUsd: 0,
-          chain: "cookie",
         }),
       }).catch(() => {});
     } catch (e) {

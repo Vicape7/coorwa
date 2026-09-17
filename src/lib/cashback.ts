@@ -13,7 +13,7 @@ import { createdBy } from "./creators";
 import { logosByMint } from "./token-logos";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
-import { COORWA_OPERATOR, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
+import { COORWA_OPERATOR } from "./config";
 import {
   holderEstimates,
   nextRunDueAt,
@@ -76,11 +76,6 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   runs: [],
   totals: { paidUsd: 0, waitingUsd: 0, tokensPaired: 0 },
 });
-
-/** The fee Coorwa earns on a launchpad fill of this size, in the same units as `valueUsd`. */
-export function launchpadReferralFee(valueUsd: number): number {
-  return valueUsd * (MOMOSWAP_TRADE_FEE_BPS / 10_000) * MOMOSWAP_REFERRAL_SHARE;
-}
 
 export async function summarise(wallet: string | null): Promise<CashbackSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
