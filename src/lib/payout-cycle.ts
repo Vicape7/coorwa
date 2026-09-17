@@ -50,7 +50,7 @@ import {
   OPERATOR_COOK_RESERVE,
   OPERATOR_SOL_FLOOR,
   PAYOUT_SLIPPAGE_BPS,
-  SOLANA_RPC_URL,
+  serverSolanaRpcUrl,
   WSOL_MINT,
 } from "./config";
 
@@ -85,7 +85,7 @@ function requireDb() {
 }
 
 const cookieConn = () => new Connection(COOKIE_RPC_URL, "confirmed");
-const solanaConn = () => new Connection(SOLANA_RPC_URL, "confirmed");
+const solanaConn = () => new Connection(serverSolanaRpcUrl(), "confirmed");
 
 const token22Ata = (mint: string | PublicKey, owner: PublicKey) =>
   getAssociatedTokenAddressSync(new PublicKey(mint), owner, true, TOKEN_2022_PROGRAM_ID);

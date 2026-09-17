@@ -10,7 +10,7 @@
  * Server-side only. `tx.ts` is the browser half of this and does the opposite job.
  */
 import { Connection, type VersionedTransactionResponse } from "@solana/web3.js";
-import { COOKIE_RPC_URL, SOLANA_RPC_URL } from "./config";
+import { COOKIE_RPC_URL, serverSolanaRpcUrl } from "./config";
 
 export type Chain = "cookie" | "solana";
 
@@ -92,7 +92,7 @@ export async function proveTransaction(args: {
   chain?: Chain;
 }): Promise<ProvenTransaction | ProofFailure> {
   const conn = new Connection(
-    args.chain === "solana" ? SOLANA_RPC_URL : COOKIE_RPC_URL,
+    args.chain === "solana" ? serverSolanaRpcUrl() : COOKIE_RPC_URL,
     "confirmed",
   );
   const tx = await conn.getTransaction(args.signature, {

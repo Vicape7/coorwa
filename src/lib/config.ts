@@ -46,6 +46,18 @@ export const SOLANA_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || "https://api.mainnet-beta.solana.com";
 
 /**
+ * The Solana RPC for server code: payouts, payment checks, position reads.
+ *
+ * The public key above ships in the page, so it is locked to Coorwa's domains, and a request
+ * from the Worker carries no domain and is refused. The server has its own key, the
+ * SOLANA_SERVER_RPC_URL secret, which never reaches a browser. It is read on each call because
+ * a Worker secret is not in the environment when this module first loads.
+ */
+export function serverSolanaRpcUrl(): string {
+  return process.env.SOLANA_SERVER_RPC_URL?.trim() || SOLANA_RPC_URL;
+}
+
+/**
  * True when no dedicated Solana RPC is configured.
  *
  * The fallback is not merely throttled. api.mainnet-beta.solana.com answers a server happily but

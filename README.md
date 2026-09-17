@@ -339,6 +339,7 @@ these in `.env.local`:
 | --- | --- |
 | `DATABASE_URL` | Pairs, fills and rewards. Create the tables with `npm run db:push` |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Solana legs in the browser. The public Solana RPC refuses browser requests, so use a provider such as Helius |
+| `SOLANA_SERVER_RPC_URL` | Solana RPC for server code (payouts, payment checks). Server only; set it when the public key above is locked to your domains, since server requests carry no domain. Defaults to the public one |
 | `NEXT_PUBLIC_COORWA_OPERATOR` | The operator wallet's public address, which receives fees and pays holders |
 | `COORWA_OPERATOR_KEY` | The operator keypair (base58 or JSON array). Server only; without it payout runs stay off |
 | `HOLDER_SAMPLE_SECRET` | Bearer secret for `POST /api/cashback/sample`, the holder sampler's endpoint |
@@ -363,6 +364,7 @@ client over warm connections. Replace the `hyperdrive` id with your own
 ```bash
 npx wrangler secret put HOLDER_SAMPLE_SECRET   # any long random string
 npx wrangler secret put COORWA_OPERATOR_KEY    # the operator keypair
+npx wrangler secret put SOLANA_SERVER_RPC_URL  # Solana RPC without domain rules
 npx wrangler secret put JUPITER_API_KEY        # optional
 npm run deploy                                 # builds, then uploads
 ```

@@ -3,7 +3,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { readHolding, readMultiplier } from "@/lib/rwa-holding";
 import { rwaByTicker } from "@/lib/rwa";
-import { SOLANA_RPC_URL } from "@/lib/config";
+import { serverSolanaRpcUrl } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: `unknown RWA: ${parsed.data.ticker}` }, { status: 404 });
   }
 
-  const conn = new Connection(SOLANA_RPC_URL, "confirmed");
+  const conn = new Connection(serverSolanaRpcUrl(), "confirmed");
 
   try {
     const [multiplier, holding] = await Promise.all([
