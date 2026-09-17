@@ -11,6 +11,8 @@
 <p align="center">
   <a href="https://coorwa.coorwa.workers.dev"><b>Open the app</b></a>
   &nbsp;·&nbsp;
+  <a href="#get-started-in-five-steps">Get started</a>
+  &nbsp;·&nbsp;
   <a href="#two-chains-one-wallet">Two chains, one wallet</a>
   &nbsp;·&nbsp;
   <a href="#how-holders-get-paid">How holders get paid</a>
@@ -23,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-115%20passing-3fb950?style=flat-square" alt="115 tests passing">
+  <img src="https://img.shields.io/badge/tests-102%20passing-3fb950?style=flat-square" alt="102 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -152,6 +154,28 @@ are.
 
 ---
 
+## Get started in five steps
+
+COOK is the gas token on Cookie Chain and the currency every Coorwa trade and launch runs on. It
+also lives on Solana, and Cookie Chain's own bridge moves it between the two.
+
+1. **Get a wallet.** Install [Nightly](https://nightly.app), the wallet Cookie Chain recommends.
+   Backpack, Solflare and Phantom work too. One wallet covers both chains, because the address is
+   the same on each.
+2. **Buy COOK on Solana.** Swap SOL for COOK on [Jupiter](https://jup.ag). COOK's mint on Solana is
+   [`36ZrtQoab5MhhySaP1YSTwUahSk6GRVUTtZ6cuVfm9e1`](https://solscan.io/token/36ZrtQoab5MhhySaP1YSTwUahSk6GRVUTtZ6cuVfm9e1).
+3. **Bridge it to Cookie Chain.** Open the [Cookie Chain Bridge](https://hyperlane.cookiescan.io),
+   connect the same wallet, choose Solana to Cookie Chain and send. COOK is locked on Solana and
+   released 1:1 on Cookie Chain within seconds. Keep a little SOL in the wallet for the Solana side's
+   fees.
+4. **Open [Coorwa](https://coorwa.coorwa.workers.dev) and connect.** Trade a pair on the terminal,
+   buy a token on its curve, or launch your own with a stock attached.
+5. **Hold, and get paid on Solana.** Rewards arrive as the token's stock at your same address on
+   Solana, already in the wallet you use. There is nothing to claim and nothing to bridge back. To
+   move COOK home later, the same bridge runs Cookie Chain to Solana.
+
+---
+
 ## How holders get paid
 
 Every fee Coorwa earns on a token forms that token's pool. Fees on CHAT go to CHAT's holders and
@@ -255,15 +279,15 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 115 offline unit tests that run in about two seconds.
+sampler Worker, and 102 offline unit tests that run in about two seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
 [`83cPao5i…ywdYg`](https://cookiescan.io/account/83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg). Its
-toolchain is pinned in a container, and `npm run program:test` exercises it against a real validator
-and a throwaway Postgres: claims, double claims, forged proofs, unfunded epochs, and the whole
-pipeline from fills in the database to tokens in a claimant's wallet. It was Coorwa's claim-based
-payout path before daily payouts replaced claims.
+toolchain is pinned in a container, and `npm run program:test` exercises it against a real
+validator: claims, double claims, claiming someone else's line, forged proofs, epochs the vault
+cannot back, and publishing from the wrong key. It was Coorwa's claim-based payout path before
+daily payouts replaced claims.
 
 ```
 src/
@@ -281,7 +305,7 @@ src/
     creators.ts       Who made a token, from the launch record or the mint's metadata authority
     liquidity.ts      Cookiebox DAMM v2, built against the fork's IDL
     holders.ts        Who holds a token right now, read from the chain and filtered to real wallets
-    epochs.ts         Holder samples and weights
+    holder-samples.ts Random holder samples, and a pool shared by what each wallet held
     rewards-ledger.ts Who is owed what in which stock, and what has been paid
     payout-cycle.ts   The daily run: bridge, swap on Jupiter, send to holders on Solana
     crosschain.ts     The three-leg route planner, both directions, with measured slippage per leg
@@ -323,7 +347,7 @@ these in `.env.local`:
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 115 offline unit tests
+npm run test        # 102 offline unit tests
 npm run typecheck
 npm run build
 ```
@@ -357,7 +381,7 @@ The only requirement is Docker:
 
 ```bash
 npm run program:build    # compile, and copy the IDL to programs/corwa-vault/idl.json
-npm run program:test     # integration tests against a throwaway validator and Postgres
+npm run program:test     # integration tests against a throwaway validator
 ```
 
 ---
