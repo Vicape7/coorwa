@@ -23,6 +23,7 @@ import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./epochs";
 import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
 import { tokenCreator } from "./creators";
+import { fetchTokens } from "./cookiescan";
 import { CASHBACK_SPLIT, PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
 
 function requireDb() {
@@ -252,6 +253,12 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
   for (const p of pools.values()) {
     p.holdersWaitingUsd = Math.max(0, p.holdersAccruedUsd - p.holdersAllocatedUsd);
   }
+  // Only fills carry a symbol, so a token that has a pair but no trade yet is named from the registry.
+  if ([...pools.values()].some((p) => !p.symbol)) {
+    const tokens = await fetchTokens().catch(() => []);
+    const symbolOf = new Map(tokens.map((t) => [t.mint, t.metadata?.symbol?.trim() || null]));
+    for (const p of pools.values()) p.symbol ??= symbolOf.get(p.mint) ?? null;
+  }
   return [...pools.values()].sort((a, b) => b.holdersAccruedUsd - a.holdersAccruedUsd);
 }
 
@@ -420,8 +427,8 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
 // --- what a wallet sees -------------------------------------------------------------------------------
 
 export interface WalletRewards {
-  /** Allocated but not yet paid, per asset. Paid once it reaches the minimum. */
-  pending: { ticker: string; usd: number }[];
+  /** Allocated but not yet paid, per token and role. Paid once a wallet's lines in one asset reach the minimum. */
+  pending: { mint: string; ticker: string; role: string; usd: number }[];
   /** Sent, newest first. */
   paid: {
     ticker: string;
@@ -444,7 +451,7 @@ export async function walletRewards(wallet: string): Promise<WalletRewards> {
     .orderBy(desc(payoutLines.createdAt))
     .limit(500);
 
-  const pending = new Map<string, number>();
+  const pending = new Map<string, WalletRewards["pending"][number]>();
   const paid: WalletRewards["paid"] = [];
   for (const r of rows) {
     if (r.status === "sent") {
@@ -458,10 +465,13 @@ export async function walletRewards(wallet: string): Promise<WalletRewards> {
         mint: r.mint,
       });
     } else {
-      pending.set(r.ticker, (pending.get(r.ticker) ?? 0) + r.amountUsd);
+      const key = `${r.mint}|${r.role}`;
+      const line = pending.get(key) ?? { mint: r.mint, ticker: r.ticker, role: r.role, usd: 0 };
+      line.usd += r.amountUsd;
+      pending.set(key, line);
     }
   }
-  return { pending: [...pending].map(([ticker, usd]) => ({ ticker, usd })), paid };
+  return { pending: [...pending.values()], paid };
 }
 
 export interface HolderEstimate {

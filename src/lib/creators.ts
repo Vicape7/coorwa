@@ -60,6 +60,22 @@ export async function tokenCreator(mint: string): Promise<Creator | null> {
   return authority ? { wallet: authority, source: "authority" } : null;
 }
 
+/** Every token this wallet created, by either source. */
+export async function createdBy(wallet: string): Promise<string[]> {
+  const mints = new Set<string>();
+  if (dbEnabled && db) {
+    const rows = await db
+      .select({ mint: schema.launches.mint })
+      .from(schema.launches)
+      .where(eq(schema.launches.creator, wallet));
+    for (const r of rows) mints.add(r.mint);
+  }
+  for (const [mint, authority] of await updateAuthorities()) {
+    if (authority === wallet) mints.add(mint);
+  }
+  return [...mints];
+}
+
 /** Whether a wallet is the one paid the creator's share of a token's fees. */
 export async function isCreator(mint: string, wallet: string): Promise<boolean> {
   const creator = await tokenCreator(mint);

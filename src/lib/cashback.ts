@@ -10,6 +10,10 @@
 import { gte, sql } from "drizzle-orm";
 import { dbEnabled, db, schema } from "./db";
 import { feeShareSql } from "./epochs";
+import { fetchTokens } from "./cookiescan";
+import { createdBy } from "./creators";
+import { benchmarks } from "./launches";
+import { listedByMint } from "./listings";
 import { COORWA_OPERATOR, MOMOSWAP_TRADE_FEE_BPS, MOMOSWAP_REFERRAL_SHARE } from "./config";
 import {
   holderEstimates,
@@ -37,12 +41,24 @@ export interface CashbackSummary {
   /** This wallet's estimated share of what is waiting, from the holder samples so far. */
   estimates: HolderEstimate[];
   /**
-   * Tokens this wallet created that have earned fees. The creator's share is paid by the same daily
-   * run, in the token's pair asset, so there is nothing to claim; this is where a creator sees it.
+   * Every token this wallet created, with or without fees yet. The creator's share is paid by the
+   * same daily run, in the token's pair asset, so there is nothing to claim; this is where a creator
+   * sees it. Empty for a wallet that never created a token.
    */
   created: RewardPool[];
   pools: RewardPool[];
   runs: RunRow[];
+  /** Across every token, for the landing page. */
+  totals: RewardTotals;
+}
+
+export interface RewardTotals {
+  /** Sent to holders and creators. */
+  paidUsd: number;
+  /** Earned by holders and creators and not sent yet. */
+  waitingUsd: number;
+  /** Tokens with a pair, launched here or listed. */
+  tokensPaired: number;
 }
 
 const EMPTY = (wallet: string | null): CashbackSummary => ({
@@ -56,6 +72,7 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   created: [],
   pools: [],
   runs: [],
+  totals: { paidUsd: 0, waitingUsd: 0, tokensPaired: 0 },
 });
 
 /** The fee Coorwa earns on a launchpad fill of this size, in the same units as `valueUsd`. */
@@ -66,19 +83,64 @@ export function launchpadReferralFee(valueUsd: number): number {
 export async function summarise(wallet: string | null): Promise<CashbackSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
 
-  const [pools, runs, next] = await Promise.all([rewardPools(), recentRuns(), nextRunDueAt()]);
+  const [pools, runs, next, pinned, listed] = await Promise.all([
+    rewardPools(),
+    recentRuns(),
+    nextRunDueAt(),
+    benchmarks(),
+    listedByMint(),
+  ]);
   const base = {
     ...EMPTY(wallet),
     configured: true,
     nextRunAt: next?.toISOString() ?? null,
     pools: pools.slice(0, 50),
     runs,
+    totals: rewardTotals(pools, new Set([...pinned.keys(), ...listed.keys()]).size),
   };
   if (!wallet) return base;
 
-  const [mine, estimates] = await Promise.all([walletRewards(wallet), holderEstimates(wallet)]);
-  const created = pools.filter((p) => p.creator === wallet);
+  const [mine, estimates, made, tokens] = await Promise.all([
+    walletRewards(wallet),
+    holderEstimates(wallet),
+    createdBy(wallet).catch(() => [] as string[]),
+    fetchTokens().catch(() => []),
+  ]);
+  const poolOf = new Map(pools.map((p) => [p.mint, p]));
+  const mints = new Set([...made, ...pools.filter((p) => p.creator === wallet).map((p) => p.mint)]);
+  const symbolOf = new Map(tokens.map((t) => [t.mint, t.metadata?.symbol?.trim() || null]));
+  const created = [...mints]
+    .map((mint) => poolOf.get(mint) ?? emptyPool(mint, pinned.get(mint) ?? listed.get(mint) ?? null))
+    .map((p) => ({ ...p, symbol: p.symbol ?? symbolOf.get(p.mint) ?? null }))
+    .sort((a, b) => b.creatorAccruedUsd - a.creatorAccruedUsd);
   return { ...base, pending: mine.pending, paid: mine.paid, estimates, created };
+}
+
+/** A token with no fees yet, so a creator still sees it listed. */
+function emptyPool(mint: string, ticker: string | null): RewardPool {
+  return {
+    mint,
+    symbol: null,
+    ticker,
+    holdersAccruedUsd: 0,
+    holdersAllocatedUsd: 0,
+    holdersWaitingUsd: 0,
+    holdersPaidUsd: 0,
+    creator: null,
+    creatorAccruedUsd: 0,
+    creatorAllocatedUsd: 0,
+    creatorPaidUsd: 0,
+  };
+}
+
+export function rewardTotals(pools: readonly RewardPool[], tokensPaired: number): RewardTotals {
+  let paidUsd = 0;
+  let earnedUsd = 0;
+  for (const p of pools) {
+    paidUsd += p.holdersPaidUsd + p.creatorPaidUsd;
+    earnedUsd += p.holdersAccruedUsd + p.creatorAccruedUsd;
+  }
+  return { paidUsd, waitingUsd: Math.max(0, earnedUsd - paidUsd), tokensPaired };
 }
 
 /** One token's pool, for its pair page. */
