@@ -116,8 +116,11 @@ export const listings = pgTable(
   (t) => [
     // One row per pair: paying twice for the same benchmark buys nothing and must not look like it did.
     uniqueIndex("listings_mint_ticker_idx").on(t.mint, t.ticker),
-    index("listings_mint_idx").on(t.mint),
-    index("listings_signature_idx").on(t.signature),
+    // A token has one pair, and one payment buys one pair. Both are enforced here rather than only
+    // in the route, because the route checks and then writes with chain reads in between, and two
+    // requests sent at the same moment would both pass the check.
+    uniqueIndex("listings_mint_idx").on(t.mint),
+    uniqueIndex("listings_signature_idx").on(t.signature),
   ],
 );
 

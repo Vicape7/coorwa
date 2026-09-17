@@ -117,10 +117,13 @@ export async function recordListing(args: {
 }): Promise<boolean> {
   if (!dbEnabled || !db) return false;
 
+  // Any conflict means this pair is already bought: the same pair twice, a second pair for a token
+  // that has one, or the same payment presented again. All three are no-ops rather than errors,
+  // and the database is what settles them, because two requests can pass the route's checks at once.
   const rows = await db
     .insert(schema.listings)
     .values(args)
-    .onConflictDoNothing({ target: [schema.listings.mint, schema.listings.ticker] })
+    .onConflictDoNothing()
     .returning({ ticker: schema.listings.ticker });
 
   return rows.length > 0;

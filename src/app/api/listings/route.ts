@@ -14,7 +14,7 @@ import { tokenCreator } from "@/lib/creators";
 import { fetchCookPriceUsd, fetchMarkets, liquidityByMint } from "@/lib/cookiescan";
 import { benchmarks } from "@/lib/launches";
 import { rwaByTicker } from "@/lib/rwa";
-import { COORWA_OPERATOR } from "@/lib/config";
+import { ADDRESS_RE, COORWA_OPERATOR } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -70,8 +70,8 @@ export async function GET(req: Request) {
 const Body = z.object({
   /** The transfer to the operator that paid for the pair. */
   signature: z.string().min(64).max(128),
-  mint: z.string().min(32).max(44),
-  payer: z.string().min(32).max(44),
+  mint: z.string().regex(ADDRESS_RE, "not an address"),
+  payer: z.string().regex(ADDRESS_RE, "not an address"),
   ticker: z.string().min(1).max(12),
 });
 
@@ -169,6 +169,14 @@ export async function POST(req: Request) {
       paidRaw,
       paidUsd,
     });
+    // The database refused the row, so something got there first: a pair for this token, or this
+    // same payment. Said plainly rather than reported as a success that wrote nothing.
+    if (!recorded) {
+      return NextResponse.json(
+        { error: "this token already has a pair, or that payment has already been used" },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({ recorded, pair: asset.ticker, paidUsd });
   } catch (e) {
