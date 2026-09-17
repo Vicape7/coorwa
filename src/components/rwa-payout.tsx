@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Money Coorwa pays out, taken as a stock rather than as it arrives.
+ * Fees a user claims themselves, taken as a stock rather than as they arrive.
  *
- * Two things pay out today: cashback out of the vault, and the fees on an LP position. Both are the
- * settlement panel's cross-chain buy with a claim as its first leg, so this component runs either
- * as one journey: claim into the wallet, bridge the COOK to Solana, buy the chosen xStock there into
- * the same wallet. A payout that stops after the bridge resumes from the middle like any route.
+ * Two things pay out this way: the fees on an LP position, and a creator's launchpad fees. Both are
+ * the cross-chain buy route with a claim as its first leg, so this component runs either as one
+ * journey: claim into the wallet, bridge the COOK to Solana, buy the pair's xStock there into the
+ * same wallet. A payout that stops after the bridge resumes from the middle like any route.
  *
  * Two checks come before the first signature, because either failure would leave COOK sitting on
  * Solana halfway: the payout has to be worth its fixed costs, and the wallet has to hold the SOL the
@@ -15,15 +15,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Connection } from "@solana/web3.js";
-import {
-  COOK_DECIMALS,
-  COOK_MINT,
-  COOK_SYMBOL,
-  DEFAULT_SLIPPAGE_BPS,
-  SOLANA_RPC_IS_PUBLIC,
-  SOLANA_RPC_URL,
-} from "@/lib/config";
-import { DEFAULT_RWA, RWA_ASSETS, RWA_DECIMALS, rwaByTicker } from "@/lib/rwa";
+import { DEFAULT_SLIPPAGE_BPS, SOLANA_RPC_IS_PUBLIC, SOLANA_RPC_URL } from "@/lib/config";
+import { DEFAULT_RWA, RWA_DECIMALS, rwaByTicker } from "@/lib/rwa";
 import { amount as fmtAmount, shortAddr, timeAgo, usd } from "@/lib/format";
 import {
   clearJourney,
@@ -37,18 +30,14 @@ import {
 } from "@/lib/journey";
 import { runJourney } from "@/lib/crosschain-exec";
 import {
-  PAYOUT_SLUG,
-  claimLeg,
   payoutBlocked,
   solanaReadiness,
   type CreatorClaim,
   type LpClaim,
-  type PayoutClaim,
   type SolanaReadiness,
 } from "@/lib/payout";
 import { RouteSteps } from "./route-steps";
 import { Notice } from "./notice";
-import type { ClaimableLine } from "@/lib/epochs";
 import type { RouteLeg } from "@/lib/crosschain";
 
 interface PayoutPlan {
@@ -80,20 +69,18 @@ export interface PayoutPricing {
 export interface PayoutSpec {
   /** Journey key in place of a pair, so each payout resumes on its own. */
   slug: string;
-  source: "cashback" | "lp-fees" | "creator-fees";
   /**
-   * The one stock this payout buys, when it is not the user's choice. LP fees on a token's pool are
-   * paid in that token's pair asset. A payout resumed from an earlier visit keeps the stock it
-   * started with, since its COOK may already be on the way to that swap.
+   * The one stock this payout buys: the pair asset of the token the fees came from. A payout resumed
+   * from an earlier visit keeps the stock it started with, since its COOK may already be on the way
+   * to that swap.
    */
-  ticker?: string;
+  ticker: string;
   /** What is owed, in COOK, for the "nothing yet" check. Only its sign matters to the gate. */
   owedCook: number;
   pricings: PayoutPricing[];
-  /** The Cookie Chain side the journey records: COOK for cashback, the pool's token for LP fees. */
+  /** The Cookie Chain side the journey records: COOK for creator fees, the pool's token for LP fees. */
   token: { mint: string; symbol: string; decimals: number };
   input: { amount: number; symbol: string };
-  claims?: PayoutClaim[];
   lpClaim?: LpClaim;
   creatorClaim?: CreatorClaim;
   copy: {
@@ -105,46 +92,6 @@ export interface PayoutSpec {
     /** How a resume avoids paying twice, for the stuck notice. */
     resumeSafety: string;
   };
-}
-
-export function RwaPayout({ open, onSettled }: { open: ClaimableLine[]; onSettled: () => void }) {
-  const owedCook = useMemo(() => open.reduce((sum, l) => sum + l.amountCook, 0), [open]);
-  const spec = useMemo<PayoutSpec>(
-    () => ({
-      slug: PAYOUT_SLUG,
-      source: "cashback",
-      owedCook,
-      pricings:
-        owedCook > 0
-          ? [
-              {
-                inputMint: COOK_MINT,
-                inputSymbol: COOK_SYMBOL,
-                inputDecimals: COOK_DECIMALS,
-                amount: owedCook,
-                firstLeg: claimLeg(owedCook),
-              },
-            ]
-          : [],
-      token: { mint: COOK_MINT, symbol: COOK_SYMBOL, decimals: COOK_DECIMALS },
-      input: { amount: owedCook, symbol: COOK_SYMBOL },
-      claims: open.map((l) => ({ epoch: l.epoch, amountRaw: l.amountRaw, proof: l.proof })),
-      copy: {
-        title: "Take it as a stock",
-        body:
-          "Claim, bridge the COOK to Solana, and buy a real xStock into this same wallet there. " +
-          "Each step is its own signature, and a payout that stops halfway picks up where it left off.",
-        action: "Claim as",
-        done: "Paid out in full.",
-        resumeSafety:
-          "Resuming checks what already landed before sending anything, and the vault refuses a " +
-          "second claim of the same epoch, so nothing is paid twice.",
-      },
-    }),
-    [owedCook, open],
-  );
-
-  return <StockPayout spec={spec} hidden={open.length === 0} onSettled={onSettled} />;
 }
 
 /**
@@ -166,7 +113,7 @@ export function StockPayout({
   // The Solana legs need their own connection: the wallet's provider points at Cookie Chain.
   const solanaConn = useMemo(() => new Connection(SOLANA_RPC_URL, "confirmed"), []);
 
-  const [ticker, setTicker] = useState(spec.ticker ?? DEFAULT_RWA.ticker);
+  const [ticker, setTicker] = useState(spec.ticker);
   const asset = rwaByTicker(ticker) ?? DEFAULT_RWA;
   const [journey, setJourney] = useState<Journey | null>(null);
   const [running, setRunning] = useState(false);
@@ -176,7 +123,7 @@ export function StockPayout({
 
   // --- A payout left over from a previous visit -------------------------------------------------
 
-  // Restored during render, as the settlement panel does, so the page never paints once without it.
+  // Restored during render, so the page never paints once without it.
   const restoreKey = owner ? `${owner}|${slug}` : null;
   const [restoredFor, setRestoredFor] = useState<string | null>(null);
   if (restoredFor !== restoreKey) {
@@ -191,7 +138,7 @@ export function StockPayout({
     }
   }
 
-  // --- Pricing: the same planner as a settlement ------------------------------------------------
+  // --- Pricing: the cross-chain route planner --------------------------------------------------
 
   const planKey =
     spec.pricings.length > 0
@@ -301,7 +248,6 @@ export function StockPayout({
     owedCook: spec.owedCook,
     valueUsd: plan ? plan.outUsd : null,
     sol,
-    source: spec.source,
   });
 
   // --- Running ----------------------------------------------------------------------------------
@@ -348,7 +294,6 @@ export function StockPayout({
         token: spec.token,
         input: spec.input,
         legs: plan.legs,
-        claims: spec.claims,
         lpClaim: spec.lpClaim,
         creatorClaim: spec.creatorClaim,
       }),
@@ -375,27 +320,9 @@ export function StockPayout({
           <div className="text-[15px] text-primary">{spec.copy.title}</div>
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted">{spec.copy.body}</p>
         </div>
-        {spec.ticker ? (
-          <span className="num shrink-0 rounded-full px-3 py-2 text-[13px] text-primary [background:var(--well-fill)] [box-shadow:var(--well-edge)]">
-            {asset.symbol} · {asset.name}
-          </span>
-        ) : (
-          <label className="shrink-0">
-            <span className="sr-only">Stock to receive</span>
-            <select
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              disabled={running || journey !== null}
-              className="num glass-select rounded-full px-3 py-2 text-[13px] text-primary outline-none disabled:opacity-50"
-            >
-              {RWA_ASSETS.map((a) => (
-                <option key={a.ticker} value={a.ticker}>
-                  {a.symbol} · {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <span className="num shrink-0 rounded-full px-3 py-2 text-[13px] text-primary [background:var(--well-fill)] [box-shadow:var(--well-edge)]">
+          {asset.symbol} · {asset.name}
+        </span>
       </div>
 
       {plan && !journey && (

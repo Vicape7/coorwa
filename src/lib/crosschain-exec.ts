@@ -5,8 +5,8 @@
  *
  *   buy     TOKEN --[Cookie agg]--> COOK --[Hyperlane]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *   sell    xSTOCK --[Jupiter]--> COOK (Solana) --[Hyperlane]--> COOK --[Cookie agg]--> TOKEN
- *   payout  vault --[claim]--> COOK --[Hyperlane]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *   LP fees position --[claim fees]--> TOKEN + COOK --[Cookie agg]--> COOK --[Hyperlane]--> ...
+ *   creator pool --[claim creator fees]--> COOK --[Hyperlane]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *
  * `crosschain.ts` prices these routes. This signs them. The two directions share every leg runner
  * they can, because the awkward part is the same on both sides: the bridge is asynchronous, so a
@@ -31,11 +31,10 @@ import {
   VersionedTransaction,
   type ParsedTransactionWithMeta,
 } from "@solana/web3.js";
-import { createCloseAccountInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { COOK_DECIMALS, COOK_MINT, COOK_SOLANA_DECIMALS, COOK_SOLANA_MINT } from "./config";
 import { buildBridgeTransfer, messageIdFromLogs } from "./bridge";
-import { claimInstructions, claimStatusPda, epochPda, vaultPda } from "./vault";
-import { claimedToBridge, lpClaimedCook, lpToBridge, proofBytes } from "./payout";
+import { lpClaimedCook, lpToBridge } from "./payout";
 import { decodeTx, simulate, explainError, type SignerFn } from "./tx";
 import { amount as fmtAmount, rawToUi, shortAddr, uiToRaw } from "./format";
 import { CoorwaError } from "./http";
@@ -119,7 +118,6 @@ export async function runJourney(start: Journey, ctx: RunContext): Promise<Journ
  */
 function legRunners(j: Journey): LegRunner[] {
   return j.legs.map(({ kind }) => {
-    if (kind === "claim") return claimCashback;
     if (kind === "lp-claim") return claimLpFees;
     if (kind === "creator-claim") return claimCreatorFees;
     if (kind === "bridge") return bridgeLeg;
@@ -286,106 +284,14 @@ const sellRwaForCook: LegRunner = async (ctl, ctx, i) => {
   });
 };
 
-// --- Leg 1, payout: cashback out of the vault ----------------------------------------------------
-
-/**
- * Claim every open epoch as native COOK, then measure what came in.
- *
- * Resuming this leg is safe because of the vault rather than because of anything stored here: the
- * first claim of an epoch writes a claim record and the program refuses every later attempt. So
- * each epoch is looked up by that record before anything is sent, and one that already paid is
- * skipped. A claim still in flight when the record is read gets sent again, and then one of the two
- * fails on chain and costs its fee, never a second payment.
- *
- * The vault pays wrapped COOK and the bridge takes native, so each claim also closes the wrapped
- * account in the same transaction, which unwraps it.
- */
-const claimCashback: LegRunner = async (ctl, ctx, i) => {
-  const claims = ctl.get().claims ?? [];
-  if (claims.length === 0) {
-    throw new CoorwaError(
-      "This payout has nothing to claim.",
-      "Nothing has been signed. Discard it and start again from the rewards page.",
-    );
-  }
-
-  // Frozen once the first claim is sent, for the reason the bridge freezes its destination
-  // baseline: a balance read afterwards would already contain the claims it is meant to measure.
-  if (!ctl.get().steps[i]?.signature) {
-    ctl.setStep(i, { state: "running", detail: "Reading your COOK balance first" });
-    ctl.update({ claimBaseline: await ctx.cookieConn.getBalance(ctx.owner, "confirmed") });
-  }
-
-  const mint = new PublicKey(COOK_MINT);
-  const vault = vaultPda(mint);
-  const wrapped = getAssociatedTokenAddressSync(mint, ctx.owner);
-
-  for (const c of claims) {
-    const record = claimStatusPda(epochPda(vault, BigInt(c.epoch)), ctx.owner);
-    if (await ctx.cookieConn.getAccountInfo(record, "confirmed")) continue;
-
-    ctl.setStep(i, { state: "running", detail: `Claiming epoch #${c.epoch}` });
-    const tx = new Transaction().add(
-      ...claimInstructions({
-        claimant: ctx.owner,
-        mint,
-        index: BigInt(c.epoch),
-        amount: BigInt(c.amountRaw),
-        proof: proofBytes(c.proof),
-      }),
-      createCloseAccountInstruction(wrapped, ctx.owner, ctx.owner),
-    );
-    const { blockhash } = await ctx.cookieConn.getLatestBlockhash("confirmed");
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = ctx.owner;
-    const signature = await sendAndRecord(ctx.cookieConn, tx, ctx, ctl, i, "cookie");
-
-    // Only the link to the transaction depends on this landing. The claim record is the truth.
-    void fetch("/api/cashback/claim", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ signature, wallet: ctx.owner.toBase58(), epoch: c.epoch }),
-    }).catch(() => undefined);
-  }
-
-  const baseline = ctl.get().claimBaseline;
-  if (baseline === undefined) {
-    throw new CoorwaError(
-      "This payout has no balance to measure its claims against.",
-      "Whatever was claimed is in your Cookie Chain wallet as COOK. Discard the payout; the COOK " +
-        "can be bridged by hand from any pair's settlement panel.",
-    );
-  }
-  const now = await ctx.cookieConn.getBalance(ctx.owner, "confirmed");
-  const gained = BigInt(now) - BigInt(baseline);
-  const owed = claims.reduce((sum, c) => sum + BigInt(c.amountRaw), 0n);
-  const reserve = BigInt(uiToRaw(COOKIE_GAS_RESERVE, COOK_DECIMALS));
-  const toBridge = claimedToBridge(gained, owed, reserve);
-
-  if (toBridge <= 0n) {
-    throw new CoorwaError(
-      "The claims brought in too little COOK to bridge.",
-      `About ${COOKIE_GAS_RESERVE} COOK has to stay behind to pay the bridge transaction's own fee. ` +
-        "Whatever was claimed is in your Cookie Chain wallet.",
-    );
-  }
-
-  ctl.update({ bridgeAmount: rawToUi(toBridge, COOK_DECIMALS) });
-  ctl.setStep(i, {
-    state: "done",
-    chain: "cookie",
-    detail: `${fmtAmount(rawToUi(gained < owed ? gained : owed, COOK_DECIMALS))} COOK claimed`,
-  });
-};
-
 // --- Leg 1, LP fees: claim what a position has earned --------------------------------------------
 
 /**
  * Claim a position's fees, then measure both sides of what the claim paid.
  *
- * Unlike the vault, the pool does not refuse a second claim: it pays whatever accrued in between,
- * which is next to nothing. So the stored signature is what stops a resume claiming twice, and a
- * second claim that did slip through would cost one transaction fee, never anyone's funds.
+ * The pool does not refuse a second claim: it pays whatever accrued in between, which is next to
+ * nothing. So the stored signature is what stops a resume claiming twice, and a second claim that
+ * did slip through would cost one transaction fee, never anyone's funds.
  *
  * Nothing is measured against a balance read beforehand. The claim transaction's own balances say
  * exactly what it paid, and that also keeps COOK the wallet was already holding out of the payout.
@@ -404,7 +310,7 @@ const claimLpFees: LegRunner = async (ctl, ctx, i) => {
   if (!signature) {
     ctl.setStep(i, { state: "running", detail: "Reading your position" });
     // Loaded here rather than at the top: the Anchor bundle behind it fails to evaluate during
-    // server rendering, and every page with a settlement panel imports this file.
+    // server rendering, and every page with a payout panel imports this file.
     const { buildClaimFees, buildDeps, findUserPositions, loadPool } = await import("./liquidity");
     const deps = buildDeps(ctx.cookieConn);
     const pool = await loadPool(deps, lp.pool);
@@ -1005,7 +911,7 @@ function tokenDelta(
  */
 function reportSwap(ctx: RunContext, j: Journey, signature: string, side: "buy" | "sell"): void {
   const first = j.legs[0]?.kind;
-  const payout = first === "claim" || first === "lp-claim" || first === "creator-claim";
+  const payout = first === "lp-claim" || first === "creator-claim";
   void fetch("/api/rewards/record", {
     method: "POST",
     headers: { "content-type": "application/json" },

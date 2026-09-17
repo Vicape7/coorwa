@@ -27,7 +27,6 @@ export function CreatorPayout({
     const stock = rwaByTicker(ticker)?.symbol ?? ticker;
     return {
       slug: creatorPayoutSlug(pool),
-      source: "creator-fees",
       ticker,
       owedCook: pendingCook,
       pricings:

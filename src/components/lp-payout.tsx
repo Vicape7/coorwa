@@ -3,8 +3,8 @@
 /**
  * An LP position's fees taken as a stock.
  *
- * The cashback payout again, with the position in front of the route instead of the vault: claim
- * the fees, sell the token side for COOK, bridge, buy the xStock on Solana. See `StockPayout` for
+ * The cross-chain buy route with the position in front of it: claim the fees, sell the token side
+ * for COOK, bridge, buy the xStock on Solana. See `StockPayout` for
  * the panel and `claimLpFees` in `crosschain-exec.ts` for the leg this adds.
  */
 import { useMemo } from "react";
@@ -70,7 +70,6 @@ export function LpPayout({
 
     return {
       slug: lpPayoutSlug(p.position),
-      source: "lp-fees",
       ticker,
       owedCook: cookFee + tokenFee,
       pricings,

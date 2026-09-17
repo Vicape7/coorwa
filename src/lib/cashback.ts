@@ -7,9 +7,7 @@
  * `payout-cycle.ts`). Every fill read here was written only after its transaction confirmed on-chain,
  * and every payout carries the Solana transaction that sent it.
  */
-import { gte, sql } from "drizzle-orm";
 import { dbEnabled, db, schema } from "./db";
-import { feeShareSql } from "./epochs";
 import { fetchTokens } from "./cookiescan";
 import { createdBy } from "./creators";
 import { logosByMint } from "./token-logos";
@@ -203,32 +201,4 @@ export async function recordFill(fill: RecordFill): Promise<{ recorded: boolean 
     .onConflictDoNothing({ target: schema.fills.signature });
 
   return { recorded: true };
-}
-
-/** Protocol-wide totals for the marketing surface. */
-export async function protocolTotals() {
-  if (!dbEnabled || !db) {
-    return { configured: false, volumeUsd: 0, feesUsd: 0, rebatedUsd: 0, wallets: 0, fills: 0 };
-  }
-  const { fills } = schema;
-  const [row] = await db
-    .select({
-      volumeUsd: sql<number>`coalesce(sum(${fills.valueUsd}), 0)`,
-      feesUsd: sql<number>`coalesce(sum(${fills.feeUsd}), 0)`,
-      rebatedUsd: sql<number>`${feeShareSql("holders")} + ${feeShareSql("creator")}`,
-      wallets: sql<number>`count(distinct ${fills.wallet})`,
-      fills: sql<number>`count(*)`,
-    })
-    .from(fills)
-    .where(gte(fills.createdAt, new Date(0)));
-
-  const feesUsd = Number(row?.feesUsd ?? 0);
-  return {
-    configured: true,
-    volumeUsd: Number(row?.volumeUsd ?? 0),
-    feesUsd,
-    rebatedUsd: Number(row?.rebatedUsd ?? 0),
-    wallets: Number(row?.wallets ?? 0),
-    fills: Number(row?.fills ?? 0),
-  };
 }

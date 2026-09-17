@@ -147,7 +147,7 @@ export async function listingsFor(mint: string): Promise<Listing[]> {
   }));
 }
 
-/** Raw COOK as a USD figure, for pricing what actually reached the vault. */
+/** Raw COOK as a USD figure, for pricing what actually reached the operator. */
 export function cookToUsd(raw: bigint, cookPriceUsd: number): number {
   return rawToUi(raw, COOK_DECIMALS) * cookPriceUsd;
 }

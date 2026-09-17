@@ -7,9 +7,8 @@ import { existsSync } from "node:fs";
  * Next loads `.env.local` itself, but drizzle-kit is a separate process and loads nothing, so
  * `npm run db:push` would otherwise refuse with an empty url no matter what is in the file.
  *
- * A DATABASE_URL already in the environment always wins, and that is not a nicety: the integration
- * run in `scripts/program.mjs` passes the throwaway container's url this way, and letting
- * `.env.local` override it would push the schema into the real database instead of the test one.
+ * A DATABASE_URL already in the environment always wins, so a throwaway database can be pointed at
+ * from the command line without `.env.local` quietly sending the schema to the real one instead.
  */
 if (!process.env.DATABASE_URL) {
   for (const file of [".env.local", ".env"]) {

@@ -1,11 +1,11 @@
 /**
- * Cashback taken as a stock rather than as COOK.
+ * Fees a user claims themselves, taken as a stock rather than as they arrive.
  *
  * Nothing here moves money. The payout is the cross-chain buy route with one leg in front of it:
  *
- *   vault --[claim]--> COOK --[Hyperlane warp]--> COOK (Solana) --[Jupiter]--> xSTOCK
+ *   pool or position --[claim fees]--> COOK --[Hyperlane warp]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *
- * so it runs on the same executor and resumes the same way as any settlement (see
+ * so it runs on the same executor and resumes the same way as any route (see
  * `crosschain-exec.ts`). What lives here is the part that decides whether a payout should start at
  * all, because two things would strand COOK on Solana halfway and both can be checked before the
  * first signature: a payout too small to be worth its fixed costs, and a wallet without the SOL the
@@ -16,17 +16,6 @@ import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/sp
 import { CASHBACK_RWA_MIN_USD, COOK_SOLANA_MINT } from "./config";
 import { amount, usd } from "./format";
 import type { RouteLeg } from "./crosschain";
-
-/** A payout is stored as a journey like any route, under this in place of a pair. */
-export const PAYOUT_SLUG = "cashback";
-
-/** One open epoch, carried on the journey so a resumed payout claims exactly what it started with. */
-export interface PayoutClaim {
-  epoch: string;
-  amountRaw: string;
-  /** Sibling hashes, leaf upwards, as hex. */
-  proof: string[];
-}
 
 /**
  * Rent for the two token accounts a first payout opens on Solana, in lamports, measured on mainnet
@@ -93,20 +82,17 @@ export function payoutBlocked(args: {
   /** What the route says arrives, in USD. Null while it is being priced. */
   valueUsd: number | null;
   sol: SolanaReadiness | null;
-  /** Cashback out of the vault, or fees on an LP position or a launchpad pool. Only the wording differs. */
-  source?: "cashback" | "lp-fees" | "creator-fees";
 }): string | null {
-  const lp = args.source === "lp-fees" || args.source === "creator-fees";
   if (args.rpcIsPublic) {
     return "No dedicated Solana RPC is configured, so the Solana legs cannot be signed from this browser.";
   }
-  if (args.owedCook <= 0) return lp ? "No fees have accrued yet." : "Nothing is claimable yet.";
+  if (args.owedCook <= 0) return "No fees have accrued yet.";
   if (args.valueUsd === null) return "Pricing the route.";
   if (args.valueUsd < CASHBACK_RWA_MIN_USD) {
     return (
       `A payout in stock starts at ${usd(CASHBACK_RWA_MIN_USD)}, and this one would arrive as ` +
       `${usd(args.valueUsd)}. Below that, the fixed costs on Solana take too large a share, so ` +
-      (lp ? "claim the fees as they are instead." : "claim it as COOK instead.")
+      "claim the fees as they are instead."
     );
   }
   if (!args.sol) return "Checking your SOL on Solana.";
@@ -121,34 +107,6 @@ export function payoutBlocked(args: {
     );
   }
   return null;
-}
-
-/**
- * What a claim leg hands the bridge, in lamports.
- *
- * `gained` is the wallet's native COOK after the claims minus before them, so it is already net of
- * every fee and rent the claims cost. It is capped at what the epochs owe, so COOK that arrived for
- * some other reason in the meantime is never swept into the payout, and `reserve` stays behind to
- * pay for the bridge transaction itself. Zero or less means there is nothing worth bridging.
- */
-export function claimedToBridge(gained: bigint, owed: bigint, reserve: bigint): bigint {
-  return (gained < owed ? gained : owed) - reserve;
-}
-
-/** The claim, drawn as the first leg of the route. */
-export function claimLeg(owedCook: number): RouteLeg {
-  return {
-    kind: "claim",
-    label: "Claim your cashback",
-    venue: "Coorwa vault",
-    inSymbol: "COOK",
-    outSymbol: "COOK",
-    inAmount: owedCook,
-    outAmount: owedCook,
-    priceImpactPct: 0,
-    etaSeconds: 5,
-    note: "one signature per open epoch",
-  };
 }
 
 // --- LP fees -------------------------------------------------------------------------------------
@@ -251,8 +209,4 @@ export function creatorClaimLeg(cookFee: number): RouteLeg {
     etaSeconds: 5,
     note: "checked against MomoSwap's declaration before you sign",
   };
-}
-
-export function proofBytes(hex: string[]): Uint8Array[] {
-  return hex.map((h) => Uint8Array.from(h.match(/../g) ?? [], (b) => parseInt(b, 16)));
 }

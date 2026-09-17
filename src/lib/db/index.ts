@@ -101,16 +101,3 @@ export const db: Db | null = configured
   : null;
 export const dbEnabled = db !== null;
 export { schema };
-
-/**
- * Hang up the pool.
- *
- * The app never calls this - the pool is meant to outlive every request. A test process does,
- * because an open socket keeps node alive after the last assertion has passed.
- */
-export async function closeDb(): Promise<void> {
-  if (!globalThis.__coorwaDb) return;
-  await globalThis.__coorwaDb.$client.end({ timeout: 5 });
-  globalThis.__coorwaDb = undefined;
-  globalThis.__coorwaDbUrl = undefined;
-}

@@ -6,8 +6,8 @@
  * Two different things arrive here and they come from different places, which is why they are shown
  * as separate lines rather than one total. MomoSwap pays the creator 35% of its 1% trade fee, so
  * 0.35% of every trade on the curve, and it sits on the pool until claimed with the creator's own
- * key. Coorwa's cashback pays the creator a share of Coorwa's referral revenue instead, and that is
- * settled through the vault on the rewards page, not here.
+ * key. Coorwa also pays the creator 37.5% of the fees Coorwa earns on the token, and that arrives
+ * with the daily payout run shown on the rewards page, not here.
  *
  * The list comes from the pool feed rather than from Coorwa's own records, so a token launched
  * before any of this existed still shows up and can still be claimed. Once the token has a pair, the

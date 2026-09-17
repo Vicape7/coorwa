@@ -137,7 +137,7 @@ export const PAIR_LISTING_USD = 1;
  * and every fill was recorded at zero. This is the only way the terminal can fund anything.
  *
  * It is charged honestly rather than hidden: the instruction is appended to the aggregator's own
- * transaction, in plain sight, paying into the cashback vault rather than to Coorwa. Say plainly on
+ * transaction, in plain sight, paying the operator wallet that pays holders. Say plainly on
  * the panel that it is charged, because a trader can always route around Coorwa and should be able
  * to see what routing through it costs.
  */
@@ -148,8 +148,8 @@ export const COORWA_SWAP_FEE_BPS = 100;
  * fee alike. Must sum to 1: all of it is returned, none of it kept.
  *
  * The holders' part is not paid to whoever generated the fee. It joins that token's holder pool, and
- * each epoch shares the pool out over the wallets holding the token at the snapshot, in proportion to
- * what they hold. The creator's part goes to whoever made the token, as before.
+ * the daily run shares the pool out over the wallets holding the token across the day's samples, in
+ * proportion to what they held. The creator's part goes to whoever made the token.
  */
 export const CASHBACK_SPLIT = {
   holders: 0.625,
@@ -189,12 +189,12 @@ export const OPERATOR_SOL_FLOOR = 0.02;
 
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
-// --- Cashback vault ----------------------------------------------------------------------------
+// --- The vault program ---------------------------------------------------------------------------
 
 /**
- * Coorwa's own program on Cookie Chain, in `programs/corwa-vault`. It holds the cashback float and
- * pays it out against published merkle roots, so accrual can be worked out off chain while custody
- * stays on it. See the module docs in `src/lib/vault.ts` and the program itself.
+ * Coorwa's own program on Cookie Chain, in `programs/corwa-vault`: a merkle distributor that pays
+ * against published roots. The app pays holders through the daily run now, so only the program's
+ * client (`src/lib/vault.ts`) and its tests use this.
  *
  * Overridable so a fork can point at its own deployment without rebuilding the client.
  */
@@ -202,32 +202,14 @@ export const VAULT_PROGRAM_ADDRESS =
   process.env.NEXT_PUBLIC_VAULT_PROGRAM_ID?.trim() ||
   "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg";
 
-/** The vault pays in wrapped COOK, which is what the launchpad referral revenue arrives as. */
-export const VAULT_MINT = COOK_MINT;
-
 /**
- * Who gets to see the vault operator panel before a vault exists.
- *
- * Once a vault is initialized the panel follows the authority stored on chain, and nothing here
- * matters. The gap this fills is the one before that: `initialize` is open to anyone, and whoever
- * calls it first for this mint becomes the authority permanently. So the panel offers that button
- * to one named wallet rather than to every visitor, and the honest advice is to deploy and
- * initialize in the same sitting.
+ * The vault's authority, a wallet Coorwa holds. It was the launchpad referrer before the operator
+ * took over, so it is kept out of holder pools like the operator is.
  */
 export const VAULT_AUTHORITY = process.env.NEXT_PUBLIC_VAULT_AUTHORITY?.trim() || "";
 
-/** How long a published epoch stays claimable before its remainder rolls into the next one. */
-export const CASHBACK_CLAIM_WINDOW_DAYS = 30;
-
 /**
- * Below this, claiming costs more than it pays. A claim writes two accounts the claimant funds
- * themselves: the claim record that stops a second attempt, and their token account if they have
- * none yet. Balances under the floor are not dropped, they simply wait for the next epoch.
- */
-export const CASHBACK_MIN_CLAIM_COOK = 0.05;
-
-/**
- * The smallest cashback, in USD, that can be taken as an xStock rather than as COOK.
+ * The smallest LP or creator fee payout, in USD, that can be taken as an xStock instead of COOK.
  *
  * Measured on 2026-09-11, the route loses about 1.4% to slippage at every size from $0.46 to $9, so
  * the percentage cost is not what sets a floor. The fixed cost is: the first payout into an asset

@@ -1,8 +1,8 @@
 /**
  * Coorwa holder sampler.
  *
- * Holder rewards are shared by what each wallet held across an epoch, not at one moment, so the app
- * needs holder samples taken between epochs. This Worker does nothing but ask for one on a cron:
+ * Holder rewards are shared by what each wallet held across the day, not at one moment, so the app
+ * needs holder samples taken between payout runs. This Worker does nothing but ask for one on a cron:
  * the app decides whether to take it, reads the chain and stores the result. Keeping the logic in
  * the app means one place knows the rules, and this stays small enough to read at a glance.
  */

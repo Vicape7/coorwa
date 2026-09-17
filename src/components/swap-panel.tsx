@@ -217,7 +217,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
           symbol: pair.base.symbol,
           side,
           valueUsd: Number.isFinite(notional) ? Math.max(0, notional) : 0,
-          // Derived server-side from what the transaction actually paid the vault.
+          // Derived server-side from what the transaction actually paid the operator.
           feeUsd: 0,
           chain: "cookie",
         }),
@@ -464,7 +464,7 @@ function RouteDetail({
           <p className="pt-1.5 text-[11px] leading-relaxed text-subtle">
             Both Cookie Chain routers were quoted; this is the better fill. The transaction is built
             upstream and signed in your wallet - Coorwa never holds your funds. Coorwa&apos;s fee is
-            a visible instruction paying the cashback vault, and all of it is returned:{" "}
+            a visible transfer to Coorwa&apos;s payout wallet, and all of it is returned:{" "}
             {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
             {(CASHBACK_SPLIT.holders * 100).toFixed(1)}% to the token&apos;s holders,{" "}
             {(CASHBACK_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither

@@ -164,8 +164,8 @@ export interface HolderSnapshot {
 /**
  * Snapshot the holders of each mint, one after another so a large set does not hammer the RPC.
  *
- * A mint whose read fails comes back with no holders rather than failing the whole epoch: its pool
- * simply waits for the next one, which is the same thing that happens to a token nobody holds.
+ * A mint whose read fails comes back with no holders rather than failing the whole sample: its
+ * pool simply waits for the next one, which is the same thing that happens to a token nobody holds.
  */
 export async function snapshotHolders(mints: readonly string[]): Promise<HolderSnapshot[]> {
   const connection = new Connection(COOKIE_RPC_URL, "confirmed");

@@ -87,16 +87,15 @@ export const launches = pgTable(
 );
 
 /**
- * A TOKEN/RWA pair somebody paid for. Anyone may buy one, for any token with a pool.
+ * A token's pair, set by its creator for a token not launched through Coorwa.
  *
  * A token is only in the terminal once it has a pair: its launch benchmark if it was launched here,
- * otherwise one of these. Each costs one dollar's worth of COOK, paid into the cashback vault rather
- * than to Coorwa, and paid out to that token's holders.
+ * otherwise one of these. It costs one dollar's worth of COOK, paid to the operator wallet and paid
+ * out to that token's holders.
  *
- * The payment is a plain `fund` call on the vault program, which anyone may make, so a row here is
- * only written once that transaction has been read back from the chain: it has to have funded the
- * vault, and the amount that actually moved decides how many pairs it bought. The signature is
- * unique across the table, so one payment can never be presented twice.
+ * A row is only written once the payment has been read back from the chain: it has to be signed by
+ * the creator and have credited the operator with enough COOK. The signature is unique across the
+ * table, so one payment can never be presented twice.
  */
 export const listings = pgTable(
   "listings",
@@ -107,9 +106,9 @@ export const listings = pgTable(
     ticker: text("ticker").notNull(),
     /** Whoever paid. Not necessarily the token's creator, because the fee is the gate, not identity. */
     payer: text("payer").notNull(),
-    /** The confirmed `fund` transaction that bought this row and its siblings. */
+    /** The confirmed payment transaction that bought this row. */
     signature: text("signature").notNull(),
-    /** Raw COOK that reached the vault on that transaction, and what it was worth at the time. */
+    /** Raw COOK that reached the operator on that transaction, and what it was worth then. */
     paidRaw: bigint("paid_raw", { mode: "bigint" }).notNull(),
     paidUsd: doublePrecision("paid_usd").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -133,6 +132,9 @@ export const listings = pgTable(
  *
  * `index` is the on-chain epoch index, and the program insists it equals the vault's epoch count,
  * so the sequence is the chain's rather than ours.
+ *
+ * No longer written. The app paid through vault epochs before the daily payout run replaced them,
+ * and the table stays here because it still exists in the database.
  */
 export const epochs = pgTable(
   "epochs",
@@ -174,6 +176,9 @@ export const epochs = pgTable(
  * amount would change the root and orphan every proof already handed out. The proof itself is not
  * stored - the tree is rebuilt from these rows on demand, and it sorts leaves by their own hash, so
  * the rebuild lands on the same root no matter what order Postgres returns them in.
+ *
+ * No longer written. The app paid through vault epochs before the daily payout run replaced them,
+ * and the table stays here because it still exists in the database.
  */
 export const claims = pgTable(
   "claims",
@@ -211,6 +216,9 @@ export const claims = pgTable(
  * and written together with the epoch's claim lines. A draft's rows are replaced when the draft is
  * rebuilt; a published epoch's rows are the record, and what they add up to per token is what that
  * token's pool has already paid out.
+ *
+ * No longer written. The app paid through vault epochs before the daily payout run replaced them,
+ * and the table stays here because it still exists in the database.
  */
 export const holderRewards = pgTable(
   "holder_rewards",
@@ -232,12 +240,12 @@ export const holderRewards = pgTable(
 );
 
 /**
- * One holder's balance in one snapshot taken during an epoch.
+ * One holder's balance in one sample.
  *
- * A single snapshot at the moment an epoch is built can be gamed by buying just before it and
- * selling just after. So holders are also sampled at unpredictable times between epochs, and an
- * epoch shares each token's pool by the sum of every sample in its window. To be paid in full a wallet
- * has to hold for the whole epoch, not for one minute of it.
+ * A single snapshot at payout time can be gamed by buying just before it and selling just after. So
+ * holders are sampled at unpredictable times, and the daily run shares each token's pool by the sum
+ * of every sample since the last run. To be paid in full a wallet has to hold through the day, not
+ * for one minute of it.
  *
  * Every row of one sample carries the same `takenAt`, which is what groups them.
  */

@@ -27,7 +27,7 @@ const Body = z.object({
  * call server-side, where rate limits and CORS are not the browser's problem.
  *
  * Coorwa's own fee is appended here rather than in the browser, so it cannot be dropped by editing
- * the client. It is a visible instruction paying the cashback vault, and the amount charged is
+ * the client. It is a visible transfer to the operator wallet, and the amount charged is
  * returned alongside the transaction so the panel can show it before anybody signs.
  */
 export async function POST(req: Request) {

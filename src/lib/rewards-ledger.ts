@@ -19,7 +19,7 @@
 import { and, desc, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { db, schema } from "./db";
 import { snapshotHolders } from "./holders";
-import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./epochs";
+import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./holder-samples";
 import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
 import { tokenCreator } from "./creators";
