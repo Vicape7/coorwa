@@ -18,7 +18,7 @@
   "services": [{ "binding": "APP", "service": "coorwa" }],
 
   "vars": {
-    "SAMPLE_URL": "https://coorwa.coorwa.workers.dev/api/cashback/sample"
+    "SAMPLE_URL": "https://coorwa.fun/api/cashback/sample"
   },
 
   // HOLDER_SAMPLE_SECRET is a secret, not a var: `npx wrangler secret put HOLDER_SAMPLE_SECRET`.

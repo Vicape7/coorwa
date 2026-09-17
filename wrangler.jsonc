@@ -4,6 +4,12 @@
   // The holder sampler is a separate Worker under workers/holder-sampler.
   "name": "coorwa",
   "main": ".open-next/worker.js",
+  // coorwa.fun serves the app. workers.dev stays on as well, so nothing that still calls it breaks.
+  "routes": [
+    { "pattern": "coorwa.fun", "custom_domain": true },
+    { "pattern": "www.coorwa.fun", "custom_domain": true }
+  ],
+  "workers_dev": true,
   "compatibility_date": "2026-09-15",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {

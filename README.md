@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://coorwa.coorwa.workers.dev"><b>Open the app</b></a>
+  <a href="https://coorwa.fun"><b>Open the app</b></a>
   &nbsp;·&nbsp;
   <a href="#get-started-in-five-steps">Get started</a>
   &nbsp;·&nbsp;
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="https://coorwa.coorwa.workers.dev"><img src="https://img.shields.io/badge/app-live-f0b860?style=flat-square" alt="Live app"></a>
+  <a href="https://coorwa.fun"><img src="https://img.shields.io/badge/app-live-f0b860?style=flat-square" alt="Live app"></a>
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
@@ -168,7 +168,7 @@ also lives on Solana, and Cookie Chain's own bridge moves it between the two.
    connect the same wallet, choose Solana to Cookie Chain and send. COOK is locked on Solana and
    released 1:1 on Cookie Chain within seconds. Keep a little SOL in the wallet for the Solana side's
    fees.
-4. **Open [Coorwa](https://coorwa.coorwa.workers.dev) and connect.** Trade a pair on the terminal,
+4. **Open [Coorwa](https://coorwa.fun) and connect.** Trade a pair on the terminal,
    buy a token on its curve, or launch your own with a stock attached.
 5. **Hold, and get paid on Solana.** Rewards arrive as the token's stock at your same address on
    Solana, already in the wallet you use. There is nothing to claim and nothing to bridge back. To
@@ -235,7 +235,7 @@ checked against the chain on the next call instead of paying twice.
   [`3y5zHNgQ…Pt8R`](https://cookiescan.io/account/3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R),
   between collection and the daily run, the same model StonkFun uses, because buying a stock on
   Solana needs a key to sign it. Every run, with its total, its costs, how many wallets it paid and
-  its bridge transaction, is published at [`/api/rewards`](https://coorwa.coorwa.workers.dev/api/rewards), and each payout
+  its bridge transaction, is published at [`/api/rewards`](https://coorwa.fun/api/rewards), and each payout
   on the rewards page links its Solana transaction.
 
 ---
