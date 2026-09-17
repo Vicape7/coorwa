@@ -18,14 +18,17 @@ function gatewayUrl(uri: string): string | null {
   return /^https:\/\//.test(uri) ? uri : null;
 }
 
-/** The `image` of a token's metadata JSON, cached for a day because a CID never changes. */
+/**
+ * The `image` of a token's metadata JSON, cached for a day because a CID never changes. A failed
+ * read is not cached, so a gateway timeout on a cold Worker does not hide the logo for a day.
+ */
 async function imageFromUri(uri: string): Promise<string | null> {
   const url = gatewayUrl(uri);
   if (!url) return null;
   return cached(`token-logo:${uri}`, 24 * 60 * 60 * 1000, async () => {
-    const meta = await fetchJson<{ image?: unknown }>(url, { timeoutMs: 6_000 }).catch(() => null);
+    const meta = await fetchJson<{ image?: unknown }>(url, { timeoutMs: 8_000 });
     return typeof meta?.image === "string" && meta.image ? meta.image : null;
-  });
+  }).catch(() => null);
 }
 
 /** A logo per mint, or none. Never throws: a missing logo falls back to initials in the UI. */
