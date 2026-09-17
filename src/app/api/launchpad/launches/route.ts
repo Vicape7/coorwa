@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { recordLaunch, launchesByCreator } from "@/lib/launches";
-import { proveTransaction, isProven } from "@/lib/onchain";
+import { createsLaunchpadToken, isProven, proveTransaction } from "@/lib/onchain";
+import { ADDRESS_RE } from "@/lib/config";
 import { rwaByTicker } from "@/lib/rwa";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
   signature: z.string().min(64).max(128),
-  mint: z.string().min(32).max(44),
-  pool: z.string().min(32).max(44),
-  creator: z.string().min(32).max(44),
+  mint: z.string().regex(ADDRESS_RE, "not an address"),
+  pool: z.string().regex(ADDRESS_RE, "not an address"),
+  creator: z.string().regex(ADDRESS_RE, "not an address"),
   /** The RWA the creator picked. Checked against the assets Coorwa actually prices. */
   ticker: z.string().min(1).max(12),
   symbol: z.string().max(32).optional(),
@@ -22,8 +23,8 @@ const Body = z.object({
  *
  * The benchmark decides what pair the token trades as for the rest of its life, so it is not taken
  * on trust: the launch transaction is read back from the chain, has to have been signed by the
- * creator, and has to name both the mint and the pool being claimed. Without that a wallet could
- * pin somebody else's token to whatever asset flattered it.
+ * creator, and has to be the launch itself (see `createsToken`). Without that a wallet could pin
+ * somebody else's token to whatever asset flattered it, and be paid its creator's share.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -48,11 +49,11 @@ export async function POST(req: Request) {
     if (!isProven(proof)) {
       return NextResponse.json({ error: proof.error, recorded: false }, { status: proof.status });
     }
-    if (!proof.accounts.has(b.mint) || !proof.accounts.has(b.pool)) {
+    if (!createsLaunchpadToken(proof, b.mint, b.pool)) {
       return NextResponse.json(
         {
           error: "that transaction did not create this token",
-          hint: "the mint and pool being claimed have to appear in the launch transaction itself",
+          hint: "the launch transaction itself has to create the mint and its pool on the launchpad, and a trade on the token is not that transaction",
           recorded: false,
         },
         { status: 403 },

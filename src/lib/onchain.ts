@@ -9,8 +9,10 @@
  *
  * Server-side only. `tx.ts` is the browser half of this and does the opposite job.
  */
+import bs58 from "bs58";
 import { Connection, type VersionedTransactionResponse } from "@solana/web3.js";
-import { COOKIE_RPC_URL, serverSolanaRpcUrl } from "./config";
+import { COOKIE_RPC_URL, PROGRAM_IDS, serverSolanaRpcUrl } from "./config";
+import { LAUNCHPAD_IX } from "./expectation";
 
 export type Chain = "cookie" | "solana";
 
@@ -20,6 +22,15 @@ export interface ProvenTransaction {
   keys: string[];
   /** The same addresses, for asking whether one was named at all. */
   accounts: Set<string>;
+}
+
+/** One instruction of a confirmed transaction, with its accounts resolved to addresses. */
+export interface ProvenInstruction {
+  programId: string;
+  /** The accounts it was given, in order. */
+  accounts: string[];
+  /** Its data as hex. An Anchor discriminator is the first eight bytes, so sixteen characters. */
+  data: string;
 }
 
 export interface ProofFailure {
@@ -42,6 +53,68 @@ function keysOf(tx: VersionedTransactionResponse): string[] {
     // reads as "this address was not named", which is the safe answer for every caller here.
     return [];
   }
+}
+
+/**
+ * What the transaction actually ran, instruction by instruction.
+ *
+ * This is what tells a caller that a transaction really was a launch or a trade on a given pool,
+ * rather than any transaction that happens to name the same addresses. Inner instructions are left
+ * out on purpose: a programme that calls the launchpad through a CPI is not the launch itself.
+ */
+export function instructionsOf(proof: ProvenTransaction): ProvenInstruction[] {
+  const message = proof.tx.transaction.message as {
+    instructions?: { programIdIndex: number; accounts: number[]; data: string }[];
+    compiledInstructions?: {
+      programIdIndex: number;
+      accountKeyIndexes: number[];
+      data: Uint8Array;
+    }[];
+  };
+  const at = (i: number) => proof.keys[i] ?? "";
+
+  // A legacy message carries base58 data, a v0 message carries bytes. Both are read here because
+  // Cookie Chain serves both and the launchpad's own builds are legacy.
+  if (message.compiledInstructions) {
+    return message.compiledInstructions.map((ix) => ({
+      programId: at(ix.programIdIndex),
+      accounts: ix.accountKeyIndexes.map(at),
+      data: Buffer.from(ix.data).toString("hex"),
+    }));
+  }
+  return (message.instructions ?? []).map((ix) => ({
+    programId: at(ix.programIdIndex),
+    accounts: ix.accounts.map(at),
+    data: Buffer.from(bs58.decode(ix.data)).toString("hex"),
+  }));
+}
+
+/**
+ * The addresses that signed the transaction.
+ *
+ * A signature is the one thing nobody can fake with an address alone, so this is what separates
+ * "this account appears in the transaction" from "this account took part in it". A freshly minted
+ * token signs the transaction that creates it, for instance, and never signs again.
+ */
+export function signersOf(proof: ProvenTransaction): Set<string> {
+  const header = proof.tx.transaction.message.header;
+  return new Set(proof.keys.slice(0, header.numRequiredSignatures));
+}
+
+/**
+ * How much of one token a wallet's accounts gained on this transaction, in raw units, negative when
+ * it sold. Summed over every account it owns, and read from the balances the chain recorded, so a
+ * trade cannot be claimed for a token the transaction never moved.
+ */
+export function tokenMoved(proof: ProvenTransaction, owner: string, mint: string): bigint {
+  const sum = (
+    list: { owner?: string; mint: string; uiTokenAmount: { amount: string } }[] | null | undefined,
+  ) =>
+    (list ?? [])
+      .filter((b) => b.owner === owner && b.mint === mint)
+      .reduce((total, b) => total + BigInt(b.uiTokenAmount.amount), 0n);
+
+  return sum(proof.tx.meta?.postTokenBalances) - sum(proof.tx.meta?.preTokenBalances);
 }
 
 /**
@@ -83,6 +156,45 @@ export function lamportsCredited(proof: ProvenTransaction, account: string): big
   const after = proof.tx.meta?.postBalances?.[index];
   if (typeof before !== "number" || typeof after !== "number") return null;
   return BigInt(after) - BigInt(before);
+}
+
+/**
+ * Whether this transaction is the one that created this token on the launchpad.
+ *
+ * Naming the mint is not enough, because every trade on a token names its mint: anyone could point
+ * at a stranger's token, call themselves its creator and be paid the creator's share of its fees.
+ * So the transaction has to carry the launchpad's own `create_pool` over this mint and pool, and
+ * the mint has to have signed it. A mint signs exactly once, in the transaction that brings it into
+ * existence, and only whoever holds its key can make it sign at all.
+ */
+export function createsLaunchpadToken(
+  proof: ProvenTransaction,
+  mint: string,
+  pool: string,
+): boolean {
+  const created = instructionsOf(proof).some(
+    (ix) =>
+      ix.programId === PROGRAM_IDS.momoswapLaunchpad &&
+      ix.data.startsWith(LAUNCHPAD_IX.create_pool) &&
+      ix.accounts.includes(mint) &&
+      ix.accounts.includes(pool),
+  );
+  return created && signersOf(proof).has(mint);
+}
+
+/**
+ * Whether this transaction traded on a launchpad curve.
+ *
+ * Curve shares are tracked by the launchpad rather than held as token accounts, so there is no
+ * balance movement to read and the instruction itself is the evidence that a trade happened here.
+ */
+export function tradesOnCurve(proof: ProvenTransaction, pool: string): boolean {
+  return instructionsOf(proof).some(
+    (ix) =>
+      ix.programId === PROGRAM_IDS.momoswapLaunchpad &&
+      (ix.data.startsWith(LAUNCHPAD_IX.buy) || ix.data.startsWith(LAUNCHPAD_IX.sell)) &&
+      ix.accounts.includes(pool),
+  );
 }
 
 export async function proveTransaction(args: {
