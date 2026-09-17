@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-102%20passing-3fb950?style=flat-square" alt="102 tests passing">
+  <img src="https://img.shields.io/badge/tests-119%20passing-3fb950?style=flat-square" alt="119 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -253,6 +253,14 @@ user's own wallet.
   more than the trade spends, no token transfers or approvals, the amount, pool, referrer, name and
   symbol must match, and no priority fee above 0.001 COOK. Anything else stops with a sentence
   saying what differed. Tested on six captured MomoSwap responses and tampered copies of them.
+- **The swaps that cannot be read that way are judged by what they do.** An aggregator route through
+  half a dozen pools has no shape worth pinning, so those builds are simulated first and read by
+  their effect: the trade may spend no more than it is for, it has to return at least what the quote
+  promised with Coorwa's own fee accounted for, and it may not touch anything else in the wallet
+  (`src/lib/swap-check.ts`). Terminal swaps, both swap legs of a cross-chain route and the payout
+  run's own Jupiter builds go through the same rule, so the operator wallet signs no more blindly
+  than a user does. A build that fails any of it, or that will not simulate at all, is refused
+  rather than signed.
 - **Nothing is credited on the client's word.** A reported trade is re-read on chain before it is
   written: it has to exist, to have succeeded, and to be signed by the wallet reporting it. Which
   token it traded is read from the transaction too, from the balance that moved for a swap and from
@@ -287,7 +295,7 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 102 offline unit tests that run in about two seconds.
+sampler Worker, and 119 offline unit tests that run in about two seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
@@ -296,6 +304,11 @@ toolchain is pinned in a container, and `npm run program:test` exercises it agai
 validator: claims, double claims, claiming someone else's line, forged proofs, epochs the vault
 cannot back, and publishing from the wrong key. It was Coorwa's claim-based payout path before
 daily payouts replaced claims.
+
+Nothing in the app calls it today, and the deployed vault holds nothing but its own rent. It is
+kept here because it is Coorwa's own on-chain work, not because anything depends on it. It has no
+withdrawal instruction by design, so tokens sent to it can only come back out through a published
+epoch that names the sender: do not fund it.
 
 ```
 src/
@@ -356,7 +369,7 @@ these in `.env.local`:
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 102 offline unit tests
+npm run test        # 119 offline unit tests
 npm run typecheck
 npm run build
 ```
