@@ -19,7 +19,8 @@ import {
   DEFAULT_SLIPPAGE_BPS,
 } from "@/lib/config";
 import { rawToUi, uiToRaw, amount, pct, shortAddr, tinyNumber } from "@/lib/format";
-import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
+import { checkSwapBuild, decodeTx, signSendConfirm, explainError } from "@/lib/tx";
+import { walletBalance } from "@/lib/swap-check";
 import { Notice } from "./notice";
 import type { SwapRoute } from "@/lib/swap";
 import type { CoorwaPair } from "@/lib/pairs";
@@ -27,6 +28,12 @@ import type { CoorwaPair } from "@/lib/pairs";
 type Side = "buy" | "sell";
 
 const SLIPPAGE_CHOICES = [50, 100, 500, 1000];
+
+/**
+ * What a swap may cost the wallet beyond the trade itself, in raw COOK: the transaction fee, and the
+ * rent for a token account when this is the first time the wallet holds the token it is buying.
+ */
+const COOKIE_COSTS_ALLOWANCE = 5_000_000n;
 
 export function SwapPanel({ pair }: { pair: CoorwaPair }) {
   const { connection } = useConnection();
@@ -174,6 +181,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
     setError(null);
     setResult(null);
     try {
+      const spendRaw = uiToRaw(amountNum, inDecimals);
       const res = await fetch("/api/swap/build", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -182,7 +190,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
           owner: publicKey.toBase58(),
           inputMint: inMint,
           outputMint: outMint,
-          amount: uiToRaw(amountNum, inDecimals),
+          amount: spendRaw,
           slippageBps,
           // So a sell is charged on the COOK it produces rather than on the token going in.
           outAmount: activeQuote.best.outAmount,
@@ -193,6 +201,20 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
       if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
 
       const tx = decodeTx(built.transactionBase64);
+      // The build comes back from an aggregator through Coorwa's API, and the wallet is about to
+      // sign whatever it says. Simulate it first and check it spends what this trade spends and
+      // returns what the quote promised, Coorwa's own fee included, or refuse to sign it at all.
+      const feeRaw = BigInt(built.feeRaw ?? "0");
+      const minOut = BigInt(activeQuote.best.minOutAmount);
+      await checkSwapBuild(connection, tx, {
+        input: walletBalance({ mint: inMint, owner: publicKey, nativeMint: COOK_MINT }),
+        output: walletBalance({ mint: outMint, owner: publicKey, nativeMint: COOK_MINT }),
+        owner: publicKey,
+        // On a buy the fee is charged on the COOK going in, on a sell on the COOK coming out.
+        maxSpend: BigInt(spendRaw) + (side === "buy" ? feeRaw : 0n),
+        minReceive: side === "buy" ? minOut : minOut > feeRaw ? minOut - feeRaw : 0n,
+        nativeAllowed: COOKIE_COSTS_ALLOWANCE,
+      });
       const sent = await signSendConfirm(connection, tx, signTransaction);
       setResult(sent);
       setInput("");

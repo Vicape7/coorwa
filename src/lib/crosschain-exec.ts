@@ -31,11 +31,18 @@ import {
   VersionedTransaction,
   type ParsedTransactionWithMeta,
 } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { COOK_DECIMALS, COOK_MINT, COOK_SOLANA_DECIMALS, COOK_SOLANA_MINT } from "./config";
+import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import {
+  COOK_DECIMALS,
+  COOK_MINT,
+  COOK_SOLANA_DECIMALS,
+  COOK_SOLANA_MINT,
+  WSOL_MINT,
+} from "./config";
 import { buildBridgeTransfer, messageIdFromLogs } from "./bridge";
 import { lpClaimedCook, lpToBridge } from "./payout";
-import { decodeTx, simulate, explainError, type SignerFn } from "./tx";
+import { checkSwapBuild, decodeTx, simulate, explainError, type SignerFn } from "./tx";
+import { walletBalance, type SwapWatch } from "./swap-check";
 import { amount as fmtAmount, rawToUi, shortAddr, uiToRaw } from "./format";
 import { CoorwaError } from "./http";
 import type { Journey, JourneyStep } from "./journey";
@@ -161,7 +168,9 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
   if (!signature) {
     // A sale pays Coorwa's 1% on the COOK it produces, so the build needs the quoted output,
     // exactly as the terminal's own swap panel sends it.
-    const quote = await getJson<{ all: { aggregator: string; outAmount: string }[] }>(
+    const quote = await getJson<{
+      all: { aggregator: string; outAmount: string; minOutAmount: string }[];
+    }>(
       `/api/quote?${new URLSearchParams({
         inputMint: j.token.mint,
         outputMint: COOK_MINT,
@@ -170,15 +179,21 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
         owner: ctx.owner.toBase58(),
       })}`,
     );
-    const built = await postJson<{ transactionBase64: string }>("/api/swap/build", {
-      aggregator: "cookiebox",
-      owner: ctx.owner.toBase58(),
-      inputMint: j.token.mint,
-      outputMint: COOK_MINT,
-      amount: sellRaw,
-      slippageBps: ctx.slippageBps,
-      outAmount: quote.all.find((r) => r.aggregator === "cookiebox")?.outAmount,
-    });
+    const route = quote.all.find((r) => r.aggregator === "cookiebox");
+    const built = await postJson<{ transactionBase64: string; feeRaw?: string }>(
+      "/api/swap/build",
+      {
+        aggregator: "cookiebox",
+        owner: ctx.owner.toBase58(),
+        inputMint: j.token.mint,
+        outputMint: COOK_MINT,
+        amount: sellRaw,
+        slippageBps: ctx.slippageBps,
+        outAmount: route?.outAmount,
+      },
+    );
+    const fee = BigInt(built.feeRaw ?? "0");
+    const quoted = route ? BigInt(route.minOutAmount) : 0n;
     signature = await sendAndRecord(
       ctx.cookieConn,
       decodeTx(built.transactionBase64),
@@ -186,6 +201,15 @@ const sellTokenForCook: LegRunner = async (ctl, ctx, i) => {
       ctl,
       i,
       "cookie",
+      {
+        input: walletBalance({ mint: j.token.mint, owner: ctx.owner, nativeMint: COOK_MINT }),
+        output: walletBalance({ mint: COOK_MINT, owner: ctx.owner, nativeMint: COOK_MINT }),
+        owner: ctx.owner,
+        maxSpend: BigInt(sellRaw),
+        // The COOK this produces pays Coorwa's fee, so the wallet keeps the rest of it.
+        minReceive: quoted > fee ? quoted - fee : 0n,
+        nativeAllowed: COOKIE_COSTS_ALLOWANCE,
+      },
     );
   }
 
@@ -259,6 +283,14 @@ const sellRwaForCook: LegRunner = async (ctl, ctx, i) => {
       ctl,
       i,
       "solana",
+      {
+        input: solanaBalance(j.rwaMint, ctx.owner),
+        output: solanaBalance(COOK_SOLANA_MINT, ctx.owner),
+        owner: ctx.owner,
+        maxSpend: BigInt(j.input.amountRaw),
+        minReceive: afterSlippage(leg.outAmount, ctx.slippageBps),
+        nativeAllowed: SOLANA_COSTS_ALLOWANCE,
+      },
     );
   }
 
@@ -575,6 +607,14 @@ const deliverThenBuyRwa: LegRunner = async (ctl, ctx, i) => {
     ctl,
     i,
     "solana",
+    {
+      input: solanaBalance(COOK_SOLANA_MINT, ctx.owner),
+      output: solanaBalance(j.rwaMint, ctx.owner),
+      owner: ctx.owner,
+      maxSpend: BigInt(uiToRaw(delivered, COOK_SOLANA_DECIMALS)),
+      minReceive: afterSlippage(leg.outAmount, ctx.slippageBps),
+      nativeAllowed: SOLANA_COSTS_ALLOWANCE,
+    },
   );
 
   await markFinalLeg(ctl, ctx, i, signature, "solana", ctx.solanaConn, {
@@ -612,15 +652,26 @@ const deliverThenBuyToken: LegRunner = async (ctl, ctx, i) => {
     detail: `Buying ${j.token.symbol} with ${fmtAmount(spendable)} COOK`,
   });
 
-  const built = await postJson<{ transactionBase64: string }>("/api/swap/build", {
+  const spendRaw = uiToRaw(spendable, COOK_DECIMALS);
+  const quote = await getJson<{ all: { aggregator: string; minOutAmount: string }[] }>(
+    `/api/quote?${new URLSearchParams({
+      inputMint: COOK_MINT,
+      outputMint: j.token.mint,
+      amount: spendRaw,
+      slippageBps: String(ctx.slippageBps),
+      owner: ctx.owner.toBase58(),
+    })}`,
+  );
+  const built = await postJson<{ transactionBase64: string; feeRaw?: string }>("/api/swap/build", {
     aggregator: "cookiebox",
     owner: ctx.owner.toBase58(),
     inputMint: COOK_MINT,
     outputMint: j.token.mint,
-    amount: uiToRaw(spendable, COOK_DECIMALS),
+    amount: spendRaw,
     slippageBps: ctx.slippageBps,
   });
 
+  const route = quote.all.find((r) => r.aggregator === "cookiebox");
   const signature = await sendAndRecord(
     ctx.cookieConn,
     decodeTx(built.transactionBase64),
@@ -628,6 +679,15 @@ const deliverThenBuyToken: LegRunner = async (ctl, ctx, i) => {
     ctl,
     i,
     "cookie",
+    {
+      input: walletBalance({ mint: COOK_MINT, owner: ctx.owner, nativeMint: COOK_MINT }),
+      output: walletBalance({ mint: j.token.mint, owner: ctx.owner, nativeMint: COOK_MINT }),
+      owner: ctx.owner,
+      // The COOK going in pays Coorwa's fee, so the wallet gives up the trade and the fee.
+      maxSpend: BigInt(spendRaw) + BigInt(built.feeRaw ?? "0"),
+      minReceive: route ? BigInt(route.minOutAmount) : 0n,
+      nativeAllowed: COOKIE_COSTS_ALLOWANCE,
+    },
   );
   reportSwap(ctx, j, signature, "buy");
 
@@ -635,6 +695,20 @@ const deliverThenBuyToken: LegRunner = async (ctl, ctx, i) => {
 };
 
 // --- Shared leg machinery ------------------------------------------------------------------------
+
+/** What a swap may cost beyond the trade: a fee, and rent for a token account it has to open. */
+const COOKIE_COSTS_ALLOWANCE = 5_000_000n;
+const SOLANA_COSTS_ALLOWANCE = 2_500_000n;
+
+/** A balance on Solana, where COOK and the xStocks are both Token-2022. */
+function solanaBalance(mint: string, owner: PublicKey) {
+  return walletBalance({ mint, owner, nativeMint: WSOL_MINT, tokenProgram: TOKEN_2022_PROGRAM_ID });
+}
+
+/** The floor a quote sets once its slippage is taken off it. */
+function afterSlippage(outAmount: string, slippageBps: number): bigint {
+  return (BigInt(outAmount) * BigInt(10_000 - slippageBps)) / 10_000n;
+}
 
 interface SolanaLegResponse {
   transactionBase64: string;
@@ -741,8 +815,12 @@ async function sendAndRecord(
   ctl: Ctl,
   i: number,
   chain: "cookie" | "solana",
+  watch?: SwapWatch,
 ): Promise<string> {
-  await simulate(conn, tx);
+  // A leg that is a swap says what it is for, and the build has to answer for it before it is
+  // signed. The rest are built here from known parts and only have to simulate.
+  if (watch) await checkSwapBuild(conn, tx, watch);
+  else await simulate(conn, tx);
 
   const signed = await ctx.signTransaction(tx);
   const raw =

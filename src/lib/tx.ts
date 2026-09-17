@@ -15,6 +15,7 @@ import {
   type SendOptions,
 } from "@solana/web3.js";
 import { BuildMismatchError } from "./expectation";
+import { refuseBadSwap, type SwapWatch } from "./swap-check";
 
 export type SignerFn = <T extends Transaction | VersionedTransaction>(tx: T) => Promise<T>;
 
@@ -66,6 +67,25 @@ export async function simulate(
       logs,
     );
   }
+}
+
+/**
+ * Refuse a swap build that is not the trade it was asked for, before the wallet is asked to sign.
+ *
+ * Aggregator routes cannot be read instruction by instruction the way a launchpad build can, so
+ * `swap-check.ts` judges them by what simulating them does to the wallet's balances. A legacy build
+ * is compiled into the same shape rather than skipped, so answering in the older format is not a way
+ * around the check.
+ */
+export async function checkSwapBuild(
+  connection: Connection,
+  tx: VersionedTransaction | Transaction,
+  watch: SwapWatch,
+): Promise<void> {
+  const versioned =
+    tx instanceof VersionedTransaction ? tx : new VersionedTransaction(tx.compileMessage());
+  const refusal = await refuseBadSwap(connection, versioned, watch);
+  if (refusal) throw new BuildMismatchError(`this is not the trade you asked for, ${refusal}`);
 }
 
 export interface SendResult {
