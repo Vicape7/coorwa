@@ -79,7 +79,7 @@ const Body = z.object({
  * Turn a payment into the token's pair.
  *
  * Nothing here is taken on the client's word. The payer has to be the token's creator, the token
- * must not have a pair yet, and the transaction is read back from the chain: signed by the payer,
+ * must not have a pair yet and must already trade in a pool, and the transaction is read back from the chain: signed by the payer,
  * and actually crediting the operator with enough COOK, priced when it is read. One transaction
  * sets one pair, so a payment cannot be presented twice.
  */
@@ -113,6 +113,18 @@ export async function POST(req: Request) {
     if (pin ?? listed) {
       return NextResponse.json(
         { error: `this token is already paired with ${pin ?? listed}` },
+        { status: 409 },
+      );
+    }
+    // The form already refuses these before anyone pays. This is for a call that skips the form. The
+    // payment is only marked used once a pair is recorded, so it can be sent again after graduation.
+    const liquidityUsd = liquidityByMint(await fetchMarkets()).get(b.mint) ?? 0;
+    if (liquidityUsd < MIN_LIQUIDITY_USD) {
+      return NextResponse.json(
+        {
+          error:
+            "this token has no pool on Cookie Chain with real liquidity yet; send the same payment again once it has one",
+        },
         { status: 409 },
       );
     }
