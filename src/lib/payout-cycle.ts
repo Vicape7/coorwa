@@ -134,6 +134,8 @@ export async function runPayoutStep(now = new Date()): Promise<PayoutStepResult>
     const cookPriceUsd = await fetchCookPriceUsd();
     if (!cookPriceUsd) return { action: "idle", detail: "no COOK price" };
     const run = await allocateRun(now, cookPriceUsd);
+    // Another call held the allocation lock and wrote the run this one was about to write.
+    if (run.cycleId === 0) return { action: "busy", detail: "another call allocated this run" };
     return {
       action: "allocated",
       cycleId: run.cycleId,

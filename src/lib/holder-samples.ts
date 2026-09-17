@@ -95,6 +95,9 @@ export const SAMPLE_MAX_GAP_MS = 2 * 60 * 60 * 1000;
  */
 export const SAMPLE_CHANCE = 0.15;
 
+/** The lock a sample is written under, so two schedulers cannot store the same moment twice. */
+const SAMPLE_LOCK = 8_190_120;
+
 /**
  * Whether a scheduled call should take a sample now.
  *
@@ -202,18 +205,35 @@ export async function recordHolderSample(
     [...s.holders].map(([wallet, balanceRaw]) => ({ takenAt: now, mint: s.mint, wallet, balanceRaw })),
   );
 
-  // A marker row under no mint records the time even when nothing was held, or the gap rule would
-  // retry the sample on every call. No query for a real mint ever reads it.
-  await conn
-    .insert(holderSamples)
-    .values({ takenAt: now, mint: "", wallet: "", balanceRaw: 0n })
-    .onConflictDoNothing();
-  for (let i = 0; i < rows.length; i += 500) {
-    await conn
+  const written = await conn.transaction(async (tx) => {
+    // Reading the chain above takes a while, and two schedulers can be doing it at once. The lock
+    // plus this second look at the clock keep them from storing one moment twice, which would give
+    // it double weight in the run.
+    await tx.execute(sql`select pg_advisory_xact_lock(${SAMPLE_LOCK}::bigint)`);
+    const [current] = await tx
+      .select({ at: sql<Date | null>`max(${holderSamples.takenAt})` })
+      .from(holderSamples);
+    if (!shouldSample(current?.at ? new Date(current.at) : null, now, roll)) return false;
+
+    // A marker row under no mint records the time even when nothing was held, or the gap rule would
+    // retry the sample on every call. No query for a real mint ever reads it.
+    await tx
       .insert(holderSamples)
-      .values(rows.slice(i, i + 500))
+      .values({ takenAt: now, mint: "", wallet: "", balanceRaw: 0n })
       .onConflictDoNothing();
+    for (let i = 0; i < rows.length; i += 500) {
+      await tx
+        .insert(holderSamples)
+        .values(rows.slice(i, i + 500))
+        .onConflictDoNothing();
+    }
+    return true;
+  });
+
+  if (!written) {
+    return { sampled: false, reason: "another call sampled first", takenAt: null, mints: 0, rows: 0 };
   }
+
   return {
     sampled: true,
     reason: waiting.length === 0 ? "no token has rewards waiting" : "sampled",

@@ -291,10 +291,17 @@ export async function nextRunDueAt(): Promise<Date | null> {
 }
 
 export interface AllocatedRun {
+  /** Zero when another call was already allocating this run and this one did nothing. */
   cycleId: number;
   totalUsd: number;
   lines: number;
 }
+
+/**
+ * The lock a run is allocated under. Any constant will do, as long as both schedulers pick the same
+ * one: what matters is that only one transaction at a time can be inside `allocateRun`.
+ */
+const RUN_LOCK = 8_190_119;
 
 /**
  * Share every waiting pool out, and queue whatever has reached the minimum, as one new run.
@@ -357,6 +364,23 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
   );
 
   return conn.transaction(async (tx) => {
+    // Held until this transaction ends, so a second caller waits here rather than sharing the same
+    // pools out a second time. Two schedulers firing in the same minute would otherwise both read
+    // "nothing allocated yet" and queue every holder twice, and the operator would pay twice.
+    await tx.execute(sql`select pg_advisory_xact_lock(${RUN_LOCK}::bigint)`);
+    const [state] = await tx
+      .select({
+        latest: sql<Date | null>`max(${payoutCycles.asOf})`,
+        open: sql<number>`count(*) filter (where ${payoutCycles.status} in ('allocated', 'bridging', 'bridged', 'sending'))`,
+      })
+      .from(payoutCycles);
+    // Whatever this call read before the lock is stale if a run appeared in the meantime, so it
+    // hands the work to that run instead of duplicating it.
+    const latest = state?.latest ? new Date(state.latest).getTime() : 0;
+    if (Number(state?.open ?? 0) > 0 || latest !== from.getTime()) {
+      return { cycleId: 0, totalUsd: 0, lines: 0 };
+    }
+
     const [cycle] = await tx
       .insert(payoutCycles)
       .values({ asOf, status: "allocated", cookPriceUsd })
