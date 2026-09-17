@@ -8,7 +8,7 @@ import {
   COOKIEBOX_AGG_API,
   CANDYSHOP_API,
   MOMOSWAP_API,
-  SOLANA_RPC_URL,
+  SOLANA_RPC_PATH,
   PROGRAM_IDS,
   BRIDGE,
   COOKIE_DOMAIN,
@@ -51,9 +51,10 @@ export function StatusView() {
           What Coorwa runs on.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Coorwa holds nothing and operates nothing. Every number in the app comes from one of the
-          services below, and every transaction is built by one of these programs and signed by your
-          wallet.
+          Every number in the app comes from one of the services below, and every transaction you
+          make is built by one of these programs and signed by your own wallet. Coorwa never holds
+          your tokens. What it does hold is the fees it earns, which wait in its operator wallet
+          until the daily run buys the stock and sends it to holders.
         </p>
       </div>
 
@@ -98,7 +99,11 @@ export function StatusView() {
             <Row label="Cookiebox" value={COOKIEBOX_AGG_API} note="Swap router (primary)" />
             <Row label="Candy Shop" value={CANDYSHOP_API} note="Swap router and trade history" />
             <Row label="MomoSwap" value={MOMOSWAP_API} note="Bonding-curve launchpad" />
-            <Row label="Solana RPC" value={SOLANA_RPC_URL} note="The RWA side of a cross-chain route" />
+            <Row
+              label="Solana RPC"
+              value={SOLANA_RPC_PATH}
+              note="The RWA side of a route, relayed by Coorwa so no RPC key ships in the page"
+            />
           </dl>
         </div>
 

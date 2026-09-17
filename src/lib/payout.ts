@@ -72,20 +72,15 @@ export async function solanaReadiness(
 /**
  * Why a payout cannot start yet, in the words the page shows, or null when it can.
  *
- * Checked in this order because each answer makes the later ones moot: with no Solana RPC nothing
- * can be signed there at all, with nothing owed there is nothing to price, and a payout below the
- * floor is not worth reading the wallet for.
+ * Checked in this order because each answer makes the later ones moot: with nothing owed there is
+ * nothing to price, and a payout below the floor is not worth reading the wallet for.
  */
 export function payoutBlocked(args: {
-  rpcIsPublic: boolean;
   owedCook: number;
   /** What the route says arrives, in USD. Null while it is being priced. */
   valueUsd: number | null;
   sol: SolanaReadiness | null;
 }): string | null {
-  if (args.rpcIsPublic) {
-    return "No dedicated Solana RPC is configured, so the Solana legs cannot be signed from this browser.";
-  }
   if (args.owedCook <= 0) return "No fees have accrued yet.";
   if (args.valueUsd === null) return "Pricing the route.";
   if (args.valueUsd < CASHBACK_RWA_MIN_USD) {

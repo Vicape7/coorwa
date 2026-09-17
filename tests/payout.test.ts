@@ -34,14 +34,13 @@ test("a first payout pays for two token accounts on Solana, a later one only for
 });
 
 const ready: SolanaReadiness = { balance: 1, needed: 0.004, newAccounts: 2 };
-const base = { rpcIsPublic: false, owedCook: 50_000, valueUsd: 4.2, sol: ready };
+const base = { owedCook: 50_000, valueUsd: 4.2, sol: ready };
 
 test("a payout that can go says nothing", () => {
   assert.equal(payoutBlocked(base), null);
 });
 
 test("refusals come in the order that makes the later ones moot", () => {
-  assert.match(payoutBlocked({ ...base, rpcIsPublic: true, owedCook: 0 })!, /Solana RPC/);
   assert.match(payoutBlocked({ ...base, owedCook: 0, valueUsd: null })!, /No fees have accrued/);
   assert.match(payoutBlocked({ ...base, valueUsd: null, sol: null })!, /Pricing/);
   assert.match(payoutBlocked({ ...base, valueUsd: 0.46, sol: null })!, /starts at \$1/);

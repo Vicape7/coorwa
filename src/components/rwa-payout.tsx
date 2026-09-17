@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Connection } from "@solana/web3.js";
-import { DEFAULT_SLIPPAGE_BPS, SOLANA_RPC_IS_PUBLIC, SOLANA_RPC_URL } from "@/lib/config";
+import { DEFAULT_SLIPPAGE_BPS, browserSolanaRpc } from "@/lib/config";
 import { DEFAULT_RWA, RWA_DECIMALS, rwaByTicker } from "@/lib/rwa";
 import { amount as fmtAmount, shortAddr, timeAgo, usd } from "@/lib/format";
 import {
@@ -111,7 +111,8 @@ export function StockPayout({
   const { publicKey, signTransaction } = useWallet();
 
   // The Solana legs need their own connection: the wallet's provider points at Cookie Chain.
-  const solanaConn = useMemo(() => new Connection(SOLANA_RPC_URL, "confirmed"), []);
+  // Solana through Coorwa's own relay, so no RPC key has to ship in the page.
+  const solanaConn = useMemo(() => new Connection(browserSolanaRpc(), "confirmed"), []);
 
   const [ticker, setTicker] = useState(spec.ticker);
   const asset = rwaByTicker(ticker) ?? DEFAULT_RWA;
@@ -221,7 +222,7 @@ export function StockPayout({
 
   /** Bumped by "Check again", so a wallet that has just been topped up is read afresh. */
   const [recheck, setRecheck] = useState(0);
-  const readyKey = owner && !SOLANA_RPC_IS_PUBLIC ? `${owner}|${asset.mint}|${recheck}` : null;
+  const readyKey = owner ? `${owner}|${asset.mint}|${recheck}` : null;
   const [ready, setReady] = useState<{ key: string; sol: SolanaReadiness | null } | null>(null);
 
   useEffect(() => {
@@ -244,7 +245,6 @@ export function StockPayout({
   const solShort = sol !== null && sol.balance < sol.needed;
 
   const blocked = payoutBlocked({
-    rpcIsPublic: SOLANA_RPC_IS_PUBLIC,
     owedCook: spec.owedCook,
     valueUsd: plan ? plan.outUsd : null,
     sol,

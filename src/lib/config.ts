@@ -19,6 +19,14 @@ export const COOK_SYMBOL = "COOK";
 
 export const COOKIE_EXPLORER = "https://cookiescan.io";
 
+/**
+ * What an address looks like: base58, 32 to 44 characters.
+ *
+ * Worth checking before a caller's string is put into a request to somebody else's API, because a
+ * path segment that is not an address is a path segment that points somewhere else entirely.
+ */
+export const ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
 /** Cookiescan REST: the token registry (~6.5k mints) and the markets/pools feed (160 pools). */
 export const COOKIESCAN_API = "https://api.cookiescan.io";
 
@@ -42,31 +50,41 @@ export const PROGRAM_IDS = {
 
 // --- Solana mainnet (the RWA side) -------------------------------------------------------------
 
-export const SOLANA_RPC_URL =
-  process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || "https://api.mainnet-beta.solana.com";
+/** The default, which answers a server but refuses any request carrying a browser origin. */
+const PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 
 /**
- * The Solana RPC for server code: payouts, payment checks, position reads.
+ * Where the browser talks to Solana: Coorwa's own endpoint, which relays a short list of calls and
+ * adds the RPC key server side (`src/app/api/solana-rpc/route.ts`).
  *
- * The public key above ships in the page, so it is locked to Coorwa's domains, and a request
- * from the Worker carries no domain and is refused. The server has its own key, the
- * SOLANA_SERVER_RPC_URL secret, which never reaches a browser. It is read on each call because
- * a Worker secret is not in the environment when this module first loads.
+ * No RPC key is shipped in the page. Every Solana endpoint worth using needs one, and a key in a
+ * page is a public key however it is restricted, because a domain rule only stops other websites
+ * and not a script that sets the header itself.
  */
-export function serverSolanaRpcUrl(): string {
-  return process.env.SOLANA_SERVER_RPC_URL?.trim() || SOLANA_RPC_URL;
+export const SOLANA_RPC_PATH = "/api/solana-rpc";
+
+export function browserSolanaRpc(): string {
+  // web3.js insists on an absolute URL. On the server this value is never used to make a call: the
+  // panels that build a connection only ever run in the browser.
+  const origin = typeof window === "undefined" ? "https://coorwa.fun" : window.location.origin;
+  return `${origin}${SOLANA_RPC_PATH}`;
 }
 
 /**
- * True when no dedicated Solana RPC is configured.
+ * The Solana RPC for server code: payouts, payment checks, position reads, and the relay above.
  *
- * The fallback is not merely throttled. api.mainnet-beta.solana.com answers a server happily but
- * returns 403 to any request carrying a browser origin, so the Solana legs of a cross-chain route
- * cannot run from the user's browser at all. Reads that Coorwa can do on their behalf go through
- * its own API routes; signing and sending cannot, so the panel says so up front rather than
- * failing at the first signature.
+ * `SOLANA_SERVER_RPC_URL` is a secret and never reaches a browser. It is read on each call because
+ * a Worker secret is not in the environment when this module first loads. `SOLANA_BROWSER_RPC_URL`
+ * is optional and lets the relay run on a second key, so traffic from the site cannot eat the rate
+ * limit the payout run depends on.
  */
-export const SOLANA_RPC_IS_PUBLIC = !process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim();
+export function serverSolanaRpcUrl(): string {
+  return process.env.SOLANA_SERVER_RPC_URL?.trim() || PUBLIC_SOLANA_RPC;
+}
+
+export function browserSolanaRpcUrl(): string {
+  return process.env.SOLANA_BROWSER_RPC_URL?.trim() || serverSolanaRpcUrl();
+}
 
 export const SOLANA_EXPLORER = "https://solscan.io";
 
