@@ -391,6 +391,101 @@ function received(tx: VersionedTransactionResponse, operator: string, ticker: st
   return amount(tx.meta?.postTokenBalances) - amount(tx.meta?.preTokenBalances);
 }
 
+/**
+ * Whether a built swap is safe to sign, read from what simulating it did to the operator's balances.
+ *
+ * The transaction is built by Jupiter's API and signed by the wallet that holds every payout run's
+ * money, so a bad answer there, or anything able to sit between, would be signed as readily as a
+ * good one. What the run actually wants from a swap is narrow: spend no more than this step's COOK,
+ * come back with at least what the quote promised, and leave the rest of the wallet alone. Anything
+ * else is refused before the key touches it.
+ */
+export function swapRefused(args: {
+  err: unknown;
+  cookSpent: bigint;
+  received: bigint;
+  portion: bigint;
+  minOut: bigint;
+  lamportsSpent: bigint;
+  lamportsAllowed: bigint;
+}): string | null {
+  if (args.err) return `it fails in simulation: ${JSON.stringify(args.err)}`;
+  if (args.cookSpent > args.portion) {
+    return `it spends ${args.cookSpent} COOK units, over this step's ${args.portion}`;
+  }
+  if (args.received < args.minOut) {
+    return `it returns ${args.received} units, under the ${args.minOut} the quote promised`;
+  }
+  if (args.lamportsSpent > args.lamportsAllowed) {
+    return `it takes ${args.lamportsSpent} lamports, over the ${args.lamportsAllowed} a swap may cost`;
+  }
+  return null;
+}
+
+/** An SPL or Token-2022 account holds its amount as a little-endian u64 at byte 64. */
+function tokenAmount(data: Buffer | Uint8Array | null | undefined): bigint {
+  if (!data || data.length < 72) return 0n;
+  return Buffer.from(data).readBigUInt64LE(64);
+}
+
+/**
+ * Simulate a built swap and read the balances it would leave behind, so `swapRefused` can judge it.
+ *
+ * Three accounts are watched: the COOK it spends, the asset it buys, and the operator's own SOL. A
+ * transaction that touched anything else of the operator's would have to do it through one of the
+ * accounts it names, and what it names is what simulation resolves, lookup tables included.
+ */
+async function simulateSwap(args: {
+  sol: Connection;
+  vtx: VersionedTransaction;
+  operator: PublicKey;
+  cookAccount: PublicKey;
+  ticker: string;
+  portion: bigint;
+  minOut: bigint;
+}): Promise<string | null> {
+  const { sol, vtx, operator, cookAccount, ticker, portion } = args;
+  const toSol = ticker === "SOL";
+  const asset = toSol ? null : rwaByTicker(ticker);
+  if (!toSol && !asset) return `no asset is registered as ${ticker}`;
+  const assetAccount = asset ? token22Ata(asset.mint, operator) : operator;
+
+  const watched = [cookAccount, assetAccount, operator];
+  const before = await sol.getMultipleAccountsInfo(watched, "confirmed");
+  const sim = await sol.simulateTransaction(vtx, {
+    sigVerify: false,
+    replaceRecentBlockhash: true,
+    commitment: "confirmed",
+    accounts: { encoding: "base64", addresses: watched.map((a) => a.toBase58()) },
+  });
+  const after = sim.value.accounts ?? [];
+  const data = (i: number) => {
+    const raw = after[i]?.data;
+    const encoded = Array.isArray(raw) ? raw[0] : raw;
+    return typeof encoded === "string" ? Buffer.from(encoded, "base64") : null;
+  };
+
+  const cookSpent = tokenAmount(before[0]?.data) - tokenAmount(data(0));
+  // Buying SOL, the operator's own lamports are what grows, and the fee comes out of the same
+  // balance, so the allowance is what the run already budgets for a swap.
+  const lamportsBefore = BigInt(before[2]?.lamports ?? 0);
+  const lamportsAfter = BigInt(after[2]?.lamports ?? 0);
+  const received = toSol
+    ? lamportsAfter - lamportsBefore
+    : tokenAmount(data(1)) - tokenAmount(before[1]?.data);
+  // Buying an asset, the operator pays the fee and the rent for an account it does not have yet.
+  const allowed = BigInt(toSol ? 0 : RWA_ACCOUNT_RENT + SWAP_FEE_LAMPORTS);
+  return swapRefused({
+    err: sim.value.err,
+    cookSpent,
+    received,
+    portion,
+    minOut: toSol ? args.minOut - BigInt(SWAP_FEE_LAMPORTS) : args.minOut,
+    lamportsSpent: toSol ? 0n : lamportsBefore - lamportsAfter,
+    lamportsAllowed: allowed,
+  });
+}
+
 async function swap(cycle: Cycle, signer: Keypair): Promise<string> {
   const conn = requireDb();
   const sol = solanaConn();
@@ -447,6 +542,16 @@ async function swap(cycle: Cycle, signer: Keypair): Promise<string> {
     });
     const built = await jupSwapTx({ quoteResponse: quote, userPublicKey: operator });
     const vtx = VersionedTransaction.deserialize(Buffer.from(built.swapTransaction, "base64"));
+    const refusal = await simulateSwap({
+      sol,
+      vtx,
+      operator: signer.publicKey,
+      cookAccount,
+      ticker,
+      portion,
+      minOut: BigInt(quote.otherAmountThreshold ?? "0"),
+    });
+    if (refusal) throw new Error(`the ${ticker} swap was not signed: ${refusal}`);
     vtx.sign([signer]);
     const signature = bs58.encode(vtx.signatures[0]);
 

@@ -9,7 +9,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { lineAmounts, payableLines, splitRaw, withoutCreators } from "../src/lib/rewards-ledger";
-import { MAX_CYCLE_ATTEMPTS, MAX_LINE_ATTEMPTS, sendBatch } from "../src/lib/payout-cycle";
+import {
+  MAX_CYCLE_ATTEMPTS,
+  MAX_LINE_ATTEMPTS,
+  sendBatch,
+  swapRefused,
+} from "../src/lib/payout-cycle";
 
 const sum = (m: Map<unknown, bigint>) => [...m.values()].reduce((a, b) => a + b, 0n);
 
@@ -127,4 +132,43 @@ test("nothing pending is nothing to send", () => {
 test("a wallet is given up on before the run that is trying to pay it", () => {
   // The other way round, every run would stop on the same wallet and start over on the next one.
   assert.ok(MAX_LINE_ATTEMPTS < MAX_CYCLE_ATTEMPTS);
+});
+
+// --- what the operator will put its key on ----------------------------------------------------------
+
+/**
+ * The run signs a transaction somebody else built. These are the shapes of a build that must never
+ * be signed, each one a way for the operator's wallet to come out lighter than it went in.
+ */
+const honest = {
+  err: null,
+  cookSpent: 1_000n,
+  received: 500n,
+  portion: 1_000n,
+  minOut: 495n,
+  lamportsSpent: 2_000_000n,
+  lamportsAllowed: 2_144_231n,
+};
+
+test("a swap that does what the quote said is signed", () => {
+  assert.equal(swapRefused(honest), null);
+  // Spending less than the step allows, and returning more than promised, is still fine.
+  assert.equal(swapRefused({ ...honest, cookSpent: 900n, received: 600n }), null);
+});
+
+test("a swap that reaches beyond this step's COOK is refused", () => {
+  assert.match(swapRefused({ ...honest, cookSpent: 1_001n })!, /over this step's/);
+});
+
+test("a swap that gives back less than the quote promised is refused", () => {
+  assert.match(swapRefused({ ...honest, received: 494n })!, /under the 495/);
+  assert.match(swapRefused({ ...honest, received: 0n })!, /under the 495/);
+});
+
+test("a swap that helps itself to the operator's SOL is refused", () => {
+  assert.match(swapRefused({ ...honest, lamportsSpent: 2_144_232n })!, /over the 2144231 a swap may cost/);
+});
+
+test("a swap that does not even simulate is refused before it is signed", () => {
+  assert.match(swapRefused({ ...honest, err: { InstructionError: [2, "custom"] } })!, /simulation/);
 });
