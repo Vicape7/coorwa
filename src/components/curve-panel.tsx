@@ -176,7 +176,8 @@ export function CurvePanel({
           }),
         }).then((r) => r.json());
         if (typeof recorded?.feeUsd === "number") {
-          poolUsd = recorded.feeUsd * REWARD_SPLIT.holders;
+          // With no creator to pay, the whole fee joins the holders' pool (see rewards-ledger.ts).
+          poolUsd = recorded.feeUsd * (recorded.creator ? REWARD_SPLIT.holders : 1);
         }
       } catch {
         // The ledger can miss a row; the trade still happened.

@@ -100,8 +100,10 @@ export default function TermsPage() {
                 <p>
                   Coorwa shares the fees it earns on a token with that token&apos;s holders (
                   {REWARD_SPLIT.holders * 100}%) and its creator ({REWARD_SPLIT.creator * 100}
-                  %). Fees are collected in Coorwa&apos;s operator wallet and, once a day, bridged
-                  to Solana, used to buy the token&apos;s pair stock and sent to eligible wallets.
+                  %). When Coorwa cannot tell who created a token, the creator&apos;s part goes to
+                  its holders as well. Fees are collected in Coorwa&apos;s operator wallet and, once
+                  a day, bridged to Solana, used to buy the token&apos;s pair stock and sent to
+                  eligible wallets.
                   While this happens, the fees are held by Coorwa.
                 </p>
                 <p>

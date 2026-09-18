@@ -139,7 +139,7 @@ are.
       <h3>Holder rewards</h3>
       <ul>
         <li>Hold a token and get paid in its stock, every day, with nothing to claim.</li>
-        <li>62.5% of every fee to holders, 37.5% to the creator. The creator is never also counted as a holder.</li>
+        <li>62.5% of every fee to holders, 37.5% to the creator. The creator is never also counted as a holder, and when nobody can tell who created a token, the creator's part goes to its holders too.</li>
         <li>Holders are sampled at random moments through the day, so a snapshot cannot be timed.</li>
         <li>The rewards page shows every token's waiting pool and the next run, and a connected wallet sees what is coming to it.</li>
       </ul>

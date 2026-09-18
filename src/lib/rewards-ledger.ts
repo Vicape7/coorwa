@@ -2,8 +2,10 @@
  * Who is owed what, in which asset, and what has been paid.
  *
  * Every fee Coorwa collects on a token belongs to that token: `REWARD_SPLIT.holders` of it to the
- * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. The creator
- * is paid from fees only: their own holding never counts toward the holders' share. The money
+ * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. A fee on a
+ * token whose creator nobody can name goes entirely to its holders too, rather than staying with the
+ * operator for want of a recipient. The creator is paid from fees only: their own holding never
+ * counts toward the holders' share. The money
  * itself sits in the operator wallet. This file is the ledger that says whose it is, and
  * `payout-cycle.ts` is what moves it.
  *
@@ -185,7 +187,8 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
       .select({
         mint: fills.mint,
         symbol: sql<string | null>`max(${fills.symbol})`,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.holders}::float8`,
+        // A fill with no creator has nobody to pay the creator's part to, so its holders get all of it.
+        usd: sql<number>`coalesce(sum(${fills.feeUsd} * case when ${fills.creator} is null then 1 else ${REWARD_SPLIT.holders}::float8 end), 0)`,
       })
       .from(fills)
       .where(lte(fills.createdAt, asOf))
