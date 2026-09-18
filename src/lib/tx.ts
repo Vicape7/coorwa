@@ -114,7 +114,16 @@ export async function signSendConfirm(
     ...opts,
   });
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  // Confirmed against the blockhash the transaction was actually signed with: a wallet may replace
+  // the one it was built with. How long that blockhash stays valid is not known for a build that
+  // came from elsewhere, so the wait ends at the newest blockhash's last valid height. That is never
+  // earlier than the transaction's own, so a transaction still able to land is never given up on;
+  // one that has expired is reported a little later than it could be.
+  const blockhash =
+    signed instanceof VersionedTransaction
+      ? signed.message.recentBlockhash
+      : (signed.recentBlockhash ?? "");
+  const { lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const res = await connection.confirmTransaction(
     { signature, blockhash, lastValidBlockHeight },
     "confirmed",
