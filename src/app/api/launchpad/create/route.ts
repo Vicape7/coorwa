@@ -103,7 +103,9 @@ export async function POST(req: Request) {
       devBuyCook: b.devBuyCook > 0 ? uiToRaw(b.devBuyCook, COOK_DECIMALS) : undefined,
     });
 
-    return NextResponse.json(built);
+    // The image goes back with the build, so the page can report it with the launch and the logo
+    // shows at once, instead of after the first slow IPFS read of the new metadata.
+    return NextResponse.json({ ...built, image: image ?? null });
   } catch (e) {
     const err = e instanceof CoorwaError ? e : null;
     const unauthorized = /401|session/i.test(e instanceof Error ? e.message : "");

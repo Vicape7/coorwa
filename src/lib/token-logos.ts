@@ -70,6 +70,22 @@ async function storeLogos(found: ReadonlyMap<string, string>): Promise<void> {
 }
 
 /**
+ * The logo a creator just launched with, kept before the registry or IPFS can answer for it.
+ *
+ * A new token is missing from the registry, and the first read of its metadata through a gateway
+ * can take many seconds, so its logo would show as initials until then. The launch already knows
+ * the image. Never replaces a logo found another way.
+ */
+export async function rememberLaunchLogo(mint: string, logo: string): Promise<void> {
+  if (!dbEnabled || !db) return;
+  try {
+    await db.insert(schema.tokenLogos).values({ mint, logo }).onConflictDoNothing();
+  } catch {
+    // The usual lookup still finds it, only later.
+  }
+}
+
+/**
  * A logo per mint, or none. Never throws: a missing logo falls back to initials in the UI.
  *
  * The registry wins when it has one, then a logo stored earlier, and only then the token's IPFS

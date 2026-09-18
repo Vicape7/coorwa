@@ -5,6 +5,7 @@ import { createsLaunchpadToken, isProven, proveTransaction } from "@/lib/onchain
 import { ADDRESS_RE } from "@/lib/config";
 import { rwaByTicker } from "@/lib/rwa";
 import { listedFor } from "@/lib/listings";
+import { rememberLaunchLogo } from "@/lib/token-logos";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,11 @@ const Body = z.object({
   ticker: z.string().min(1).max(12),
   symbol: z.string().max(32).optional(),
   name: z.string().max(64).optional(),
+  /**
+   * The image the launch was built with, so the token has its logo before IPFS answers. Loose on
+   * purpose: an odd value is dropped below rather than failing the report of the pair.
+   */
+  logo: z.string().max(2000).optional(),
 });
 
 /**
@@ -71,7 +77,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const res = await recordLaunch({ ...b, ticker: asset.ticker });
+    const { logo, ...launch } = b;
+    const res = await recordLaunch({ ...launch, ticker: asset.ticker });
+    // Only for a launch proved above, so nobody can put a picture on someone else's token.
+    if (
+      logo &&
+      /^https:\/\/\S+$/.test(logo) &&
+      logo.length <= 500 &&
+      (res.recorded || res.existing === asset.ticker)
+    ) {
+      await rememberLaunchLogo(b.mint, logo);
+    }
     if (res.existing) {
       // The same launch reported twice, a retry, is answered as recorded. A different pick is not.
       return res.existing === asset.ticker

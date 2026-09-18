@@ -38,7 +38,7 @@ export const CANDYSHOP_API = "https://swap.cookiescan.io/api";
 
 /** MomoSwap bonding-curve launchpad. Its API builds and partial-signs launchpad transactions. */
 export const MOMOSWAP_API = "https://api.momoswap.fun";
-export const MOMOSWAP_SITE = "https://momoswap.fun";
+export const MOMOSWAP_SITE = "https://www.momoswap.fun";
 
 export const PROGRAM_IDS = {
   cookieboxDamm: "DAMMjDCEFTDkt7ywazZS8GoaLtjb3HaJo3pLbf64xrPY",

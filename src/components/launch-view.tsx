@@ -6,13 +6,13 @@
  */
 import { TokenMark } from "./token-mark";
 import { useCallback, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate } from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { verifyLaunchpadBuild } from "@/lib/expectation";
-import { cookieTxUrl, COOKIE_EXPLORER, COOK_DECIMALS } from "@/lib/config";
+import { cookieTxUrl, COOK_DECIMALS, MOMOSWAP_SITE } from "@/lib/config";
 import { shortAddr, amount, usd, uiToRaw } from "@/lib/format";
 import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
 import {
@@ -37,6 +37,7 @@ interface LaunchReport {
   ticker: string;
   symbol: string;
   name: string;
+  logo?: string;
 }
 
 interface FeeBreakdown {
@@ -275,10 +276,13 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           ticker: benchmark,
           symbol: symbol.toUpperCase(),
           name,
+          logo: typeof built.image === "string" ? built.image : undefined,
         });
       }
 
       setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned });
+      // Show the new token, with the logo just stored, rather than at the list's next refresh.
+      void mutate("/api/launchpad/pools?status=all");
       setName("");
       setSymbol("");
       setDescription("");
@@ -416,7 +420,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
               <>
                 Mint{" "}
                 <a
-                  href={`${COOKIE_EXPLORER}/token/${done.mint}`}
+                  href={`${MOMOSWAP_SITE}/token/${done.mint}`}
                   target="_blank"
                   rel="noreferrer"
                   className="num underline underline-offset-4"
