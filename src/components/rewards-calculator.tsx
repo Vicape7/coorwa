@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import {
   PAYOUT_MIN_USD,
@@ -48,9 +48,31 @@ export function RewardsCalculator() {
   const [pairs, setPairs] = useState(0);
   const [ticker, setTicker] = useState("NVDA");
 
-  const { data } = useSWR<{ prices: Record<string, number> }>("/api/rwa/prices", fetcher, {
-    revalidateOnFocus: false,
-  });
+  /*
+   * The prices take a few seconds, sixteen quotes behind one route, and the calculator sits well
+   * below the fold. They are asked for when it comes within a screen of view, not on every visit
+   * to the landing page, so a visitor who never scrolls this far costs the Worker nothing.
+   */
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || near) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) setNear(true);
+      },
+      { rootMargin: "800px 0px" },
+    );
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [near]);
+
+  const { data } = useSWR<{ prices: Record<string, number> }>(
+    near ? "/api/rwa/prices" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
   const price = data?.prices?.[ticker];
 
   const fees = (volume * days * VENUES[venue].bps) / 10_000;
@@ -59,117 +81,119 @@ export function RewardsCalculator() {
   const you = (holders * share) / 100;
 
   return (
-    <GlassEffect refract="deep" className="rounded-[var(--radius-float)] p-6 sm:p-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <span className="label text-[12px]">Rewards calculator</span>
-          <h2 className="display mt-3 text-[clamp(1.75rem,3.4vw,2.4rem)] text-primary">
-            Hold a token, get paid in its stock.
-          </h2>
-        </div>
-        <div className="segmented" role="group" aria-label="Where the token trades">
-          {(Object.keys(VENUES) as Venue[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              data-active={venue === v}
-              onClick={() => setVenue(v)}
-            >
-              {VENUES[v].label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-9 grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:gap-12">
-        <div className="flex flex-col gap-7">
-          <Slider
-            id="calc-volume"
-            label="Traded through Coorwa, per day"
-            display={`$${volume.toLocaleString("en-US")}`}
-            scale={logScale(100, 250_000, niceRound)}
-            value={volume}
-            onChange={setVolume}
-          />
-          <Slider
-            id="calc-days"
-            label="Days held"
-            display={`${days} ${days === 1 ? "day" : "days"}`}
-            scale={linearScale(1, 90)}
-            value={days}
-            onChange={setDays}
-          />
-          <Slider
-            id="calc-share"
-            label="Your share of what holders hold"
-            display={`${share}%`}
-            scale={logScale(0.1, 50, (n) => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n)))}
-            value={share}
-            onChange={setShare}
-          />
-          <Slider
-            id="calc-pairs"
-            label="Pair paid for by the creator"
-            display={pairs > 0 ? `yes, $${PAIR_LISTING_USD}` : "no, picked at launch"}
-            scale={linearScale(0, 1)}
-            value={pairs}
-            onChange={setPairs}
-          />
+    <div ref={boxRef}>
+      <GlassEffect refract="deep" className="rounded-[var(--radius-float)] p-6 sm:p-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <span className="label text-[12px]">Rewards calculator</span>
+            <h2 className="display mt-3 text-[clamp(1.75rem,3.4vw,2.4rem)] text-primary">
+              Hold a token, get paid in its stock.
+            </h2>
+          </div>
+          <div className="segmented" role="group" aria-label="Where the token trades">
+            {(Object.keys(VENUES) as Venue[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                data-active={venue === v}
+                onClick={() => setVenue(v)}
+              >
+                {VENUES[v].label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="nav-well rounded-[var(--radius-card)] p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="label">You would get</span>
-              <PillSelect
-                id="calc-stock"
-                label="Paid out as"
-                prefix="as"
-                value={ticker}
-                onChange={setTicker}
-                options={RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.symbol }))}
+        <div className="mt-9 grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:gap-12">
+          <div className="flex flex-col gap-7">
+            <Slider
+              id="calc-volume"
+              label="Traded through Coorwa, per day"
+              display={`$${volume.toLocaleString("en-US")}`}
+              scale={logScale(100, 250_000, niceRound)}
+              value={volume}
+              onChange={setVolume}
+            />
+            <Slider
+              id="calc-days"
+              label="Days held"
+              display={`${days} ${days === 1 ? "day" : "days"}`}
+              scale={linearScale(1, 90)}
+              value={days}
+              onChange={setDays}
+            />
+            <Slider
+              id="calc-share"
+              label="Your share of what holders hold"
+              display={`${share}%`}
+              scale={logScale(0.1, 50, (n) => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n)))}
+              value={share}
+              onChange={setShare}
+            />
+            <Slider
+              id="calc-pairs"
+              label="Pair paid for by the creator"
+              display={pairs > 0 ? `yes, $${PAIR_LISTING_USD}` : "no, picked at launch"}
+              scale={linearScale(0, 1)}
+              value={pairs}
+              onChange={setPairs}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="nav-well rounded-[var(--radius-card)] p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="label">You would get</span>
+                <PillSelect
+                  id="calc-stock"
+                  label="Paid out as"
+                  prefix="as"
+                  value={ticker}
+                  onChange={setTicker}
+                  options={RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.symbol }))}
+                />
+              </div>
+              <SlidingNumber
+                value={money(you)}
+                className="num display mt-4 block text-[clamp(2.6rem,6vw,3.75rem)] text-primary"
+              />
+              <div className="num mt-2 text-[15px] text-muted">
+                <StockAmount usd={you} price={price} symbol={`${ticker}x`} />
+              </div>
+              {you < PAYOUT_MIN_USD && (
+                <p className="mt-3 text-[13px] text-subtle">
+                  Under ${PAYOUT_MIN_USD} it waits and adds up over later days; each stock is sent
+                  once it reaches ${PAYOUT_MIN_USD}.
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Tile
+                who="All holders"
+                pct={CASHBACK_SPLIT.holders}
+                usd={holders}
+                price={price}
+                ticker={ticker}
+              />
+              <Tile
+                who="Creator"
+                pct={CASHBACK_SPLIT.creator}
+                usd={creator}
+                price={price}
+                ticker={ticker}
               />
             </div>
-            <SlidingNumber
-              value={money(you)}
-              className="num display mt-4 block text-[clamp(2.6rem,6vw,3.75rem)] text-primary"
-            />
-            <div className="num mt-2 text-[15px] text-muted">
-              <StockAmount usd={you} price={price} symbol={`${ticker}x`} />
-            </div>
-            {you < PAYOUT_MIN_USD && (
-              <p className="mt-3 text-[13px] text-subtle">
-                Under ${PAYOUT_MIN_USD} it waits and adds up over later days; each stock is sent once
-                it reaches ${PAYOUT_MIN_USD}.
-              </p>
-            )}
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Tile
-              who="All holders"
-              pct={CASHBACK_SPLIT.holders}
-              usd={holders}
-              price={price}
-              ticker={ticker}
-            />
-            <Tile
-              who="Creator"
-              pct={CASHBACK_SPLIT.creator}
-              usd={creator}
-              price={price}
-              ticker={ticker}
-            />
+            <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
+              {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
+              {(VENUES[venue].bps / 100).toFixed(2)}%
+              {pairs > 0 && <>, plus {money(pairs * PAIR_LISTING_USD)} from the pair to holders</>}.
+            </p>
           </div>
-
-          <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
-            {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
-            {(VENUES[venue].bps / 100).toFixed(2)}%
-            {pairs > 0 && <>, plus {money(pairs * PAIR_LISTING_USD)} from the pair to holders</>}.
-          </p>
         </div>
-      </div>
-    </GlassEffect>
+      </GlassEffect>
+    </div>
   );
 }
 
