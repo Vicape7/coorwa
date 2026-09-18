@@ -126,6 +126,8 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     ticker: string;
     /** False when the benchmark could not be stored, which quietly changes what the token is. */
     pinned: boolean;
+    /** Why the buy at launch did not go through, when it had to be sent after the launch. */
+    buyFailed?: string;
   } | null>(null);
   // Launches that landed on chain but whose pair was not saved, kept across a reload. The server
   // answers the same launch reported again as recorded, so the retry is safe.
@@ -253,7 +255,11 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         symbol: symbol.toUpperCase(),
         durationSecs: Math.round(durationHours * 3600),
         expiryMode: "fair",
-        devBuyRaw: Number(devBuy) > 0 ? uiToRaw(Number(devBuy), COOK_DECIMALS) : null,
+        // A deferred dev buy is not in this transaction; it is bought on its own below.
+        devBuyRaw:
+          Number(devBuy) > 0 && !built.devBuyDeferred
+            ? uiToRaw(Number(devBuy), COOK_DECIMALS)
+            : null,
       });
 
       setStep("Confirm the launch in your wallet");
@@ -280,7 +286,52 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         });
       }
 
-      setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned });
+      // The launchpad could not fit the dev buy into the launch, so buy on the new curve now. The
+      // launch has landed whatever happens here, so a failed buy is reported, not thrown.
+      let buyFailed: string | undefined;
+      if (built.devBuyDeferred && built.pool && Number(devBuy) > 0) {
+        try {
+          setStep("Building your buy at launch");
+          const amount = Number(devBuy);
+          const buy = await fetch("/api/launchpad/trade", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "buy", wallet: publicKey.toBase58(), pool: built.pool, amount }),
+          }).then((r) => r.json());
+          if (buy.error) throw new Error(buy.hint ? `${buy.error} - ${buy.hint}` : buy.error);
+          await verifyLaunchpadBuild(buy, {
+            action: "buy",
+            wallet: publicKey.toBase58(),
+            pool: built.pool,
+            paymentRaw: uiToRaw(amount, COOK_DECIMALS),
+            referrer: buy.referrer ?? null,
+          });
+          setStep("Confirm your buy at launch in your wallet");
+          const bought = await signSendConfirm(
+            connection,
+            decodeTx(buy.transactionBase64),
+            signTransaction,
+          );
+          // Recorded like any curve buy, so its referral share joins the token's pool. The server
+          // re-reads it on chain; a failure here costs the record, never the buy.
+          void fetch("/api/rewards/record", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              signature: bought.signature,
+              wallet: publicKey.toBase58(),
+              source: "launchpad",
+              mint: built.mint,
+              pool: built.pool,
+              side: "buy",
+            }),
+          }).catch(() => {});
+        } catch (e) {
+          buyFailed = explainError(e);
+        }
+      }
+
+      setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned, buyFailed });
       // Show the new token, with the logo just stored, rather than at the list's next refresh.
       void mutate("/api/launchpad/pools?status=all");
       setName("");
@@ -438,6 +489,12 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             >
               {shortAddr(done.signature, 6)}
             </a>
+          </Notice>
+        )}
+        {done?.buyFailed && (
+          <Notice tone="down">
+            Your buy at launch did not go through, but the token is live, so you can buy it on its
+            curve. Reason: {done.buyFailed}
           </Notice>
         )}
 

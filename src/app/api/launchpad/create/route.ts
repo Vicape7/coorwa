@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const built = await buildCreatePoolTx({
+    const request = {
       creator: b.creator,
       session: b.session,
       params: {
@@ -101,11 +101,25 @@ export async function POST(req: Request) {
         image,
       },
       devBuyCook: b.devBuyCook > 0 ? uiToRaw(b.devBuyCook, COOK_DECIMALS) : undefined,
-    });
+    };
+
+    // A launch with a dev buy has to fit one transaction, and a long name or symbol can leave no
+    // room for the metadata link. The launchpad then refuses the whole build. Rather than make the
+    // creator shorten the name, build the launch alone and let the page buy right after it lands.
+    let built;
+    let devBuyDeferred = false;
+    try {
+      built = await buildCreatePoolTx(request);
+    } catch (e) {
+      const tooBig = /one transaction/i.test(e instanceof Error ? e.message : "");
+      if (!request.devBuyCook || !tooBig) throw e;
+      built = await buildCreatePoolTx({ ...request, devBuyCook: undefined });
+      devBuyDeferred = true;
+    }
 
     // The image goes back with the build, so the page can report it with the launch and the logo
     // shows at once, instead of after the first slow IPFS read of the new metadata.
-    return NextResponse.json({ ...built, image: image ?? null });
+    return NextResponse.json({ ...built, image: image ?? null, devBuyDeferred });
   } catch (e) {
     const err = e instanceof CoorwaError ? e : null;
     const unauthorized = /401|session/i.test(e instanceof Error ? e.message : "");
