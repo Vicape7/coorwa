@@ -47,9 +47,11 @@ export default function PrivacyPage() {
             title: "What stays in your browser",
             body: (
               <p>
-                Your theme choice, the wallet you last connected and the progress of a transfer
-                between chains are kept in your browser&apos;s local storage. They never reach
-                Coorwa, and clearing your site data removes them.
+                Your theme choice, the wallet you last connected, the progress of a transfer
+                between chains and a payment whose pair could not be saved yet are kept in your
+                browser&apos;s local storage. They stay there, apart from that payment, which is
+                sent to Coorwa again when you retry saving its pair. Clearing your site data
+                removes them.
               </p>
             ),
           },
@@ -61,7 +63,11 @@ export default function PrivacyPage() {
                 <ul className="list-disc space-y-2 pl-5">
                   <li>Cloudflare, which hosts the site;</li>
                   <li>
-                    Helius and Cookie Chain RPC nodes, which your browser asks for chain data;
+                    Cookie Chain RPC nodes, which your browser asks for Cookie Chain data directly;
+                  </li>
+                  <li>
+                    Helius, for Solana data. Your browser asks Coorwa, and Coorwa passes the
+                    request on, so Helius sees Coorwa&apos;s server rather than your IP address;
                   </li>
                   <li>MomoSwap, Cookiescan and Jupiter, for prices, quotes and transactions;</li>
                   <li>your wallet provider.</li>
