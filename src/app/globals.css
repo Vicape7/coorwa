@@ -904,11 +904,14 @@ body {
   position: relative;
   height: 320px;
   width: 100%;
+  /* Keeps the tiles in one 3D space, so the compositor stacks them by the depth each one carries in
+   * its transform. There is no perspective, so that depth changes the order and nothing else. */
+  transform-style: preserve-3d;
 }
 
 /*
- * Positioned from the top left corner and moved entirely by transform: the component writes one
- * transform and one z-index per tile per frame, and neither touches layout.
+ * Positioned from the top left corner and moved entirely by transform, through a Web Animation per
+ * tile that the compositor runs without the main thread.
  */
 .rwa-orbit-card {
   position: absolute;

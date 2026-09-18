@@ -126,9 +126,36 @@ function project(count: number, width: number, height: number, tile: number, off
   }));
 }
 
+/** Keyframes per full turn. Two degrees apart, close enough that the straight line between two of
+ * them cannot be told from the arc. */
+const STEPS = 180;
+
+/** One full turn, in milliseconds. */
+const TURN_MS = (360 / ORBIT.speed) * 1000;
+
+/*
+ * translate, then scale, then pull back by half the card: in that order the card's centre lands on
+ * the projected point whatever the scale is. Depth goes into z rather than z-index, because the
+ * track keeps its children in 3D and so the compositor sorts them by it, and z-index is a property
+ * only the main thread can change. With no perspective on the track, z moves nothing on screen.
+ */
+function placement(box: Box) {
+  return `translate3d(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px, ${box.depth}px) scale(${box.scale.toFixed(4)}) translate(-50%, -50%)`;
+}
+
 export function RwaCarousel() {
   const trackRef = useRef<HTMLDivElement>(null);
 
+  /*
+   * The turn is handed to the browser as one Web Animation per tile rather than drawn a frame at a
+   * time. An animation of `transform` alone runs on the compositor, so the ring keeps turning while
+   * the main thread is busy hydrating the page, starting the wave shader or loading the wallets,
+   * which is exactly when a frame loop stood still.
+   *
+   * Every tile follows the same path, only further along it: tile i is where tile 0 will be
+   * i/count of a turn later. So the path is projected once, for tile 0, and each tile runs it with
+   * its own head start.
+   */
   useEffect(() => {
     const track = trackRef.current;
     if (!track) return;
@@ -137,69 +164,63 @@ export function RwaCarousel() {
 
     const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    let offset = 0;
-    let raf = 0;
-    let last: number | null = null;
-    let width = 0;
-    let height = 0;
-    let tile = 0;
+    let animations: Animation[] = [];
     let hovered = 0;
     let visible = document.visibilityState === "visible";
     let inView = true;
-    let disposed = false;
 
-    const layout = () => {
-      if (width === 0 || height === 0 || tile === 0) return;
-      const boxes = project(cards.length, width, height, tile, offset);
-      cards.forEach((card, i) => {
-        const box = boxes[i];
-        // translate, then scale, then pull back by half the card: in that order the card's centre
-        // lands on the projected point whatever the scale is.
-        card.style.transform = `translate3d(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px, 0) scale(${box.scale.toFixed(4)}) translate(-50%, -50%)`;
-        card.style.zIndex = String(box.depth);
+    const running = () => !calm && hovered === 0 && visible && inView;
+
+    const build = () => {
+      const rect = track.getBoundingClientRect();
+      // The tile is sized in CSS so the band can shrink on small screens without new numbers here.
+      const tile = cards[0].getBoundingClientRect().width || 0;
+      if (rect.width === 0 || rect.height === 0 || tile === 0) return;
+
+      if (calm) {
+        const boxes = project(cards.length, rect.width, rect.height, tile, 0);
+        cards.forEach((card, i) => (card.style.transform = placement(boxes[i])));
+        return;
+      }
+
+      // A resize rebuilds the path; carry the ring's angle over so it does not jump back to zero.
+      const elapsed = Number(animations[0]?.currentTime ?? 0);
+      for (const animation of animations) animation.cancel();
+
+      // Tile 0 of the full ring, not a ring of one: project() sizes the circle for its count.
+      const keyframes: Keyframe[] = [];
+      for (let step = 0; step <= STEPS; step++) {
+        const boxes = project(cards.length, rect.width, rect.height, tile, (step / STEPS) * 360);
+        keyframes.push({ transform: placement(boxes[0]) });
+      }
+
+      animations = cards.map((card, i) => {
+        const animation = card.animate(keyframes, {
+          duration: TURN_MS,
+          iterations: Infinity,
+          easing: "linear",
+        });
+        animation.currentTime = elapsed + (i / cards.length) * TURN_MS;
+        if (!running()) animation.pause();
+        return animation;
       });
     };
 
-    const measure = () => {
-      const rect = track.getBoundingClientRect();
-      width = rect.width;
-      height = rect.height;
-      // The tile is sized in CSS so the band can shrink on small screens without new numbers here.
-      tile = cards[0].getBoundingClientRect().width || 0;
-      layout();
-    };
-
-    function frame(now: number) {
-      raf = 0;
-      if (disposed || !visible || !inView) return;
-      const dt = last === null ? 0 : Math.min((now - last) / 1000, 0.1);
-      last = now;
-      if (hovered === 0) {
-        offset = (offset + ORBIT.speed * dt) % 360;
-        layout();
+    const sync = () => {
+      for (const animation of animations) {
+        if (running()) animation.play();
+        else animation.pause();
       }
-      request();
-    }
-
-    function request() {
-      if (disposed || calm || !visible || !inView || raf !== 0) return;
-      raf = requestAnimationFrame(frame);
-    }
-
-    const pause = () => {
-      if (raf === 0) return;
-      cancelAnimationFrame(raf);
-      raf = 0;
-      last = null;
     };
 
     // Hover holds the ring still, so a tile can be read rather than chased.
     const onEnter = () => {
       hovered += 1;
+      sync();
     };
     const onLeave = () => {
       hovered = Math.max(0, hovered - 1);
-      last = null;
+      sync();
     };
     for (const card of cards) {
       card.addEventListener("pointerenter", onEnter);
@@ -208,26 +229,22 @@ export function RwaCarousel() {
 
     const onVisibility = () => {
       visible = document.visibilityState === "visible";
-      if (visible) request();
-      else pause();
+      sync();
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    const resizeObserver = new ResizeObserver(measure);
+    const resizeObserver = new ResizeObserver(build);
     resizeObserver.observe(track);
     const intersectionObserver = new IntersectionObserver(([entry]) => {
       inView = entry?.isIntersecting ?? true;
-      if (inView) request();
-      else pause();
+      sync();
     });
     intersectionObserver.observe(track);
 
-    measure();
-    request();
+    build();
 
     return () => {
-      disposed = true;
-      pause();
+      for (const animation of animations) animation.cancel();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
