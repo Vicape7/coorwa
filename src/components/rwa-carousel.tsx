@@ -253,13 +253,19 @@ export function RwaCarousel() {
                 Local copies of the Backed logos with the xStocks "X" painted out, so the hero shows
                 the company marks alone. Everywhere else keeps `asset.logo`, where the X tells a
                 trader the token is the tokenised share. A benchmark added to `rwa.ts` needs its
-                file in public/rwa too.
+                file in public/rwa too, as a 256px WebP.
+
+                Served as they are rather than through the optimiser: sixteen files of 1 to 3 KB
+                gain nothing from being resized per request, and the round trip through the Worker
+                was what left the tiles blank while the ring turned. Eager, because every tile is
+                on screen the moment the hero is.
               */}
               <Image
-                src={`/rwa/${asset.ticker}.png`}
+                src={`/rwa/${asset.ticker}.webp`}
                 alt={asset.name}
                 fill
-                sizes="120px"
+                unoptimized
+                loading="eager"
                 draggable={false}
               />
             </div>
