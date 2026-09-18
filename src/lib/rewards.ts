@@ -12,7 +12,7 @@ import { dbEnabled, db, schema } from "./db";
 import { fetchTokens } from "./cookiescan";
 import { createdBy } from "./creators";
 import { logosByMint } from "./token-logos";
-import { benchmarks } from "./launches";
+import { benchmarks, launchesByCreator } from "./launches";
 import { listedByMint } from "./listings";
 import { COORWA_OPERATOR, PAYOUT_MIN_USD } from "./config";
 import {
@@ -105,15 +105,22 @@ export async function summarise(wallet: string | null): Promise<RewardsSummary> 
   };
   if (!wallet) return { ...base, logos: await logosFor(base.pools) };
 
-  const [mine, estimates, made, tokens] = await Promise.all([
+  const [mine, estimates, made, tokens, launched] = await Promise.all([
     walletRewards(wallet),
     holderEstimates(wallet),
     createdBy(wallet).catch(() => [] as string[]),
     fetchTokens().catch(() => []),
+    launchesByCreator(wallet).catch(() => []),
   ]);
   const poolOf = new Map(pools.map((p) => [p.mint, p]));
   const mints = new Set([...made, ...pools.filter((p) => p.creator === wallet).map((p) => p.mint)]);
-  const symbolOf = new Map(tokens.map((t) => [t.mint, t.metadata?.symbol?.trim() || null]));
+  // A token launched here names itself in `launches` before it has a fee or a registry entry.
+  const symbolOf = new Map<string, string | null>([
+    ...launched.map((l) => [l.mint, l.symbol] as const),
+    ...tokens
+      .filter((t) => t.metadata?.symbol?.trim())
+      .map((t) => [t.mint, t.metadata!.symbol!.trim()] as const),
+  ]);
   const created = [...mints]
     .map((mint) => poolOf.get(mint) ?? emptyPool(mint, pinned.get(mint) ?? listed.get(mint) ?? null))
     .map((p) => ({ ...p, symbol: p.symbol ?? symbolOf.get(p.mint) ?? null }))
