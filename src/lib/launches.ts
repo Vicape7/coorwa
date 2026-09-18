@@ -32,10 +32,10 @@ export async function recordLaunch(row: {
   symbol?: string | null;
   name?: string | null;
   signature: string;
-}): Promise<{ recorded: boolean }> {
+}): Promise<{ recorded: boolean; existing?: string }> {
   if (!dbEnabled || !db) return { recorded: false };
 
-  await db
+  const rows = await db
     .insert(schema.launches)
     .values({
       mint: row.mint,
@@ -48,9 +48,19 @@ export async function recordLaunch(row: {
     })
     // First write wins. A benchmark that could be overwritten would rewrite the token's whole
     // history, so a second attempt on the same mint is a no-op rather than an update.
-    .onConflictDoNothing({ target: schema.launches.mint });
+    .onConflictDoNothing({ target: schema.launches.mint })
+    .returning({ mint: schema.launches.mint });
 
-  return { recorded: true };
+  if (rows.length > 0) return { recorded: true };
+
+  // Nothing written means the mint already had its launch recorded, and that one stands. Its pair
+  // is returned so a repeated report of the same launch can be told apart from a different pick.
+  const [first] = await db
+    .select({ ticker: schema.launches.ticker })
+    .from(schema.launches)
+    .where(eq(schema.launches.mint, row.mint))
+    .limit(1);
+  return { recorded: false, existing: first?.ticker };
 }
 
 /**

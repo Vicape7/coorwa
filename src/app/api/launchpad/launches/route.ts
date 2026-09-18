@@ -4,6 +4,7 @@ import { recordLaunch, launchesByCreator } from "@/lib/launches";
 import { createsLaunchpadToken, isProven, proveTransaction } from "@/lib/onchain";
 import { ADDRESS_RE } from "@/lib/config";
 import { rwaByTicker } from "@/lib/rwa";
+import { listedFor } from "@/lib/listings";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // A pair is set once. A creator who already bought one for this token keeps it: holders bought
+    // the token expecting to be paid in that stock, and a launch recorded later must not replace it.
+    const listed = await listedFor(b.mint);
+    if (listed) {
+      return NextResponse.json(
+        { error: `this token is already paired with ${listed}`, recorded: false },
+        { status: 409 },
+      );
+    }
+
     const res = await recordLaunch({ ...b, ticker: asset.ticker });
+    if (res.existing) {
+      // The same launch reported twice, a retry, is answered as recorded. A different pick is not.
+      return res.existing === asset.ticker
+        ? NextResponse.json({ recorded: true, ticker: asset.ticker })
+        : NextResponse.json(
+            { error: `this token is already paired with ${res.existing}`, recorded: false },
+            { status: 409 },
+          );
+    }
     return NextResponse.json({
       ...res,
       ticker: asset.ticker,
