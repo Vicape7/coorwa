@@ -16,9 +16,6 @@
 /coorwa-banner.png
   Cache-Control: public,max-age=31536000,immutable
 
-/coorwa-logo-word.png
-  Cache-Control: public,max-age=31536000,immutable
-
 /coorwa-wordmark.webp
   Cache-Control: public,max-age=31536000,immutable
 
