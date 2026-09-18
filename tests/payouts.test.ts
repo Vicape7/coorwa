@@ -8,7 +8,14 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineAmounts, payableLines, splitRaw, withoutCreators } from "../src/lib/rewards-ledger";
+import {
+  DUST_USD,
+  lineAmounts,
+  payableLines,
+  splitRaw,
+  waitingUsd,
+  withoutCreators,
+} from "../src/lib/rewards-ledger";
 import { MAX_CYCLE_ATTEMPTS, MAX_LINE_ATTEMPTS, sendBatch } from "../src/lib/payout-cycle";
 
 const sum = (m: Map<unknown, bigint>) => [...m.values()].reduce((a, b) => a + b, 0n);
@@ -85,6 +92,14 @@ test("the creator is paid from fees only, never as a holder of their own token",
   ]);
   const out = withoutCreators(weights, new Set(["creator"]));
   assert.deepEqual([...out], [["holder", 100n]]);
+});
+
+test("a pool left with rounding dust has nothing waiting, and a real cent still counts", () => {
+  // COTE's pool as it stood on 2026-09-18: $1.02 accrued, all of it allocated but 2e-9.
+  assert.equal(waitingUsd(1.0200000000000229, 1.0199999979600229), 0);
+  assert.equal(waitingUsd(1, 1.5), 0);
+  assert.ok(Math.abs(waitingUsd(1.01, 1) - 0.01) < 1e-12);
+  assert.ok(waitingUsd(DUST_USD * 2, 0) > 0);
 });
 
 // --- a run that cannot finish -----------------------------------------------------------------------

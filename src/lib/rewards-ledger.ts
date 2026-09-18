@@ -115,6 +115,19 @@ export function lineAmounts(
 }
 
 /**
+ * Below this a pool counts as empty. Sums of float8 fees minus sums of allocated lines leave a few
+ * billionths of a dollar behind, and a pool that holds only that would be sampled every day and
+ * shown on the rewards page as a payout of $0.000000002.
+ */
+export const DUST_USD = 0.000001;
+
+/** What a token's holders are still owed: accrued less allocated, with rounding dust read as zero. */
+export function waitingUsd(accruedUsd: number, allocatedUsd: number): number {
+  const left = accruedUsd - allocatedUsd;
+  return left < DUST_USD ? 0 : left;
+}
+
+/**
  * Holder weights with the token's creator taken out. The creator is paid `CASHBACK_SPLIT.creator` of
  * the fees and nothing for holding their own token, so their tokens do not dilute real holders either.
  */
@@ -250,7 +263,7 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
     }
   }
   for (const p of pools.values()) {
-    p.holdersWaitingUsd = Math.max(0, p.holdersAccruedUsd - p.holdersAllocatedUsd);
+    p.holdersWaitingUsd = waitingUsd(p.holdersAccruedUsd, p.holdersAllocatedUsd);
   }
   // Only fills carry a symbol, so a token that has a pair but no trade yet is named from the registry.
   if ([...pools.values()].some((p) => !p.symbol)) {
