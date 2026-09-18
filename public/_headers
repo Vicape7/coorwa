@@ -1,2 +1,35 @@
 /_next/static/*
   Cache-Control: public,max-age=31536000,immutable
+
+# Images in public/ are kept for a year and never asked about again. The image optimiser reads
+# this header off the file it resizes and marks its own answer immutable too, so a logo shrunk
+# through /_next/image is cached as long as the file it came from.
+#
+# The price is that a changed image needs a new file name: a browser that has the old one will
+# not look again. Replace a file under the same name and visitors keep the old picture.
+/rwa/*
+  Cache-Control: public,max-age=31536000,immutable
+
+/coorwa.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/coorwa-banner.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/coorwa-logo-word.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/coorwa-wordmark.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/launchpad.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/lp.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/stocks.png
+  Cache-Control: public,max-age=31536000,immutable
+
+/terminal.png
+  Cache-Control: public,max-age=31536000,immutable
