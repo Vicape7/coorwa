@@ -106,7 +106,7 @@ are.
       <img src="docs/readme/art-terminal.png" width="96" align="right" alt="">
       <h3>Terminal</h3>
       <ul>
-        <li>Every paired token, priced in its stock: the token's USD price from real Cookie Chain reserves, divided by the xStock's from real Solana liquidity. Nothing is modelled, so the number is exact.</li>
+        <li>Every paired token, priced in its stock: the token's USD price from real Cookie Chain reserves, divided by the xStock's from real Solana liquidity. Nothing is modelled: it is two live prices divided.</li>
         <li>Candles built from executed fills, not standing quotes, so the chart is genuine performance against the stock.</li>
         <li>Swaps quoted on both Cookie Chain routers, Cookiebox and Candy Shop. The better fill wins.</li>
         <li>A pair that has not traded in 24 hours shows no return, never a fake one from a flat price against a moving stock.</li>
@@ -255,8 +255,9 @@ user's own wallet.
   saying what differed. Tested on six captured MomoSwap responses and tampered copies of them.
 - **The swaps that cannot be read that way are judged by what they do.** An aggregator route through
   half a dozen pools has no shape worth pinning, so those builds are simulated first and read by
-  their effect: the trade may spend no more than it is for, it has to return at least what the quote
-  promised with Coorwa's own fee accounted for, and it may not touch anything else in the wallet
+  their effect on the three balances the trade is about: the trade may spend no more than it is for,
+  it has to return at least what the quote promised with Coorwa's own fee accounted for, and the
+  wallet's native balance may fall by no more than fees and one account's rent
   (`src/lib/swap-check.ts`). Terminal swaps, both swap legs of a cross-chain route and the payout
   run's own Jupiter builds go through the same rule, so the operator wallet signs no more blindly
   than a user does. A build that fails any of it, or that will not simulate at all, is refused
@@ -295,7 +296,7 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 119 offline unit tests that run in about two seconds.
+sampler Worker, and 119 offline unit tests that run in a few seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
@@ -305,8 +306,9 @@ validator: claims, double claims, claiming someone else's line, forged proofs, e
 cannot back, and publishing from the wrong key. It was Coorwa's claim-based payout path before
 daily payouts replaced claims.
 
-Nothing in the app calls it today, and the deployed vault holds nothing but its own rent. It is
-kept here because it is Coorwa's own on-chain work, not because anything depends on it. It has no
+Nothing in the app calls it today. The deployed vault still holds 15,895 COOK, about a dollar: one
+early pair payment from before payouts moved to the operator wallet, and a 10 COOK test deposit. It
+is kept here because it is Coorwa's own on-chain work, not because anything depends on it. It has no
 withdrawal instruction by design, so tokens sent to it can only come back out through a published
 epoch that names the sender: do not fund it.
 
@@ -321,6 +323,7 @@ src/
     launchpad.ts      MomoSwap client
     curve.ts          Bonding-curve pricing, free of the network so the browser can quote a fill
     expectation.ts    A launchpad transaction checked against what was asked for, before signing
+    swap-check.ts     A swap build judged by what simulating it does to the wallet, before signing
     launches.ts       Tokens launched here and the stock each creator picked
     listings.ts       The one pair a creator sets for a token launched elsewhere, priced and proved
     creators.ts       Who made a token, from the launch record or the mint's metadata authority
