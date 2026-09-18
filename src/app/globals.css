@@ -920,6 +920,13 @@ body {
   width: var(--rwa-tile);
   height: var(--rwa-tile);
   will-change: transform;
+  transition: opacity 700ms var(--ease-out);
+}
+
+/* Until the component has placed them, every tile sits on the same top left corner, one stacked on
+ * the next. They stay hidden until the ring is laid out and then fade in where they belong. */
+.rwa-orbit-track:not([data-placed]) .rwa-orbit-card {
+  opacity: 0;
 }
 
 .rwa-orbit-face {

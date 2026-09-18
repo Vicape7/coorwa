@@ -204,6 +204,7 @@ export function RwaCarousel() {
       if (calm) {
         const boxes = project(cards.length, rect.width, rect.height, tile, 0);
         cards.forEach((card, i) => (card.style.transform = placement(boxes[i])));
+        track.dataset.placed = "";
         return;
       }
 
@@ -228,6 +229,8 @@ export function RwaCarousel() {
         if (!running()) animation.pause();
         return animation;
       });
+      // Every tile has its place now, so the CSS that hid the stacked pile lets them fade in.
+      track.dataset.placed = "";
     };
 
     const sync = () => {
