@@ -119,7 +119,8 @@ export async function POST(req: Request) {
       );
     }
     // The form already refuses these before anyone pays. This is for a call that skips the form. The
-    // payment is only marked used once a pair is recorded, so it can be sent again after graduation.
+    // payment is only marked used once a pair is recorded, so it can be sent again after graduation,
+    // which is why this is 425 (too early) and not 409: the form keeps the payment to report again.
     const liquidityUsd = liquidityByMint(await fetchMarkets()).get(b.mint) ?? 0;
     if (liquidityUsd < MIN_LIQUIDITY_USD) {
       return NextResponse.json(
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
           error:
             "this token has no pool on Cookie Chain with real liquidity yet; send the same payment again once it has one",
         },
-        { status: 409 },
+        { status: 425 },
       );
     }
     if (await signatureSpent(b.signature)) {

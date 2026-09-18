@@ -15,12 +15,29 @@ import { verifyLaunchpadBuild } from "@/lib/expectation";
 import { cookieTxUrl, COOKIE_EXPLORER, COOK_DECIMALS } from "@/lib/config";
 import { shortAddr, amount, usd, uiToRaw } from "@/lib/format";
 import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
+import {
+  clearUnrecorded,
+  postRecord,
+  saveUnrecorded,
+  useUnrecorded,
+} from "@/lib/unrecorded";
 import { Notice } from "./notice";
 import { CurvePanel } from "./curve-panel";
 import { CreatorLaunches } from "./creator-launches";
 import type { LaunchpadConfig, LaunchpadPool } from "@/lib/launchpad";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
+
+/** What POST /api/launchpad/launches takes: the launch transaction and the pair picked for it. */
+interface LaunchReport {
+  signature: string;
+  mint: string;
+  pool: string;
+  creator: string;
+  ticker: string;
+  symbol: string;
+  name: string;
+}
 
 interface FeeBreakdown {
   totalPct: number;
@@ -109,6 +126,44 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     /** False when the benchmark could not be stored, which quietly changes what the token is. */
     pinned: boolean;
   } | null>(null);
+  // Launches that landed on chain but whose pair was not saved, kept across a reload. The server
+  // answers the same launch reported again as recorded, so the retry is safe.
+  const waiting = useUnrecorded<LaunchReport>("launch");
+  const wallet = publicKey?.toBase58() ?? null;
+  const unrecorded = Object.values(waiting).filter((u) => u.body.creator === wallet);
+  const [retrying, setRetrying] = useState(false);
+
+  /** Report a launch's pair. True once it is recorded. */
+  const report = useCallback(async (body: LaunchReport): Promise<boolean> => {
+    const res = await postRecord("/api/launchpad/launches", body);
+    if (res.ok && res.data.recorded === true) {
+      clearUnrecorded("launch", body.mint);
+      return true;
+    }
+    if (!res.ok && !res.final) {
+      saveUnrecorded("launch", body.mint, { body, error: res.error });
+      return false;
+    }
+    // Refused for good (the token already has another pair), or a deployment with no database.
+    clearUnrecorded("launch", body.mint);
+    setError(res.ok ? "This deployment does not store pairs." : res.error);
+    return false;
+  }, []);
+
+  const retry = useCallback(
+    async (body: LaunchReport) => {
+      setRetrying(true);
+      setError(null);
+      try {
+        if (await report(body)) {
+          setDone({ signature: body.signature, mint: body.mint, ticker: body.ticker, pinned: true });
+        }
+      } finally {
+        setRetrying(false);
+      }
+    },
+    [report],
+  );
 
   const onFile = useCallback((file: File) => {
     if (file.size > 2_000_000) {
@@ -209,25 +264,18 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
 
       // Record the pair. The server proves the launch on chain before it writes anything, so this
       // can only ever record a token this wallet really created. If it fails the token still exists
-      // but has no pair yet, which the notice says.
+      // but has no pair yet, and the report is kept so it can be sent again.
       let pinned = false;
       if (built.mint && built.pool) {
-        pinned = await fetch("/api/launchpad/launches", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            signature: sent.signature,
-            mint: built.mint,
-            pool: built.pool,
-            creator: publicKey.toBase58(),
-            ticker: benchmark,
-            symbol: symbol.toUpperCase(),
-            name,
-          }),
-        })
-          .then((r) => r.json())
-          .then((r) => r.recorded === true)
-          .catch(() => false);
+        pinned = await report({
+          signature: sent.signature,
+          mint: built.mint,
+          pool: built.pool,
+          creator: publicKey.toBase58(),
+          ticker: benchmark,
+          symbol: symbol.toUpperCase(),
+          name,
+        });
       }
 
       setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned });
@@ -255,6 +303,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     devBuy,
     benchmark,
     connection,
+    report,
   ]);
 
   const ready = name.trim().length > 0 && /^[A-Za-z0-9]{1,10}$/.test(symbol);
@@ -387,6 +436,31 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             </a>
           </Notice>
         )}
+
+        {unrecorded.map((u) => (
+          <Notice key={u.body.mint} tone="down">
+            {u.body.symbol} launched (
+            <a
+              href={cookieTxUrl(u.body.signature)}
+              target="_blank"
+              rel="noreferrer"
+              className="num underline underline-offset-4"
+            >
+              {shortAddr(u.body.signature, 6)}
+            </a>
+            ), but its pair with {u.body.ticker} was not saved: {u.error}. Until it is, the token
+            is not a Coorwa pair. Try again reports the same launch; nothing is signed or paid.
+            <span className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="btn btn-primary"
+                disabled={retrying}
+                onClick={() => retry(u.body)}
+              >
+                {retrying ? "Saving the pair" : "Try again"}
+              </button>
+            </span>
+          </Notice>
+        ))}
 
         {!publicKey ? (
           <button className="btn btn-primary w-full" onClick={() => setVisible(true)}>

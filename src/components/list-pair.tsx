@@ -21,6 +21,12 @@ import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { amount, shortAddr, usd } from "@/lib/format";
 import { signSendConfirm, explainError } from "@/lib/tx";
+import {
+  clearUnrecorded,
+  postRecord,
+  saveUnrecorded,
+  useUnrecorded,
+} from "@/lib/unrecorded";
 import { Notice } from "./notice";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -43,16 +49,33 @@ interface Quote {
   error?: string;
 }
 
+/** What POST /api/listings takes: the payment and the pair it was for. */
+interface PairReport {
+  signature: string;
+  mint: string;
+  payer: string;
+  ticker: string;
+}
+
 export function ListPair({ onListed }: { onListed?: () => void }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
 
-  const [mint, setMint] = useState("");
+  // Null until the field is typed in, so a payment left waiting can fill it (below).
+  const [typed, setTyped] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ signature: string; pair: string } | null>(null);
+
+  // Payments that landed but were not recorded. While one waits for a token, the page offers to
+  // report it again and does not offer to pay, so nobody pays twice for one pair. Opened again
+  // after the failure, the field starts on the token whose payment is waiting.
+  const waiting = useUnrecorded<PairReport>("pair");
+  const payer = publicKey?.toBase58() ?? null;
+  const mint =
+    typed ?? Object.values(waiting).find((u) => u.body.payer === payer)?.body.mint ?? "";
 
   const validMint = useMemo(() => {
     if (mint.trim().length < 32) return null;
@@ -66,11 +89,59 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
   const { data: quote, mutate } = useSWR<Quote>(
     validMint ? `/api/listings?mint=${validMint}` : null,
     fetcher,
+    {
+      // Paired after all, from another tab or an earlier retry: nothing is left to report.
+      onSuccess: (q) => {
+        if (q.pair) clearUnrecorded("pair", q.mint);
+      },
+    },
+  );
+  const unrecorded = (validMint && !quote?.pair && waiting[validMint]) || null;
+
+  const isCreator = quote?.creator != null && quote.creator === payer;
+  const open = quote != null && !quote.error && quote.tradeable && quote.pair == null;
+
+  /**
+   * Report a payment and settle what the page shows. The server reads the payment back from the
+   * chain, so reporting the same one again is safe, and a payment already used is refused.
+   */
+  const report = useCallback(
+    async (body: PairReport) => {
+      const res = await postRecord("/api/listings", body);
+      if (res.ok) {
+        clearUnrecorded("pair", body.mint);
+        setDone({ signature: body.signature, pair: String(res.data.pair ?? body.ticker) });
+        setPicked(null);
+        mutate();
+        onListed?.();
+        return;
+      }
+      if (res.final) {
+        // Refused for good: the token has a pair, or this payment was already used for one.
+        clearUnrecorded("pair", body.mint);
+        setError(res.error);
+        mutate();
+        return;
+      }
+      saveUnrecorded("pair", body.mint, { body, error: res.error });
+    },
+    [mutate, onListed],
   );
 
-  const wallet = publicKey?.toBase58() ?? null;
-  const isCreator = quote?.creator != null && quote.creator === wallet;
-  const open = quote != null && !quote.error && quote.tradeable && quote.pair == null;
+  const retry = useCallback(async () => {
+    if (!unrecorded) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await report(unrecorded.body);
+    } finally {
+      setBusy(false);
+    }
+  }, [unrecorded, report]);
+
+  const forget = useCallback(() => {
+    if (unrecorded) clearUnrecorded("pair", unrecorded.body.mint);
+  }, [unrecorded]);
 
   const pay = useCallback(async () => {
     if (!publicKey || !signTransaction || !validMint || !picked || !quote?.cook || !quote.operator) {
@@ -95,29 +166,18 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
 
       // The pair is recorded against the payment: the server reads what actually reached the
       // operator and checks the payer is the token's creator.
-      const res = await fetch("/api/listings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          signature: sent.signature,
-          mint: validMint,
-          payer: publicKey.toBase58(),
-          ticker: picked,
-        }),
-      }).then((r) => r.json());
-
-      if (res.error) throw new Error(res.error);
-
-      setDone({ signature: sent.signature, pair: res.pair });
-      setPicked(null);
-      mutate();
-      onListed?.();
+      await report({
+        signature: sent.signature,
+        mint: validMint,
+        payer: publicKey.toBase58(),
+        ticker: picked,
+      });
     } catch (e) {
       setError(explainError(e));
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, validMint, picked, quote, connection, mutate, onListed]);
+  }, [publicKey, signTransaction, validMint, picked, quote, connection, report]);
 
   return (
     <div className="card mt-10 p-5 sm:p-7">
@@ -135,7 +195,7 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
           <input
             value={mint}
             onChange={(e) => {
-              setMint(e.target.value.trim());
+              setTyped(e.target.value.trim());
               setDone(null);
               setError(null);
             }}
@@ -216,6 +276,30 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
 
         {error && <Notice tone="down">{error}</Notice>}
 
+        {unrecorded && (
+          <Notice tone="down">
+            Your payment for {unrecorded.body.ticker} went through (
+            <a
+              href={cookieTxUrl(unrecorded.body.signature)}
+              target="_blank"
+              rel="noreferrer"
+              className="num underline underline-offset-4"
+            >
+              {shortAddr(unrecorded.body.signature, 6)}
+            </a>
+            ), but the pair was not saved: {unrecorded.error}. Try again sends the same payment, so
+            you do not pay twice.
+            <span className="mt-3 flex flex-wrap gap-2">
+              <button className="btn btn-primary" disabled={busy} onClick={retry}>
+                {busy ? "Saving the pair" : "Try again"}
+              </button>
+              <button className="btn btn-quiet" disabled={busy} onClick={forget}>
+                Forget this payment
+              </button>
+            </span>
+          </Notice>
+        )}
+
         {done && (
           <Notice tone="up">
             Paired with {done.pair}.{" "}
@@ -236,7 +320,8 @@ export function ListPair({ onListed }: { onListed?: () => void }) {
           </button>
         ) : (
           open &&
-          isCreator && (
+          isCreator &&
+          !unrecorded && (
             <button
               className="btn btn-primary"
               disabled={busy || !picked || !quote?.cook || !quote.operator}
