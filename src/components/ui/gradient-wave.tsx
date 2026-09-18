@@ -596,6 +596,17 @@ class Gradient {
  */
 const pendingContextReleases = new WeakMap<HTMLCanvasElement, number>();
 
+/** Runs `run` when the browser is idle, or after `timeout` ms at the latest. Returns a cancel. */
+function whenIdle(run: () => void, timeout = 1500): () => void {
+  // Safari has no requestIdleCallback; a short timer still lets hydration go first.
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(run, { timeout });
+    return () => window.cancelIdleCallback(id);
+  }
+  const id = window.setTimeout(run, 300);
+  return () => window.clearTimeout(id);
+}
+
 export function GradientWave({ className, colors }: { className?: string; colors?: string[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const theme = useTheme();
@@ -614,111 +625,130 @@ export function GradientWave({ className, colors }: { className?: string; colors
     const pendingRelease = pendingContextReleases.get(canvas);
     if (pendingRelease !== undefined) window.clearTimeout(pendingRelease);
     pendingContextReleases.delete(canvas);
-    const gl = canvas.getContext("webgl", { antialias: true });
-    if (!gl) return;
 
-    let gradient: Gradient;
-    try {
-      gradient = new Gradient(gl, colorKeyRef.current.split(","));
-    } catch (error) {
-      // A field that will not compile is not worth a blank hero. Leave the page's own background.
-      console.error("GradientWave failed to initialise", error);
-      return;
-    }
+    /*
+     * Compiling the shaders and drawing the first frame is main-thread work, and on a phone it
+     * lands in the middle of hydration. The field is decoration, so it waits until the browser has
+     * a moment to spare, or 1.5 s at most, and fades in rather than popping on. The context release
+     * above is cancelled before the wait, not after it, or a remount would find its context lost.
+     */
+    const start = (): (() => void) | undefined => {
+      const gl = canvas.getContext("webgl", { antialias: true });
+      if (!gl) return;
 
-    // A background that moves on its own is the textbook case for this query. It still renders,
-    // it just holds one frame.
-    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      let gradient: Gradient;
+      try {
+        gradient = new Gradient(gl, colorKeyRef.current.split(","));
+      } catch (error) {
+        // A field that will not compile is not worth a blank hero. Leave the page's own background.
+        console.error("GradientWave failed to initialise", error);
+        return;
+      }
 
-    let raf = 0;
-    let time = 0;
-    let last: number | null = null;
-    let visible = document.visibilityState === "visible";
-    let inView = true;
-    let disposed = false;
+      // A background that moves on its own is the textbook case for this query. It still renders,
+      // it just holds one frame.
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const applySize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const budget = Math.min(1, Math.sqrt(WAVE.maxPixels / (width * height * dpr * dpr)));
-      const scale = dpr * budget;
-      canvas.width = Math.max(1, Math.round(width * scale));
-      canvas.height = Math.max(1, Math.round(height * scale));
-      gradient.resize(width, height, scale);
-    };
+      let raf = 0;
+      let time = 0;
+      let last: number | null = null;
+      let visible = document.visibilityState === "visible";
+      let inView = true;
+      let disposed = false;
 
-    function frame(now: number) {
-      raf = 0;
-      if (disposed || !visible || !inView) return;
-      // Reduced motion holds the field still, so scrolling it back into view must not advance it.
-      time += calm || last === null ? 0 : Math.min(now - last, WAVE.maxFrameMs);
-      last = now;
-      gradient.render(time);
-      if (!calm) request();
-    }
+      const applySize = () => {
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(rect.width));
+        const height = Math.max(1, Math.round(rect.height));
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const budget = Math.min(1, Math.sqrt(WAVE.maxPixels / (width * height * dpr * dpr)));
+        const scale = dpr * budget;
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        gradient.resize(width, height, scale);
+      };
 
-    function request() {
-      if (disposed || !visible || !inView || raf !== 0) return;
-      raf = requestAnimationFrame(frame);
-    }
+      function frame(now: number) {
+        raf = 0;
+        if (disposed || !visible || !inView) return;
+        // Reduced motion holds the field still, so scrolling it back into view must not advance it.
+        time += calm || last === null ? 0 : Math.min(now - last, WAVE.maxFrameMs);
+        last = now;
+        gradient.render(time);
+        if (!calm) request();
+      }
 
-    const pause = () => {
-      if (raf === 0) return;
-      cancelAnimationFrame(raf);
-      raf = 0;
-      last = null;
-    };
+      function request() {
+        if (disposed || !visible || !inView || raf !== 0) return;
+        raf = requestAnimationFrame(frame);
+      }
 
-    const onResize = () => {
-      applySize();
-      // Reduced motion holds one frame, so a resize has to redraw it explicitly.
-      if (calm && visible && inView) gradient.render(time);
-      else request();
-    };
-    const onVisibility = () => {
-      visible = document.visibilityState === "visible";
-      if (visible) request();
-      else pause();
-    };
+      const pause = () => {
+        if (raf === 0) return;
+        cancelAnimationFrame(raf);
+        raf = 0;
+        last = null;
+      };
 
-    applySize();
-    const resizeObserver = new ResizeObserver(onResize);
-    resizeObserver.observe(canvas);
-    const intersectionObserver = new IntersectionObserver(([entry]) => {
-      inView = entry?.isIntersecting ?? true;
-      if (inView) request();
-      else pause();
-    });
-    intersectionObserver.observe(canvas);
-    document.addEventListener("visibilitychange", onVisibility);
-    request();
-
-    // A running loop picks new colours up on its next frame; a held one has to be drawn again.
-    live.current = {
-      gradient,
-      redraw: () => {
+      const onResize = () => {
+        applySize();
+        // Reduced motion holds one frame, so a resize has to redraw it explicitly.
         if (calm && visible && inView) gradient.render(time);
-      },
+        else request();
+      };
+      const onVisibility = () => {
+        visible = document.visibilityState === "visible";
+        if (visible) request();
+        else pause();
+      };
+
+      applySize();
+      const resizeObserver = new ResizeObserver(onResize);
+      resizeObserver.observe(canvas);
+      const intersectionObserver = new IntersectionObserver(([entry]) => {
+        inView = entry?.isIntersecting ?? true;
+        if (inView) request();
+        else pause();
+      });
+      intersectionObserver.observe(canvas);
+      document.addEventListener("visibilitychange", onVisibility);
+      request();
+      canvas.style.opacity = "1";
+
+      // A running loop picks new colours up on its next frame; a held one has to be drawn again.
+      live.current = {
+        gradient,
+        redraw: () => {
+          if (calm && visible && inView) gradient.render(time);
+        },
+      };
+
+      return () => {
+        disposed = true;
+        live.current = null;
+        pause();
+        resizeObserver.disconnect();
+        intersectionObserver.disconnect();
+        document.removeEventListener("visibilitychange", onVisibility);
+        gradient.dispose();
+        const release = window.setTimeout(() => {
+          if (pendingContextReleases.get(canvas) !== release) return;
+          pendingContextReleases.delete(canvas);
+          gl.getExtension("WEBGL_lose_context")?.loseContext();
+          canvas.width = 1;
+          canvas.height = 1;
+        }, 0);
+        pendingContextReleases.set(canvas, release);
+      };
     };
 
+    let stop: (() => void) | undefined;
+    const cancel = whenIdle(() => {
+      stop = start();
+    });
     return () => {
-      disposed = true;
-      live.current = null;
-      pause();
-      resizeObserver.disconnect();
-      intersectionObserver.disconnect();
-      document.removeEventListener("visibilitychange", onVisibility);
-      gradient.dispose();
-      const release = window.setTimeout(() => {
-        if (pendingContextReleases.get(canvas) !== release) return;
-        pendingContextReleases.delete(canvas);
-        gl.getExtension("WEBGL_lose_context")?.loseContext();
-        canvas.width = 1;
-        canvas.height = 1;
-      }, 0);
-      pendingContextReleases.set(canvas, release);
+      cancel();
+      stop?.();
     };
   }, []);
 
@@ -732,7 +762,13 @@ export function GradientWave({ className, colors }: { className?: string; colors
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ display: "block", width: "100%", height: "100%" }}
+      style={{
+        display: "block",
+        width: "100%",
+        height: "100%",
+        opacity: 0,
+        transition: "opacity 900ms ease-out",
+      }}
     />
   );
 }
