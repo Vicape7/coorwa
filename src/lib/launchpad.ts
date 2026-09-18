@@ -8,7 +8,7 @@
  *
  * Why Coorwa cares: the launchpad splits its 1% trade fee, and 20% of that goes to whoever is named
  * as referrer. With no referrer the programme keeps that share itself - so naming Coorwa costs the
- * trader nothing and is the honest source of the launchpad half of cashback.
+ * trader nothing and is where the launchpad part of holder rewards comes from.
  */
 import { createPublicKey, verify } from "node:crypto";
 import bs58 from "bs58";

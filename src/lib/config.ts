@@ -181,7 +181,7 @@ export const COORWA_SWAP_FEE_BPS = 100;
  * the daily run shares the pool out over the wallets holding the token across the day's samples, in
  * proportion to what they held. The creator's part goes to whoever made the token.
  */
-export const CASHBACK_SPLIT = {
+export const REWARD_SPLIT = {
   holders: 0.625,
   creator: 0.375,
 } as const;
@@ -247,7 +247,7 @@ export const VAULT_AUTHORITY = process.env.NEXT_PUBLIC_VAULT_AUTHORITY?.trim() |
  * a bridge dispatch and two Solana fees on top. Under a dollar that is too large a share of what
  * arrives, and COOK is the better way to take it.
  */
-export const CASHBACK_RWA_MIN_USD = 1;
+export const STOCK_PAYOUT_MIN_USD = 1;
 
 // --- Misc --------------------------------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { usd } from "@/lib/format";
-import type { CashbackSummary } from "@/lib/cashback";
+import type { RewardsSummary } from "@/lib/rewards";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
@@ -18,7 +18,7 @@ function untilRun(at: string | null, now: number): string {
 }
 
 export function LiveStats() {
-  const { data } = useSWR<CashbackSummary>("/api/rewards", fetcher, {
+  const { data } = useSWR<RewardsSummary>("/api/rewards", fetcher, {
     refreshInterval: 30_000,
   });
   const [now, setNow] = useState(() => Date.now());

@@ -980,7 +980,7 @@ function tokenDelta(
 // --- Small helpers --------------------------------------------------------------------------------
 
 /**
- * Report a Cookie Chain swap leg for cashback, as the terminal's swap panel does for its own trades.
+ * Report a Cookie Chain swap leg for rewards, as the terminal's swap panel does for its own trades.
  *
  * The fee it paid is re-read from the chain by the server, so this sends nothing that has to be
  * believed. A settlement names its pair, so the trade also counts towards that pair's listing fees;

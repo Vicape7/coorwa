@@ -14,7 +14,7 @@ import {
   COOK_MINT,
   COOK_DECIMALS,
   COORWA_SWAP_FEE_BPS,
-  CASHBACK_SPLIT,
+  REWARD_SPLIT,
   cookieTxUrl,
   DEFAULT_SLIPPAGE_BPS,
 } from "@/lib/config";
@@ -220,7 +220,7 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
       setInput("");
       setQuoted(null);
 
-      // Report the fill for cashback accounting. The server re-reads the transaction on chain and
+      // Report the fill for holder rewards. The server re-reads the transaction on chain and
       // works out both the fee and the token's creator itself, so a failure here costs the record
       // and never the trade.
       fetch("/api/rewards/record", {
@@ -479,8 +479,8 @@ function RouteDetail({
             upstream and signed in your wallet - Coorwa never holds your funds. Coorwa&apos;s fee is
             a visible transfer to Coorwa&apos;s payout wallet, and all of it is returned:{" "}
             {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
-            {(CASHBACK_SPLIT.holders * 100).toFixed(1)}% to the token&apos;s holders,{" "}
-            {(CASHBACK_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither
+            {(REWARD_SPLIT.holders * 100).toFixed(1)}% to the token&apos;s holders,{" "}
+            {(REWARD_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither
             router will pay a referrer, so this is the only thing funding the rewards here.
           </p>
         </div>

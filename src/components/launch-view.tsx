@@ -207,9 +207,9 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         signTransaction,
       );
 
-      // Pin the benchmark. The server proves the launch on chain before it writes anything, so this
+      // Record the pair. The server proves the launch on chain before it writes anything, so this
       // can only ever record a token this wallet really created. If it fails the token still exists
-      // and simply falls back to being quotable against every asset, which the notice says.
+      // but has no pair yet, which the notice says.
       let pinned = false;
       if (built.mint && built.pool) {
         pinned = await fetch("/api/launchpad/launches", {
@@ -303,7 +303,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           />
         </Labeled>
 
-        <Labeled label="Benchmark">
+        <Labeled label="Pair">
           <select
             value={benchmark}
             onChange={(e) => setBenchmark(e.target.value)}
@@ -362,7 +362,7 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
 
         {done && (
           <Notice tone={done.pinned ? "up" : "note"}>
-            Launched{done.pinned ? ` as ${done.ticker}` : ", but the benchmark was not saved"}.{" "}
+            Launched{done.pinned ? ` as ${done.ticker}` : ", but its pair was not saved"}.{" "}
             {done.mint && (
               <>
                 Mint{" "}

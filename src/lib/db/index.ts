@@ -6,7 +6,7 @@ import * as schema from "./schema";
  * The database is optional.
  *
  * Trading, launching and LP all run on-chain and need no database. The database backs one thing:
- * cashback accounting, which needs history. So a missing DATABASE_URL turns the rewards page into
+ * holder rewards, which need history. So a missing DATABASE_URL turns the rewards page into
  * "not configured" rather than breaking the app.
  */
 type Db = ReturnType<typeof drizzle<typeof schema>>;

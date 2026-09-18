@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { COOK_DECIMALS, CASHBACK_SPLIT, cookieTxUrl } from "@/lib/config";
+import { COOK_DECIMALS, REWARD_SPLIT, cookieTxUrl } from "@/lib/config";
 import { quoteBuy, quoteSell, curvePrice } from "@/lib/curve";
 import { rawToUi, uiToRaw, amount, usd, shortAddr, pct } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
@@ -176,7 +176,7 @@ export function CurvePanel({
           }),
         }).then((r) => r.json());
         if (typeof recorded?.feeUsd === "number") {
-          poolUsd = recorded.feeUsd * CASHBACK_SPLIT.holders;
+          poolUsd = recorded.feeUsd * REWARD_SPLIT.holders;
         }
       } catch {
         // The ledger can miss a row; the trade still happened.

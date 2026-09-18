@@ -1,7 +1,7 @@
 /**
  * Who is owed what, in which asset, and what has been paid.
  *
- * Every fee Coorwa collects on a token belongs to that token: `CASHBACK_SPLIT.holders` of it to the
+ * Every fee Coorwa collects on a token belongs to that token: `REWARD_SPLIT.holders` of it to the
  * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. The creator
  * is paid from fees only: their own holding never counts toward the holders' share. The money
  * itself sits in the operator wallet. This file is the ledger that says whose it is, and
@@ -23,7 +23,7 @@ import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
 import { tokenCreator } from "./creators";
 import { fetchTokens } from "./cookiescan";
-import { CASHBACK_SPLIT, PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
+import { REWARD_SPLIT, PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
 
 function requireDb() {
   if (!db) throw new Error("the rewards ledger needs DATABASE_URL");
@@ -128,7 +128,7 @@ export function waitingUsd(accruedUsd: number, allocatedUsd: number): number {
 }
 
 /**
- * Holder weights with the token's creator taken out. The creator is paid `CASHBACK_SPLIT.creator` of
+ * Holder weights with the token's creator taken out. The creator is paid `REWARD_SPLIT.creator` of
  * the fees and nothing for holding their own token, so their tokens do not dilute real holders either.
  */
 export function withoutCreators(
@@ -185,7 +185,7 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
       .select({
         mint: fills.mint,
         symbol: sql<string | null>`max(${fills.symbol})`,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT.holders}::float8`,
+        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.holders}::float8`,
       })
       .from(fills)
       .where(lte(fills.createdAt, asOf))
@@ -194,7 +194,7 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
       .select({
         mint: fills.mint,
         creator: fills.creator,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT.creator}::float8`,
+        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.creator}::float8`,
       })
       .from(fills)
       .where(and(lte(fills.createdAt, asOf), isNotNull(fills.creator)))
@@ -355,7 +355,7 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
       .select({
         mint: fills.mint,
         wallet: fills.creator,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${CASHBACK_SPLIT.creator}::float8`,
+        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.creator}::float8`,
       })
       .from(fills)
       .where(and(lte(fills.createdAt, asOf), isNotNull(fills.creator)))

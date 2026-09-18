@@ -1,8 +1,8 @@
 /**
  * Proving that something a client claims actually happened.
  *
- * Two things Coorwa writes down are reported by a browser after the fact: a fill, for cashback, and
- * a launch, for the token's benchmark. A client could claim either without doing it, so neither is
+ * Two things Coorwa writes down are reported by a browser after the fact: a fill, for holder rewards,
+ * and a launch, for the token's pair. A client could claim either without doing it, so neither is
  * written until the transaction behind it has been read back from the chain: it must exist, it must
  * have succeeded, and it must have been signed by the wallet asking for the credit. What is left
  * after that is not a claim, it is a record of a public event anyone can check on the explorer.

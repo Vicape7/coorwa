@@ -1,8 +1,8 @@
 /**
  * Who created a token.
  *
- * Creator cashback pays a share of every fee earned on a token to whoever made it, so this cannot be
- * a guess: a wrong answer pays a stranger. (Anyone may buy a token a pair; that is not gated on it.)
+ * A token's creator is paid a share of every fee earned on it, and is the only wallet that may set
+ * its pair, so this cannot be a guess: a wrong answer pays a stranger.
  *
  * There are two sources and they are checked in that order:
  *

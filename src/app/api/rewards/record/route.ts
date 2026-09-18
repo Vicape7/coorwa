@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
-import { recordFill } from "@/lib/cashback";
+import { recordFill } from "@/lib/rewards";
 import { fetchCookPriceUsd, fetchTokens } from "@/lib/cookiescan";
 import {
   isProven,
@@ -197,7 +197,7 @@ export async function POST(req: Request) {
       creator,
       note: res.recorded
         ? undefined
-        : "cashback accounting is not configured on this deployment (no DATABASE_URL)",
+        : "holder rewards are not configured on this deployment (no DATABASE_URL)",
     });
   } catch (e) {
     return NextResponse.json(

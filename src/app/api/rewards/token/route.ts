@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { tokenRewards } from "@/lib/cashback";
+import { tokenRewards } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 

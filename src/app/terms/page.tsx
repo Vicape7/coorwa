@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SiteShell } from "@/components/site-shell";
 import { LegalPage } from "@/components/legal-page";
 import {
-  CASHBACK_SPLIT,
+  REWARD_SPLIT,
   COORWA_SWAP_FEE_BPS,
   HOLDER_MIN_USD,
   PAIR_LISTING_USD,
@@ -99,7 +99,7 @@ export default function TermsPage() {
               <>
                 <p>
                   Coorwa shares the fees it earns on a token with that token&apos;s holders (
-                  {CASHBACK_SPLIT.holders * 100}%) and its creator ({CASHBACK_SPLIT.creator * 100}
+                  {REWARD_SPLIT.holders * 100}%) and its creator ({REWARD_SPLIT.creator * 100}
                   %). Fees are collected in Coorwa&apos;s operator wallet and, once a day, bridged
                   to Solana, used to buy the token&apos;s pair stock and sent to eligible wallets.
                   While this happens, the fees are held by Coorwa.

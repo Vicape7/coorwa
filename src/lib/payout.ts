@@ -13,7 +13,7 @@
  */
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { CASHBACK_RWA_MIN_USD, COOK_SOLANA_MINT } from "./config";
+import { STOCK_PAYOUT_MIN_USD, COOK_SOLANA_MINT } from "./config";
 import { amount, usd } from "./format";
 import type { RouteLeg } from "./crosschain";
 
@@ -83,9 +83,9 @@ export function payoutBlocked(args: {
 }): string | null {
   if (args.owedCook <= 0) return "No fees have accrued yet.";
   if (args.valueUsd === null) return "Pricing the route.";
-  if (args.valueUsd < CASHBACK_RWA_MIN_USD) {
+  if (args.valueUsd < STOCK_PAYOUT_MIN_USD) {
     return (
-      `A payout in stock starts at ${usd(CASHBACK_RWA_MIN_USD)}, and this one would arrive as ` +
+      `A payout in stock starts at ${usd(STOCK_PAYOUT_MIN_USD)}, and this one would arrive as ` +
       `${usd(args.valueUsd)}. Below that, the fixed costs on Solana take too large a share, so ` +
       "claim the fees as they are instead."
     );

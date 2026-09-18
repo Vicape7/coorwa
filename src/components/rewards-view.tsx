@@ -7,7 +7,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { usd, shortAddr } from "@/lib/format";
 import { HOLDER_MIN_USD, PAYOUT_MIN_USD, solanaTxUrl } from "@/lib/config";
-import type { CashbackSummary } from "@/lib/cashback";
+import type { RewardsSummary } from "@/lib/rewards";
 import { TokenMark } from "./token-mark";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -29,7 +29,7 @@ export function RewardsView() {
   const wallet = publicKey?.toBase58();
   const [tab, setTab] = useState<Role>("holder");
 
-  const { data } = useSWR<CashbackSummary>(
+  const { data } = useSWR<RewardsSummary>(
     wallet ? `/api/rewards?wallet=${wallet}` : "/api/rewards",
     fetcher,
     { refreshInterval: 30_000 },

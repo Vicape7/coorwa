@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       ticker: asset.ticker,
       note: res.recorded
         ? undefined
-        : "benchmarks are not stored on this deployment (no DATABASE_URL), so the token stays quotable against every asset",
+        : "pairs are not stored on this deployment (no DATABASE_URL), so the token has no pair here",
     });
   } catch (e) {
     return NextResponse.json(

@@ -26,7 +26,7 @@ import {
   type WalletRewards,
 } from "./rewards-ledger";
 
-export interface CashbackSummary {
+export interface RewardsSummary {
   configured: boolean;
   wallet: string | null;
   /** The address every fee is paid to and every payout is sent from. */
@@ -62,7 +62,7 @@ export interface RewardTotals {
   tokensPaired: number;
 }
 
-const EMPTY = (wallet: string | null): CashbackSummary => ({
+const EMPTY = (wallet: string | null): RewardsSummary => ({
   configured: false,
   wallet,
   operator: COORWA_OPERATOR || null,
@@ -77,7 +77,7 @@ const EMPTY = (wallet: string | null): CashbackSummary => ({
   totals: { paidUsd: 0, waitingUsd: 0, tokensPaired: 0 },
 });
 
-export async function summarise(wallet: string | null): Promise<CashbackSummary> {
+export async function summarise(wallet: string | null): Promise<RewardsSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
 
   const [pools, runs, next, pinned, listed] = await Promise.all([

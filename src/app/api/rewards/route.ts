@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { summarise } from "@/lib/cashback";
+import { summarise } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     return NextResponse.json(await summarise(wallet));
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "could not read cashback" },
+      { error: e instanceof Error ? e.message : "could not read rewards" },
       { status: 502 },
     );
   }

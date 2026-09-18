@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import {
   PAYOUT_MIN_USD,
-  CASHBACK_SPLIT,
+  REWARD_SPLIT,
   COORWA_SWAP_FEE_BPS,
   MOMOSWAP_REFERRAL_SHARE,
   MOMOSWAP_TRADE_FEE_BPS,
@@ -76,8 +76,8 @@ export function RewardsCalculator() {
   const price = data?.prices?.[ticker];
 
   const fees = (volume * days * VENUES[venue].bps) / 10_000;
-  const holders = fees * CASHBACK_SPLIT.holders + pairs * PAIR_LISTING_USD;
-  const creator = fees * CASHBACK_SPLIT.creator;
+  const holders = fees * REWARD_SPLIT.holders + pairs * PAIR_LISTING_USD;
+  const creator = fees * REWARD_SPLIT.creator;
   const you = (holders * share) / 100;
 
   return (
@@ -171,14 +171,14 @@ export function RewardsCalculator() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Tile
                 who="All holders"
-                pct={CASHBACK_SPLIT.holders}
+                pct={REWARD_SPLIT.holders}
                 usd={holders}
                 price={price}
                 ticker={ticker}
               />
               <Tile
                 who="Creator"
-                pct={CASHBACK_SPLIT.creator}
+                pct={REWARD_SPLIT.creator}
                 usd={creator}
                 price={price}
                 ticker={ticker}

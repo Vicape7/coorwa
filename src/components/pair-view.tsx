@@ -8,7 +8,7 @@ import { RecentTrades } from "./recent-trades";
 import { TokenMark } from "./token-mark";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
 import {
-  CASHBACK_SPLIT,
+  REWARD_SPLIT,
   COOKIE_EXPLORER,
   HOLDER_MIN_USD,
   cookieAccountUrl,
@@ -178,10 +178,10 @@ function HolderRewards({ pair }: { pair: CoorwaPair }) {
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
         {/* Written out rather than rounded: 62.5 and 37.5 rounded separately read as 63 and 38,
             which adds up to 101% of a fee. */}
-        {CASHBACK_SPLIT.holders * 100}% of every fee Coorwa earns on {pair.base.symbol} is paid once
+        {REWARD_SPLIT.holders * 100}% of every fee Coorwa earns on {pair.base.symbol} is paid once
         a day to wallets holding at least {usd(HOLDER_MIN_USD)} of it, in {pair.quote.symbol} sent
         to the same address on Solana. Nothing to claim. The creator is paid{" "}
-        {CASHBACK_SPLIT.creator * 100}% of the fees and is not counted as a holder.
+        {REWARD_SPLIT.creator * 100}% of the fees and is not counted as a holder.
       </p>
       <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">
         <Fact label="Paid to holders">

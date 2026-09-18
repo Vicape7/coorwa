@@ -283,7 +283,7 @@ export function RwaCarousel() {
   }, []);
 
   return (
-    <div className="rwa-orbit" aria-label="Benchmarks available on Coorwa">
+    <div className="rwa-orbit" aria-label="Stocks available on Coorwa">
       <div ref={trackRef} className="rwa-orbit-track">
         {RWA_ASSETS.map((asset) => (
           <div
@@ -299,7 +299,7 @@ export function RwaCarousel() {
               {/*
                 Local copies of the Backed logos with the xStocks "X" painted out, so the hero shows
                 the company marks alone. Everywhere else keeps `asset.logo`, where the X tells a
-                trader the token is the tokenised share. A benchmark added to `rwa.ts` needs its
+                trader the token is the tokenised share. A stock added to `rwa.ts` needs its
                 file in public/rwa too, as a 256px WebP.
 
                 Served as they are rather than through the optimiser: sixteen files of 1 to 3 KB

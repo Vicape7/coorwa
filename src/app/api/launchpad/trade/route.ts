@@ -31,9 +31,9 @@ const Body = z.discriminatedUnion("action", [
 /**
  * Bonding-curve actions.
  *
- * Buys name Coorwa as referrer, which routes 20% of the launchpad's 1% trade fee into the cashback
- * pot. That share comes out of the same fee either way - with nobody named, the programme keeps it
- * - so this costs the buyer nothing. The programme rejects self-referral, so a wallet buying its
+ * Buys name Coorwa as referrer, which routes 20% of the launchpad's 1% trade fee to the operator
+ * wallet, and from there to the token's holders and creator. That share comes out of the same fee
+ * either way (with nobody named, the programme keeps it), so this costs the buyer nothing. The programme rejects self-referral, so a wallet buying its
  * own curve is sent without one.
  */
 export async function POST(req: Request) {

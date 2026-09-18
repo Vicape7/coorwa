@@ -247,7 +247,8 @@ function matchesIntent(
 
   const wrappedCook = getAssociatedTokenAddressSync(NATIVE_MINT, wallet, true);
   // Opening a token account costs its payer rent, so the wallet only ever pays for its own, or for
-  // the referrer Coorwa named on a buy (which already has one, so that costs nothing in practice).
+  // the referrer Coorwa named on a buy. That account is closed whenever the payout run unwraps the
+  // referral COOK, so the next referred buy may open it again, for about 0.002 COOK of rent.
   const accountOwners = new Set([intent.wallet]);
   if (intent.action === "buy" && intent.referrer) accountOwners.add(intent.referrer);
 

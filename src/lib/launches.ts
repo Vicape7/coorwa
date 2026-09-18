@@ -2,8 +2,8 @@
  * Tokens launched through Coorwa, and the RWA each creator benchmarked theirs against.
  *
  * A token launched here is a TOKEN/RWA instrument from the start: the creator picks one real-world
- * asset at launch, and that first pair is free and fixed. More can be bought later by anyone
- * (`listings.ts`). A token from anywhere else has no pair until somebody buys one.
+ * asset at launch, free, and it is the token's only pair for good. A token from anywhere else has no
+ * pair until its creator pays for one (`listings.ts`).
  *
  * Like the rest of the database, it is optional. With no DATABASE_URL every read here comes back
  * empty.
