@@ -16,6 +16,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  // The preview images next to this file are linked by absolute URL, which needs the site's origin.
+  metadataBase: new URL("https://coorwa.fun"),
   title: "Coorwa - trade Cookie Chain in RWAs",
   description:
     "Terminal, launchpad and LP maker for Cookie Chain. Every token is paired with a stock, and its holders are paid in that stock every day.",
@@ -25,6 +27,8 @@ export const metadata: Metadata = {
       "Every Cookie Chain token paired with a real stock. Hold it, and get paid in that stock every day.",
     type: "website",
   },
+  // The large card, so a link on X shows the banner rather than a small square beside the text.
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
