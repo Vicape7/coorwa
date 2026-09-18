@@ -448,7 +448,11 @@ function ImagePicker({ preview, onFile }: { preview: string | null; onFile: (f: 
 function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdown }) {
   const rows: [string, string, string][] = [
     ["Creator", `${fees.creatorPct.toFixed(2)}%`, "Yours, claimable at any time"],
-    ["Coorwa cashback", `${fees.referralPct.toFixed(2)}%`, "Referral share, rebated to users"],
+    [
+      "Coorwa rewards",
+      `${fees.referralPct.toFixed(2)}%`,
+      "Referral share, paid to the token's holders and creator",
+    ],
     ["Treasury", `${fees.treasuryPct.toFixed(2)}%`, "MomoSwap protocol"],
     ["Buyback", `${fees.buybackPct.toFixed(2)}%`, "COOK bought back and burned"],
   ];
@@ -458,8 +462,8 @@ function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdo
       <h2 className="title text-primary">Where the {fees.totalPct.toFixed(0)}% trade fee goes</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         Percentages are of the trade, not of the fee. The referral slice is paid out of the same fee
-        whether or not anyone is named - with no referrer, MomoSwap keeps it - so routing through
-        Coorwa costs a trader nothing and funds the rebate.
+        whether or not anyone is named, and with no referrer MomoSwap keeps it. So routing through
+        Coorwa costs a trader nothing, and the slice goes to the token&apos;s holders and creator.
       </p>
 
       <dl className="mt-5 divide-y divide-[color:var(--divider)]">

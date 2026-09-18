@@ -3,10 +3,9 @@
 /**
  * Buying and selling on a launchpad curve.
  *
- * This is the surface the whole cashback ledger was waiting for. A buy routed through here names
- * Coorwa as MomoSwap's referrer, which is the one place any fee actually reaches Coorwa - swaps on
- * Cookie Chain's routers pay nothing, and a curve with nobody named simply lets the launchpad keep
- * that slice. So the trader pays exactly the same either way, and the rebate has a real source.
+ * A buy routed through here names Coorwa as MomoSwap's referrer, so MomoSwap pays its referral
+ * share of the curve fee to the operator wallet instead of keeping it. The trader pays exactly the
+ * same either way, and the share joins the token's holder and creator rewards.
  *
  * MomoSwap builds the transaction and the user's own wallet signs it. Coorwa quotes the curve
  * locally beforehand, because the launchpad has no quote endpoint - see `src/lib/curve.ts`.
@@ -326,8 +325,8 @@ export function CurvePanel({
             {side === "buy" && (
               <p className="pt-1 text-[11px] leading-relaxed text-subtle">
                 Coorwa is named referrer on this buy, which routes {referralPct.toFixed(2)}% of the
-                trade into the cashback pot. MomoSwap pays that slice to whoever is named and keeps
-                it when nobody is, so it costs you nothing.
+                trade to this token&apos;s holders and creator. MomoSwap pays that slice to whoever
+                is named and keeps it when nobody is, so it costs you nothing.
               </p>
             )}
           </div>
