@@ -35,8 +35,10 @@ async function requestSample(env: Env): Promise<void> {
   if (!res.ok) throw new Error(`sample request failed with ${res.status}`);
 }
 
-export default {
+const sampler = {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: Context): Promise<void> {
     ctx.waitUntil(requestSample(env));
   },
 };
+
+export default sampler;
