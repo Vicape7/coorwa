@@ -230,8 +230,7 @@ export function PoolsView() {
       {data && pools.length > 0 && (
         <p className="mt-4 text-[12px] text-subtle">
           {data.count} {data.count === 1 ? "pair" : "pairs"} · {data.manageableCount} backed by a Cookiebox DAMM v2 pool Coorwa can
-          manage. A token with more than one pair shares one pool between them. Other venues are
-          read-only here and managed in their own app.
+          manage. Other venues are read-only here and managed in their own app.
         </p>
       )}
 

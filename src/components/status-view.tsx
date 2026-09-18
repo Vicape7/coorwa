@@ -134,9 +134,9 @@ export function StatusView() {
       <div className="card mt-4 p-5 sm:p-8">
         <h2 className="title text-primary">Cross-chain capacity</h2>
         <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-muted">
-          A cross-chain settle ends by swapping bridged COOK into an xStock on Solana, so the depth
-          of COOK there is the real ceiling on trade size - not anything in Coorwa. It is shown here
-          rather than discovered as slippage.
+          Every payout, and every fee taken as a stock, ends by swapping bridged COOK into an xStock
+          on Solana. So the depth of COOK there is the real ceiling on how much can go through at
+          once, not anything in Coorwa. It is shown here rather than discovered as slippage.
         </p>
         <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
           <Figure

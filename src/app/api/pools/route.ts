@@ -46,8 +46,8 @@ function poolFor(pools: CookiescanMarket[]): CookiescanMarket | null {
  *
  * A TOKEN/RWA pair has no pool of its own and cannot have one on Cookie Chain. What an LP provides is
  * the token's COOK pool, which is what every trade on the pair actually goes through. So this lists
- * exactly the pairs the terminal lists, and names the pool a deposit lands in. A token with two pairs
- * appears twice, against the same pool.
+ * exactly the pairs the terminal lists, and names the pool a deposit lands in. A token has one pair,
+ * so it appears once.
  */
 export async function GET() {
   try {
