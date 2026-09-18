@@ -117,6 +117,27 @@ function slugify(symbol: string, ticker: string): string {
   return `${s}-${ticker.toLowerCase()}`;
 }
 
+/**
+ * Slugs that name one pair each.
+ *
+ * A slug is built from the token's symbol, and a symbol is whatever its creator typed: two tokens can
+ * both call themselves COTE. Left alone, `/terminal/cote-nvda` would open whichever had more
+ * liquidity, so a copy with a deeper pool would take over the real token's links, and the swap panel
+ * there would buy the copy. Where a slug is shared, every pair sharing it is named by its mint
+ * instead, which nobody can copy.
+ */
+export function uniqueSlugs<
+  T extends { slug: string; base: { mint: string }; quote: { ticker: string } },
+>(pairs: readonly T[]): T[] {
+  const uses = new Map<string, number>();
+  for (const p of pairs) uses.set(p.slug, (uses.get(p.slug) ?? 0) + 1);
+  return pairs.map((p) =>
+    (uses.get(p.slug) ?? 0) > 1
+      ? { ...p, slug: `${p.base.mint}-${p.quote.ticker.toLowerCase()}` }
+      : p,
+  );
+}
+
 /** Ratio return: how the pair moved once the RWA's own move is divided out. */
 function ratioChange(tokenPct: number | null, rwaPct: number | null): number | null {
   if (tokenPct == null || !Number.isFinite(tokenPct)) return null;
@@ -231,7 +252,7 @@ export async function buildUniverse(opts?: {
   pairs.sort((a, b) => b.base.liquidityUsd - a.base.liquidityUsd);
 
   return {
-    pairs,
+    pairs: uniqueSlugs(pairs),
     cookPriceUsd: cookUsd,
     rwa: Object.values(rwaPrices).sort((a, b) => (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0)),
     skipped,
@@ -249,9 +270,10 @@ export async function findPair(slug: string): Promise<CoorwaPair | null> {
 
   const universe = await buildUniverse({ quotes: [asset.ticker] });
   const want = slug.slice(0, idx).toLowerCase();
+  // The mint first: a symbol is free text, so a token could name itself after another's mint.
   return (
-    universe.pairs.find((p) => p.slug === slug.toLowerCase()) ??
     universe.pairs.find((p) => p.base.mint.toLowerCase() === want) ??
+    universe.pairs.find((p) => p.slug === slug.toLowerCase()) ??
     null
   );
 }

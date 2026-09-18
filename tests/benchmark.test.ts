@@ -8,7 +8,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { quotesFor } from "../src/lib/pairs";
+import { quotesFor, uniqueSlugs } from "../src/lib/pairs";
 import { paymentCovers, listingQuote } from "../src/lib/listings";
 import { PAIR_LISTING_USD } from "../src/lib/config";
 
@@ -50,4 +50,26 @@ test("the quote asks for slightly more than the strict price, and says so in COO
   assert.ok(q.cook != null && q.cook > q.usd / 0.0001, "a quote has to survive COOK moving");
   assert.ok(paymentCovers(q.cook! * 0.0001), "and still cover what it quoted");
   assert.equal(listingQuote(null).cook, null, "no price, no quote");
+});
+
+test("two tokens with the same symbol and stock are both named by their mint", () => {
+  const pair = (slug: string, mint: string, ticker = "NVDA") => ({
+    slug,
+    base: { mint },
+    quote: { ticker },
+  });
+  const real = pair("cote-nvda", "BDEFBNgzV5MzCnF4ccWNYbjy5g8wh5Y76T4xkWn1momo");
+  const copy = pair("cote-nvda", "CopyCopyCopyCopyCopyCopyCopyCopyCopyCopy1111");
+  const chat = pair("chat-nvda", "2wPK38gv8dWU89K5zDAAULAihnU1sRocbpzwPP6twY7Q");
+  const cote = pair("cote-tsla", "Cote2Cote2Cote2Cote2Cote2Cote2Cote2Cote2Cot1", "TSLA");
+
+  const slugs = uniqueSlugs([copy, real, chat, cote]).map((p) => p.slug);
+
+  assert.deepEqual(slugs, [
+    "CopyCopyCopyCopyCopyCopyCopyCopyCopyCopy1111-nvda",
+    "BDEFBNgzV5MzCnF4ccWNYbjy5g8wh5Y76T4xkWn1momo-nvda",
+    "chat-nvda",
+    "cote-tsla",
+  ]);
+  assert.equal(new Set(slugs).size, slugs.length, "no slug opens two pairs");
 });
