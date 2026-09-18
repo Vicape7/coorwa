@@ -10,6 +10,7 @@ import {
   signatureSpent,
 } from "@/lib/listings";
 import { proveTransaction, isProven, lamportsCredited } from "@/lib/onchain";
+import { fillRecorded } from "@/lib/rewards";
 import { tokenCreator } from "@/lib/creators";
 import { fetchCookPriceUsd, fetchMarkets, liquidityByMint } from "@/lib/cookiescan";
 import { benchmarks } from "@/lib/launches";
@@ -81,7 +82,8 @@ const Body = z.object({
  * Nothing here is taken on the client's word. The payer has to be the token's creator, the token
  * must not have a pair yet and must already trade in a pool, and the transaction is read back from the chain: signed by the payer,
  * and actually crediting the operator with enough COOK, priced when it is read. One transaction
- * sets one pair, so a payment cannot be presented twice.
+ * sets one pair, so a payment cannot be presented twice, and a trade already counted as a fill
+ * cannot be presented as a payment.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -130,6 +132,14 @@ export async function POST(req: Request) {
     }
     if (await signatureSpent(b.signature)) {
       return NextResponse.json({ error: "that payment has already been used" }, { status: 409 });
+    }
+    // A swap through the terminal also pays the operator in COOK, and its fee is already in the
+    // ledger as that token's income. Taking it as a pair payment too would count one dollar twice.
+    if (await fillRecorded(b.signature)) {
+      return NextResponse.json(
+        { error: "that transaction was a trade, and its fee is already counted for its token" },
+        { status: 409 },
+      );
     }
 
     const proof = await proveTransaction({ signature: b.signature, wallet: b.payer });

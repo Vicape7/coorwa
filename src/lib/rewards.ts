@@ -7,6 +7,7 @@
  * `payout-cycle.ts`). Every fill read here was written only after its transaction confirmed on-chain,
  * and every payout carries the Solana transaction that sent it.
  */
+import { eq } from "drizzle-orm";
 import { dbEnabled, db, schema } from "./db";
 import { fetchTokens } from "./cookiescan";
 import { createdBy } from "./creators";
@@ -196,4 +197,19 @@ export async function recordFill(fill: RecordFill): Promise<{ recorded: boolean 
     .onConflictDoNothing({ target: schema.fills.signature });
 
   return { recorded: true };
+}
+
+/**
+ * Whether a transaction is already in the ledger as a fill, which means its fee has been counted for
+ * its token once. A pair payment is checked against this, so the fee a swap paid the operator cannot
+ * be presented again as the dollar that buys a pair.
+ */
+export async function fillRecorded(signature: string): Promise<boolean> {
+  if (!dbEnabled || !db) return false;
+  const [row] = await db
+    .select({ id: schema.fills.id })
+    .from(schema.fills)
+    .where(eq(schema.fills.signature, signature))
+    .limit(1);
+  return row != null;
 }
