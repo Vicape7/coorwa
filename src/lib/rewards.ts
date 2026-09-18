@@ -14,12 +14,14 @@ import { createdBy } from "./creators";
 import { logosByMint } from "./token-logos";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
-import { COORWA_OPERATOR } from "./config";
+import { COORWA_OPERATOR, PAYOUT_MIN_USD } from "./config";
 import {
   holderEstimates,
+  nextRunCouldPay,
   nextRunDueAt,
   recentRuns,
   rewardPools,
+  unpaidLines,
   walletRewards,
   type HolderEstimate,
   type RewardPool,
@@ -34,6 +36,8 @@ export interface RewardsSummary {
   operator: string | null;
   /** When the next daily run is due, or null while nothing is waiting. */
   nextRunAt: string | null;
+  /** False when nobody can reach the payout minimum at that run, so it will send nothing. */
+  nextRunPays: boolean;
   /** Owed to this wallet but under the minimum, per asset. Paid once it adds up. */
   pending: WalletRewards["pending"];
   /** Sent to this wallet, newest first. */
@@ -68,6 +72,7 @@ const EMPTY = (wallet: string | null): RewardsSummary => ({
   wallet,
   operator: COORWA_OPERATOR || null,
   nextRunAt: null,
+  nextRunPays: false,
   pending: [],
   paid: [],
   estimates: [],
@@ -81,17 +86,19 @@ const EMPTY = (wallet: string | null): RewardsSummary => ({
 export async function summarise(wallet: string | null): Promise<RewardsSummary> {
   if (!dbEnabled || !db) return EMPTY(wallet);
 
-  const [pools, runs, next, pinned, listed] = await Promise.all([
+  const [pools, runs, next, pinned, listed, unpaid] = await Promise.all([
     rewardPools(),
     recentRuns(),
     nextRunDueAt(),
     benchmarks(),
     listedByMint(),
+    unpaidLines(),
   ]);
   const base = {
     ...EMPTY(wallet),
     configured: true,
     nextRunAt: next?.toISOString() ?? null,
+    nextRunPays: nextRunCouldPay(unpaid, pools, PAYOUT_MIN_USD),
     pools: pools.slice(0, 50),
     runs,
     totals: rewardTotals(pools, new Set([...pinned.keys(), ...listed.keys()]).size),

@@ -89,6 +89,54 @@ export function payableLines(
   return [...groups.values()].filter((g) => g.usd >= minUsd).flatMap((g) => g.ids);
 }
 
+/**
+ * Whether the next run could send anything at all.
+ *
+ * An upper bound, so it never says no when a wallet might be paid: each wallet's unpaid lines in an
+ * asset, plus everything still waiting in that asset, holders' pools and creators' shares together,
+ * as if that one wallet were to get all of it. When even that stays under the minimum for every
+ * wallet, the run will allocate and carry over, and send nothing.
+ */
+export function nextRunCouldPay(
+  unpaid: readonly { wallet: string; ticker: string; amountUsd: number }[],
+  pools: readonly RewardPool[],
+  minUsd: number,
+): boolean {
+  const waitingByTicker = new Map<string, number>();
+  for (const p of pools) {
+    if (!p.ticker) continue;
+    const creatorLeft = Math.max(0, p.creatorAccruedUsd - p.creatorAllocatedUsd);
+    waitingByTicker.set(
+      p.ticker,
+      (waitingByTicker.get(p.ticker) ?? 0) + p.holdersWaitingUsd + creatorLeft,
+    );
+  }
+  const owed = new Map<string, number>();
+  for (const l of unpaid) {
+    const key = `${l.wallet}|${l.ticker}`;
+    owed.set(key, (owed.get(key) ?? 0) + l.amountUsd);
+  }
+  for (const [key, usd] of owed) {
+    const ticker = key.slice(key.indexOf("|") + 1);
+    if (usd + (waitingByTicker.get(ticker) ?? 0) >= minUsd) return true;
+  }
+  // A wallet with no lines yet could still be handed a whole waiting pool.
+  return [...waitingByTicker.values()].some((usd) => usd >= minUsd);
+}
+
+/** Lines allocated to a wallet and not queued for a payment yet. */
+export async function unpaidLines() {
+  const { payoutLines } = schema;
+  return requireDb()
+    .select({
+      wallet: payoutLines.wallet,
+      ticker: payoutLines.ticker,
+      amountUsd: payoutLines.amountUsd,
+    })
+    .from(payoutLines)
+    .where(eq(payoutLines.status, "allocated"));
+}
+
 /** Each line's share of what its asset's swap bought, split by wallet and then within a wallet. */
 export function lineAmounts(
   lines: readonly { id: number; wallet: string; ticker: string; amountUsd: number }[],

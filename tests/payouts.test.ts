@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   DUST_USD,
   lineAmounts,
+  nextRunCouldPay,
   payableLines,
   splitRaw,
   waitingUsd,
@@ -215,4 +216,46 @@ test("a run that arrived short shares what did arrive, in the same proportions",
   });
   assert.equal(out.get("NVDA"), 300_000n);
   assert.equal(out.get("TSLA"), 300_000n);
+});
+
+// --- Whether the next run sends anything -----------------------------------------------------------
+
+function pool(ticker: string | null, holdersWaitingUsd: number, creatorLeftUsd = 0) {
+  return {
+    mint: `mint-${ticker}`,
+    symbol: null,
+    ticker,
+    holdersAccruedUsd: holdersWaitingUsd,
+    holdersAllocatedUsd: 0,
+    holdersWaitingUsd,
+    holdersPaidUsd: 0,
+    creator: null,
+    creatorAccruedUsd: creatorLeftUsd,
+    creatorAllocatedUsd: 0,
+    creatorPaidUsd: 0,
+  };
+}
+
+test("a run where nobody can reach the minimum sends nothing, and says so", () => {
+  // Today's ledger in miniature: small lines, a small pool, nobody near a dollar.
+  const unpaid = [
+    { wallet: "a", ticker: "NVDA", amountUsd: 0.2 },
+    { wallet: "b", ticker: "NVDA", amountUsd: 0.1 },
+  ];
+  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.3, 0.1)], 1), false);
+});
+
+test("a wallet whose lines and the waiting pool could reach the minimum may be paid", () => {
+  const unpaid = [{ wallet: "a", ticker: "NVDA", amountUsd: 0.7 }];
+  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.2, 0.1)], 1), true);
+  // Only the same asset counts: a TSLA pool does not lift an NVDA line.
+  assert.equal(nextRunCouldPay(unpaid, [pool("TSLA", 0.9)], 1), false);
+});
+
+test("a waiting pool at the minimum can pay a wallet that has no lines yet", () => {
+  assert.equal(nextRunCouldPay([], [pool("NVDA", 1)], 1), true);
+});
+
+test("a token with no pair waits, so its pool pays nobody at this run", () => {
+  assert.equal(nextRunCouldPay([], [pool(null, 5)], 1), false);
 });
