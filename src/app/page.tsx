@@ -80,7 +80,7 @@ export default function Home() {
             href="/launch"
             title="Launchpad"
             image={launchpadArt}
-            body="Mint on a COOK bonding curve through MomoSwap, with a stock picked at launch. MomoSwap's fee split is read from its live config."
+            body="Mint on a COOK bonding curve through MomoSwap and pick its stock at launch. MomoSwap's fee split is read live."
           />
           <Tool
             href="/pools"
@@ -110,7 +110,7 @@ export default function Home() {
           <p className="mt-5 max-w-[62ch] text-[15px] leading-[1.7] text-muted">
             Every token on Coorwa is paired with one stock, NVDA, TSLA, SPY or another, picked by its
             creator. The price is two live markets divided: real reserves in a Cookie Chain pool over
-            real xStock liquidity on Solana. Nothing is modelled: it is two live prices divided.
+            real xStock liquidity on Solana. Nothing is modelled.
           </p>
 
           <div className="num mt-6 inline-block rounded-full bg-[color-mix(in_srgb,var(--surface-raised)_78%,transparent)] px-5 py-3 text-[15px] text-primary">

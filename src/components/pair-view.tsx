@@ -214,8 +214,7 @@ function PairFacts({ pair }: { pair: CoorwaPair }) {
         {pair.base.symbol} trades in its {pair.venue ?? "Cookie Chain"} pool and is priced live in{" "}
         {pair.quote.ticker} shares: <span className="num text-primary">USD({pair.base.symbol})</span>{" "}
         &divide; <span className="num text-primary">USD({pair.quote.symbol})</span>, real reserves on
-        Cookie Chain over real {pair.quote.symbol} liquidity on Solana. Nothing is modelled: it is
-        two live prices divided.
+        Cookie Chain over real {pair.quote.symbol} liquidity on Solana. Nothing is modelled.
       </p>
 
       <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">

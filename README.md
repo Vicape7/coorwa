@@ -106,7 +106,7 @@ are.
       <img src="docs/readme/art-terminal.png" width="96" align="right" alt="">
       <h3>Terminal</h3>
       <ul>
-        <li>Every paired token, priced in its stock: the token's USD price from real Cookie Chain reserves, divided by the xStock's from real Solana liquidity. Nothing is modelled: it is two live prices divided.</li>
+        <li>Every paired token, priced in its stock: the token's USD price from real Cookie Chain reserves, divided by the xStock's from real Solana liquidity. Nothing is modelled.</li>
         <li>Candles built from executed fills, not standing quotes, so the chart is genuine performance against the stock.</li>
         <li>Swaps quoted on both Cookie Chain routers, Cookiebox and Candy Shop. The better fill wins.</li>
         <li>A pair that has not traded in 24 hours shows no return, never a fake one from a flat price against a moving stock.</li>
