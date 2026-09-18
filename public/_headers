@@ -19,17 +19,17 @@
 /coorwa-logo-word.png
   Cache-Control: public,max-age=31536000,immutable
 
-/coorwa-wordmark.png
+/coorwa-wordmark.webp
   Cache-Control: public,max-age=31536000,immutable
 
-/launchpad.png
+/launchpad.webp
   Cache-Control: public,max-age=31536000,immutable
 
-/lp.png
+/lp.webp
   Cache-Control: public,max-age=31536000,immutable
 
-/stocks.png
+/stocks.webp
   Cache-Control: public,max-age=31536000,immutable
 
-/terminal.png
+/terminal.webp
   Cache-Control: public,max-age=31536000,immutable

@@ -87,8 +87,10 @@ function Brand() {
       <Image
         src="/coorwa.png"
         alt=""
-        width={512}
-        height={512}
+        // The size it is drawn at, so the optimiser sends 32px and 64px copies instead of the
+        // 640px and 1080px ones it picks for a 512px image.
+        width={32}
+        height={32}
         priority
         className="h-8 w-8 object-contain drop-shadow-[0_1px_3px_rgba(120,64,24,0.28)]"
       />

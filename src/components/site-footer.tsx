@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import wordmark from "../../public/coorwa-wordmark.png";
+import wordmark from "../../public/coorwa-wordmark.webp";
 
 const LINKS: { label: string; href: string }[] = [
   { label: "Terminal", href: "/terminal" },

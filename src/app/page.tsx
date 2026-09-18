@@ -1,9 +1,9 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
-import launchpadArt from "../../public/launchpad.png";
-import lpArt from "../../public/lp.png";
-import stocksArt from "../../public/stocks.png";
-import terminalArt from "../../public/terminal.png";
+import launchpadArt from "../../public/launchpad.webp";
+import lpArt from "../../public/lp.webp";
+import stocksArt from "../../public/stocks.webp";
+import terminalArt from "../../public/terminal.webp";
 import { Nav } from "@/components/nav";
 import { HeroSearch } from "@/components/hero-search";
 import { LiveStats } from "@/components/live-stats";
