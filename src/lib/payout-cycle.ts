@@ -15,7 +15,9 @@
  * scheduler through the sample endpoint; most calls find nothing due and return at once.
  *
  * Custodial by design, like StonkFun's payouts: the day's fees sit in the operator wallet until the
- * run pays them out. Server only.
+ * run pays them out. A run pays its own costs: the operator's spare SOL covers them first, and what
+ * that does not cover comes out of the run's own payouts, never out of COOK that other tokens'
+ * holders are still waiting for. Server only.
  */
 import bs58 from "bs58";
 import {
@@ -208,7 +210,8 @@ async function queuedLines(cycleId: number) {
 /**
  * What the run will spend on Solana, in USD: a token account for every recipient and for the
  * operator that does not have one yet, a fee per send and per swap. SOL the operator already holds
- * above its floor is used first, so a run only buys what it is short of.
+ * above its floor is used first, so a run only buys what it is short of, and it buys that out of its
+ * own payouts (`swapPortions`).
  */
 async function costBudgetUsd(cycleId: number, operator: PublicKey): Promise<number> {
   const sol = solanaConn();
@@ -253,9 +256,15 @@ async function bridge(cycle: Cycle, signer: Keypair): Promise<string> {
   const sol = solanaConn();
 
   const budgetUsd = await costBudgetUsd(cycle.id, operator);
-  // A little over, because Jupiter's price is not the Cookie Chain price the run was valued at.
+  if (budgetUsd >= cycle.totalUsd) {
+    throw new Error(
+      `the run's costs, $${budgetUsd.toFixed(4)}, would take all of the $${cycle.totalUsd.toFixed(4)} it pays out`,
+    );
+  }
+  // Only what this run owes, costs included, so the COOK of pools still waiting stays where it is. A
+  // little over, because Jupiter's price is not the Cookie Chain price the run was valued at.
   const needRaw = BigInt(
-    Math.ceil(((cycle.totalUsd + budgetUsd) / cycle.cookPriceUsd) * 1.03 * Number(UNITS)),
+    Math.ceil((cycle.totalUsd / cycle.cookPriceUsd) * 1.03 * Number(UNITS)),
   );
 
   const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, operator);
@@ -378,6 +387,38 @@ async function awaitBridge(cycle: Cycle, signer: Keypair, now: Date): Promise<st
 
 // --- bridged: swap into SOL and the pair assets ---------------------------------------------------------
 
+/**
+ * How much of the bridged COOK each of the run's swaps spends, keyed "SOL" and by ticker.
+ *
+ * SOL gets the costs the operator's spare SOL does not cover, and each asset gets the rest in
+ * proportion to what is owed in it. So the costs come out of this run's payouts and nobody else's.
+ *
+ * Worked out from everything the run bridged, counting what its landed swaps already spent, rather
+ * than from what is left in the account. A step that resumes after some swaps went through then
+ * gives the remaining ones the same portions as the first time, instead of a share of the rest.
+ */
+export function swapPortions(args: {
+  /** COOK the run bridged, in Solana units. */
+  bridged: bigint;
+  /** COOK in the operator's Solana account now. */
+  balance: bigint;
+  /** COOK this run's recorded swaps were given, landed or not. */
+  swapped: bigint;
+  costUsd: number;
+  owedUsd: ReadonlyMap<string, number>;
+}): Map<string, bigint> {
+  const available = args.balance + args.swapped;
+  const spend = available < args.bridged ? available : args.bridged;
+  let owed = 0;
+  for (const usd of args.owedUsd.values()) owed += usd;
+  const cost = Math.max(0, args.costUsd);
+  const kept = owed > 0 ? Math.max(0, owed - cost) / owed : 0;
+  return splitRaw(spend, [
+    { key: "SOL", usd: cost },
+    ...[...args.owedUsd].map(([key, usd]) => ({ key, usd: usd * kept })),
+  ]);
+}
+
 /** What a swap delivered to the operator, read from the confirmed transaction. */
 function received(tx: VersionedTransactionResponse, operator: string, ticker: string): bigint {
   if (ticker === "SOL") {
@@ -435,20 +476,20 @@ async function swap(cycle: Cycle, signer: Keypair): Promise<string> {
 
   const cookAccount = token22Ata(COOK_SOLANA_MINT, signer.publicKey);
   const balance = BigInt((await sol.getTokenAccountBalance(cookAccount, "confirmed")).value.amount);
-  const bridged = scaleRaw(cycle.bridgeCookRaw!, COOK_DECIMALS, COOK_SOLANA_DECIMALS);
-  const spend = balance < bridged ? balance : bridged;
-
-  const plan = [
-    { key: "SOL", usd: cycle.costBudgetUsd },
-    ...[...usdByTicker].map(([key, usd]) => ({ key, usd })),
-  ];
-  const portions = splitRaw(spend, plan);
   const done = await conn
     .select()
     .from(schema.payoutSwaps)
     .where(eq(schema.payoutSwaps.cycleId, cycle.id));
 
-  for (const { key: ticker } of plan) {
+  const portions = swapPortions({
+    bridged: scaleRaw(cycle.bridgeCookRaw!, COOK_DECIMALS, COOK_SOLANA_DECIMALS),
+    balance,
+    swapped: done.reduce((sum, s) => sum + s.cookRaw, 0n),
+    costUsd: cycle.costBudgetUsd,
+    owedUsd: usdByTicker,
+  });
+
+  for (const ticker of ["SOL", ...usdByTicker.keys()]) {
     const portion = portions.get(ticker) ?? 0n;
     if (portion <= 0n) continue;
     const existing = done.find((s) => s.ticker === ticker);

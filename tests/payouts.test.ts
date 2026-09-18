@@ -16,7 +16,12 @@ import {
   waitingUsd,
   withoutCreators,
 } from "../src/lib/rewards-ledger";
-import { MAX_CYCLE_ATTEMPTS, MAX_LINE_ATTEMPTS, sendBatch } from "../src/lib/payout-cycle";
+import {
+  MAX_CYCLE_ATTEMPTS,
+  MAX_LINE_ATTEMPTS,
+  sendBatch,
+  swapPortions,
+} from "../src/lib/payout-cycle";
 
 const sum = (m: Map<unknown, bigint>) => [...m.values()].reduce((a, b) => a + b, 0n);
 
@@ -142,4 +147,72 @@ test("nothing pending is nothing to send", () => {
 test("a wallet is given up on before the run that is trying to pay it", () => {
   // The other way round, every run would stop on the same wallet and start over on the next one.
   assert.ok(MAX_LINE_ATTEMPTS < MAX_CYCLE_ATTEMPTS);
+});
+
+// --- what each swap of a run spends -------------------------------------------------------------------
+
+const owed = (entries: [string, number][]) => new Map(entries);
+
+test("with its costs covered by spare SOL, a run swaps everything it bridged into what it owes", () => {
+  const out = swapPortions({
+    bridged: 1_000_000n,
+    balance: 1_000_000n,
+    swapped: 0n,
+    costUsd: 0,
+    owedUsd: owed([["NVDA", 1.2], ["TSLA", 0.8]]),
+  });
+  assert.equal(out.get("SOL"), 0n);
+  assert.equal(out.get("NVDA"), 600_000n);
+  assert.equal(out.get("TSLA"), 400_000n);
+});
+
+test("costs the spare SOL does not cover come out of the run's own payouts", () => {
+  const out = swapPortions({
+    bridged: 1_000_000n,
+    balance: 1_000_000n,
+    swapped: 0n,
+    costUsd: 0.5,
+    owedUsd: owed([["NVDA", 1.5], ["TSLA", 0.5]]),
+  });
+  // A quarter of what the run owes is costs, so SOL gets a quarter and the assets split the rest 3:1.
+  assert.equal(out.get("SOL"), 250_000n);
+  assert.equal(out.get("NVDA"), 562_500n);
+  assert.equal(out.get("TSLA"), 187_500n);
+  assert.equal(sum(out), 1_000_000n);
+});
+
+test("a run never spends COOK beyond what it bridged, whatever else sits in the account", () => {
+  const out = swapPortions({
+    bridged: 1_000_000n,
+    balance: 4_000_000n,
+    swapped: 0n,
+    costUsd: 0,
+    owedUsd: owed([["NVDA", 1]]),
+  });
+  assert.equal(out.get("NVDA"), 1_000_000n);
+});
+
+test("a step that resumes after some swaps landed gives the rest the same portions", () => {
+  const args = {
+    bridged: 1_000_000n,
+    costUsd: 0.4,
+    owedUsd: owed([["NVDA", 1], ["TSLA", 1]]),
+  };
+  const first = swapPortions({ ...args, balance: 1_000_000n, swapped: 0n });
+  // The SOL and NVDA swaps went through, then the TSLA one failed and the step was called again.
+  const spent = first.get("SOL")! + first.get("NVDA")!;
+  const again = swapPortions({ ...args, balance: 1_000_000n - spent, swapped: spent });
+  assert.deepEqual([...again], [...first]);
+});
+
+test("a run that arrived short shares what did arrive, in the same proportions", () => {
+  const out = swapPortions({
+    bridged: 1_000_000n,
+    balance: 600_000n,
+    swapped: 0n,
+    costUsd: 0,
+    owedUsd: owed([["NVDA", 1], ["TSLA", 1]]),
+  });
+  assert.equal(out.get("NVDA"), 300_000n);
+  assert.equal(out.get("TSLA"), 300_000n);
 });

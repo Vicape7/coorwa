@@ -209,8 +209,10 @@ because it spans two chains and a bridge that takes minutes (`src/lib/payout-cyc
 
 1. **Allocate.** Each token's pool is shared over its holders by the day's samples, plus the
    creator's share, as one line per wallet per stock (`src/lib/rewards-ledger.ts`).
-2. **Bridge.** The run budgets its Solana costs, unwraps any wrapped COOK and bridges what it needs
-   over the Hyperlane warp route, keeping a small reserve on Cookie Chain.
+2. **Bridge.** The run budgets its Solana costs, unwraps any wrapped COOK and bridges what it owes
+   over the Hyperlane warp route, keeping a small reserve on Cookie Chain. Costs are paid from the
+   operator's spare SOL first, and what that does not cover comes out of this run's own payouts,
+   never out of another token's waiting pool.
 3. **Swap.** Jupiter turns the COOK into SOL for costs and into each stock being paid, in proportion
    to what is owed in each.
 4. **Send.** Each stock is split over its wallets in whole units, with no unit created or lost, five
