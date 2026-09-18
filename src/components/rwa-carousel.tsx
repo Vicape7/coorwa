@@ -126,6 +126,30 @@ function project(count: number, width: number, height: number, tile: number, off
   }));
 }
 
+/*
+ * The background colour of each hero logo, sampled off the edges of its file in public/rwa. A tile
+ * is painted in it before the image arrives, so a slow network shows the brand's own colour where
+ * the logo will be rather than a white square. A ticker missing here falls back to the surface.
+ */
+const TILE_COLOUR: Record<string, string> = {
+  AAPL: "#1a1a1a",
+  AMD: "#1a1a1a",
+  AMZN: "#f79807",
+  COIN: "#0051fe",
+  CRCL: "#1a1a1a",
+  GOOGL: "#f0f3fb",
+  HOOD: "#cbfe01",
+  META: "#ffffff",
+  MSFT: "#ffffff",
+  MSTR: "#f86807",
+  NFLX: "#1f1f1f",
+  NVDA: "#78b707",
+  PLTR: "#1a1a1a",
+  QQQ: "#000bd2",
+  SPY: "#001afe",
+  TSLA: "#ed0027",
+};
+
 /** Keyframes per full turn. Two degrees apart, close enough that the straight line between two of
  * them cannot be told from the arc. */
 const STEPS = 180;
@@ -265,7 +289,10 @@ export function RwaCarousel() {
             className="rwa-orbit-card"
             title={`${asset.name} · ${asset.symbol}`}
           >
-            <div className="rwa-orbit-face">
+            <div
+              className="rwa-orbit-face"
+              style={{ background: TILE_COLOUR[asset.ticker] ?? "var(--surface)" }}
+            >
               {/*
                 Local copies of the Backed logos with the xStocks "X" painted out, so the hero shows
                 the company marks alone. Everywhere else keeps `asset.logo`, where the X tells a
