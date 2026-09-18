@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-132%20passing-3fb950?style=flat-square" alt="132 tests passing">
+  <img src="https://img.shields.io/badge/tests-138%20passing-3fb950?style=flat-square" alt="138 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -259,7 +259,9 @@ user's own wallet.
   half a dozen pools has no shape worth pinning, so those builds are simulated first and read by
   their effect on the three balances the trade is about: the trade may spend no more than it is for,
   it has to return at least what the quote promised with Coorwa's own fee accounted for, and the
-  wallet's native balance may fall by no more than fees and one account's rent
+  wallet's native balance may fall by no more than fees and one account's rent. The two token
+  accounts must also stay under the wallet's control: a build that approves another key to spend
+  one later, or hands it or the right to close it to someone else, is refused
   (`src/lib/swap-check.ts`). Terminal swaps, both swap legs of a cross-chain route and the payout
   run's own Jupiter builds go through the same rule, so the operator wallet signs no more blindly
   than a user does. A build that fails any of it, or that will not simulate at all, is refused
@@ -298,7 +300,7 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 132 offline unit tests that run in a few seconds.
+sampler Worker, and 138 offline unit tests that run in a few seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
@@ -374,7 +376,7 @@ these in `.env.local`:
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 132 offline unit tests
+npm run test        # 138 offline unit tests
 npm run typecheck
 npm run build
 ```

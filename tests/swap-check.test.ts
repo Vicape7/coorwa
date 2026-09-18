@@ -8,7 +8,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PublicKey } from "@solana/web3.js";
-import { swapRefused, tokenAmount, walletBalance } from "../src/lib/swap-check";
+import {
+  authorityChanged,
+  swapRefused,
+  tokenAmount,
+  tokenAuthorities,
+  walletBalance,
+} from "../src/lib/swap-check";
 import { COOK_MINT } from "../src/lib/config";
 
 const honest = {
@@ -65,4 +71,95 @@ test("an account too short to be a token account holds nothing, rather than thro
   const account = new Uint8Array(165);
   new DataView(account.buffer).setBigUint64(64, 12_345n, true);
   assert.equal(tokenAmount(account), 12_345n);
+});
+
+// --- Who controls the account -------------------------------------------------------------------
+
+const wallet = new PublicKey("8B8yfsskpq8azPVyZeXNVh4NmQNSgJG9QfH8jDxFmjK7");
+const stranger = new PublicKey("3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R");
+
+/** A token account in the layout SPL and Token-2022 share, with a Token-2022 extension tail. */
+function account(opts: {
+  owner?: PublicKey;
+  amount?: bigint;
+  delegate?: PublicKey;
+  delegatedAmount?: bigint;
+  closeAuthority?: PublicKey;
+}): Uint8Array {
+  const data = new Uint8Array(182);
+  const view = new DataView(data.buffer);
+  data.set((opts.owner ?? wallet).toBytes(), 32);
+  view.setBigUint64(64, opts.amount ?? 1_000n, true);
+  if (opts.delegate) {
+    view.setUint32(72, 1, true);
+    data.set(opts.delegate.toBytes(), 76);
+  }
+  data[108] = 1; // initialized
+  view.setBigUint64(121, opts.delegatedAmount ?? 0n, true);
+  if (opts.closeAuthority) {
+    view.setUint32(129, 1, true);
+    data.set(opts.closeAuthority.toBytes(), 133);
+  }
+  return data;
+}
+
+test("a token account's authorities are read from the shared layout", () => {
+  const read = tokenAuthorities(
+    account({ delegate: stranger, delegatedAmount: 7n, closeAuthority: stranger }),
+  );
+  assert.deepEqual(read, {
+    owner: wallet.toBase58(),
+    delegate: stranger.toBase58(),
+    delegatedAmount: 7n,
+    closeAuthority: stranger.toBase58(),
+  });
+  assert.equal(tokenAuthorities(null), null);
+  assert.equal(tokenAuthorities(new Uint8Array(100)), null);
+});
+
+test("a swap that only moves the balance leaves control where it was", () => {
+  assert.equal(authorityChanged(account({}), account({ amount: 0n }), wallet), null);
+  // A delegate the wallet set up before this swap is not the swap's doing.
+  const kept = { delegate: stranger, delegatedAmount: 50n };
+  assert.equal(authorityChanged(account(kept), account(kept), wallet), null);
+});
+
+test("a swap that creates the output account creates it plain", () => {
+  assert.equal(authorityChanged(null, account({}), wallet), null);
+  assert.match(
+    authorityChanged(null, account({ delegate: stranger, delegatedAmount: 1n }), wallet)!,
+    /lets .* spend 1 units/,
+  );
+});
+
+test("a swap that approves somebody to spend the account later is refused", () => {
+  assert.match(
+    authorityChanged(account({}), account({ delegate: stranger, delegatedAmount: 2n ** 64n - 1n }), wallet)!,
+    new RegExp(`lets ${stranger.toBase58()} spend`),
+  );
+  // Raising an allowance the wallet already gave is the same thing.
+  assert.match(
+    authorityChanged(
+      account({ delegate: stranger, delegatedAmount: 5n }),
+      account({ delegate: stranger, delegatedAmount: 500n }),
+      wallet,
+    )!,
+    /spend 500 units/,
+  );
+});
+
+test("a swap that hands the account or its closing to somebody else is refused", () => {
+  assert.match(
+    authorityChanged(account({}), account({ owner: stranger }), wallet)!,
+    /hands the token account to/,
+  );
+  assert.match(
+    authorityChanged(account({}), account({ closeAuthority: stranger }), wallet)!,
+    /right to close/,
+  );
+});
+
+test("an account the swap closed has nothing left to take", () => {
+  assert.equal(authorityChanged(account({}), null, wallet), null);
+  assert.equal(authorityChanged(account({}), new Uint8Array(0), wallet), null);
 });

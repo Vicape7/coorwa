@@ -11,6 +11,10 @@
  * balances the trade is about plus the wallet's own native balance, and refuse anything that spends
  * more than the trade was for, returns less than the quote promised, or helps itself to what is left
  * in the wallet. A build that cannot even simulate is refused first, before it is signed.
+ *
+ * A balance is not all an account holds. An `Approve` leaves the amount where it is and lets another
+ * key spend it later, and `SetAuthority` can hand the whole account, or the right to close it, to
+ * somebody else. So the two token accounts' authorities are compared too, and any change refused.
  */
 import { PublicKey, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -37,6 +41,55 @@ export function swapRefused(e: SwapEffect): string | null {
   }
   if (e.nativeSpent > e.nativeAllowed) {
     return `it takes ${e.nativeSpent} of the wallet's own native units, over the ${e.nativeAllowed} fees and rent may cost`;
+  }
+  return null;
+}
+
+/**
+ * Who controls an SPL or Token-2022 token account, from the base layout both programmes share:
+ * owner at byte 32, the delegate as a COption at 72, its allowance at 121, the close authority as a
+ * COption at 129. Null for an account that does not exist or is too short to be one.
+ */
+export function tokenAuthorities(
+  data: Buffer | Uint8Array | null | undefined,
+): { owner: string; delegate: string | null; delegatedAmount: bigint; closeAuthority: string | null } | null {
+  if (!data || data.length < 165) return null;
+  const bytes = Uint8Array.from(data.subarray(0, 165));
+  const view = new DataView(bytes.buffer);
+  const key = (at: number) => new PublicKey(bytes.subarray(at, at + 32)).toBase58();
+  const option = (at: number) => (view.getUint32(at, true) === 0 ? null : key(at + 4));
+  return {
+    owner: key(32),
+    delegate: option(72),
+    delegatedAmount: view.getBigUint64(121, true),
+    closeAuthority: option(129),
+  };
+}
+
+/**
+ * Why a token account's control changed in a swap, or null when it did not.
+ *
+ * A swap has no reason to touch who may spend or close an account. The account must still belong to
+ * the wallet afterwards, and its delegate, allowance and close authority must be what they were, or
+ * none at all when the swap created the account. An account the swap closed has no authorities left
+ * to steal; the balance check already sees what its closing took.
+ */
+export function authorityChanged(
+  before: Buffer | Uint8Array | null | undefined,
+  after: Buffer | Uint8Array | null | undefined,
+  owner: PublicKey,
+): string | null {
+  const now = tokenAuthorities(after);
+  if (!now) return null;
+  const was = tokenAuthorities(before);
+  if (now.owner !== owner.toBase58()) return `it hands the token account to ${now.owner}`;
+  if (now.delegate !== (was?.delegate ?? null) || now.delegatedAmount !== (was?.delegatedAmount ?? 0n)) {
+    return now.delegate
+      ? `it lets ${now.delegate} spend ${now.delegatedAmount} units from the wallet later`
+      : "it changes who may spend from the token account";
+  }
+  if (now.closeAuthority !== (was?.closeAuthority ?? null)) {
+    return `it gives ${now.closeAuthority ?? "nobody"} the right to close the token account`;
   }
   return null;
 }
@@ -93,8 +146,9 @@ export function tokenAmount(data: Buffer | Uint8Array | null | undefined): bigin
 /**
  * Simulate a built swap and say why it must not be signed, or null when it may be.
  *
- * The three accounts read are the ones the trade is about and the one that pays for it. Anything
- * else the transaction touched it would have to name, and a balance it never names it cannot move.
+ * The three accounts read are the ones the trade is about and the one that pays for it: their
+ * balances, and for the two token accounts who controls them. Other token accounts the wallet holds
+ * are not read, so a build that moves one of those is not caught here.
  */
 export async function refuseBadSwap(
   conn: Connection,
@@ -127,6 +181,12 @@ export async function refuseBadSwap(
   // Native funds pay the fee and any rent out of the same balance the trade moves, so when one side
   // of the trade is the native one the allowance belongs to that side rather than to a third check.
   const touchesNative = watch.input.native || watch.output.native;
+
+  for (const [i, side] of [watch.input, watch.output].entries()) {
+    if (side.native) continue;
+    const changed = authorityChanged(before[i]?.data, decoded(i), watch.owner);
+    if (changed) return changed;
+  }
 
   return swapRefused({
     err: sim.value.err,
