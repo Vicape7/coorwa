@@ -3,18 +3,12 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { usd } from "@/lib/format";
-import { PAYOUT_MIN_USD } from "@/lib/config";
 import type { RewardsSummary } from "@/lib/rewards";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
-/**
- * "in 3h 12m", "Due now", or the cadence while nothing is waiting. A run that will send nothing,
- * because no wallet can reach the minimum yet, gets no countdown: counting down to it would promise
- * a payout that does not happen.
- */
-function untilRun(at: string | null, pays: boolean, now: number): string {
-  if (at && !pays) return `Waiting for $${PAYOUT_MIN_USD}`;
+/** "in 3h 12m", "Due now", or the cadence while nothing is waiting. */
+function untilRun(at: string | null, now: number): string {
   if (!at) return "Every 24h";
   const left = new Date(at).getTime() - now;
   if (left <= 60_000) return "Due now";
@@ -38,7 +32,7 @@ export function LiveStats() {
     { label: "Paid out", value: totals ? usd(totals.paidUsd) : null },
     { label: "Waiting to be paid", value: totals ? usd(totals.waitingUsd) : null },
     { label: "Tokens paired", value: totals ? String(totals.tokensPaired) : null },
-    { label: "Next payout", value: data && totals ? untilRun(data.nextRunAt, data.nextRunPays, now) : null },
+    { label: "Next payout", value: data && totals ? untilRun(data.nextRunAt, now) : null },
   ];
 
   return (
