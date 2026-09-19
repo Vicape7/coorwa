@@ -6,10 +6,13 @@ export const metadata = {
   description: "Launch a token on a COOK bonding curve and keep your share of every trade fee.",
 };
 
-export default function LaunchPage() {
+/** The terminal's New and Soon tabs link here with `?pool=`, so that curve opens ready to trade. */
+export default async function LaunchPage({ searchParams }: PageProps<"/launch">) {
+  const { pool } = await searchParams;
+
   return (
     <SiteShell>
-      <LaunchView />
+      <LaunchView initialPool={typeof pool === "string" ? pool : null} />
     </SiteShell>
   );
 }

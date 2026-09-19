@@ -5,7 +5,7 @@
  * sign a login message (no chain fee, nothing submitted) -> build -> wallet signs the transaction.
  */
 import { TokenMark } from "./token-mark";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -48,7 +48,7 @@ interface FeeBreakdown {
   buybackPct: number;
 }
 
-export function LaunchView() {
+export function LaunchView({ initialPool = null }: { initialPool?: string | null }) {
   const { data: cfg } = useSWR<{ config: LaunchpadConfig; fees: FeeBreakdown; error?: string }>(
     "/api/launchpad/config",
     fetcher,
@@ -59,10 +59,24 @@ export function LaunchView() {
     cookPriceUsd: number | null;
   }>("/api/launchpad/pools?status=all", fetcher, { refreshInterval: 20_000 });
 
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialPool);
 
   const pools = poolsData?.pools ?? [];
   const trading = pools.find((p) => p.pubkey === selected) ?? null;
+
+  // Arriving from the terminal with a curve picked: on a phone its panel sits below the create
+  // form, so bring it into view once the pool feed has it.
+  const tradeRef = useRef<HTMLDivElement>(null);
+  const arrived = useRef(false);
+  const opened = trading != null && trading.pubkey === initialPool;
+  useEffect(() => {
+    if (!opened || arrived.current) return;
+    arrived.current = true;
+    const panel = tradeRef.current;
+    if (panel && panel.getBoundingClientRect().top > window.innerHeight * 0.6) {
+      panel.scrollIntoView({ block: "start" });
+    }
+  }, [opened]);
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
@@ -85,7 +99,7 @@ export function LaunchView() {
           {cfg?.config && <Economics config={cfg.config} fees={cfg.fees} />}
         </div>
 
-        <div className="space-y-4">
+        <div ref={tradeRef} className="scroll-mt-24 space-y-4">
           {trading && (
             <CurvePanel
               pool={trading}
