@@ -200,6 +200,25 @@ export async function fetchPosition(
   return { shares: net > 0 ? uiToRaw(net, decimals) : "0", source: "trades" };
 }
 
+/**
+ * A wallet's own record on one curve, as the programme keeps it. After graduation the shares stay
+ * there until the wallet claims them as real tokens, which it has to do itself.
+ */
+export async function fetchCurvePosition(
+  pool: string,
+  wallet: string,
+): Promise<{ shares: string; graduatedTokensClaimed: boolean } | null> {
+  const res = await get<{
+    position?: { shares?: string | number; graduatedTokensClaimed?: boolean } | null;
+  }>(`/pools/${pool}/position/${wallet}`, "curve position");
+  const p = res.position;
+  if (!p) return null;
+  return {
+    shares: String(p.shares ?? "0").split(".")[0],
+    graduatedTokensClaimed: p.graduatedTokensClaimed === true,
+  };
+}
+
 // --- Session (the launch path is signature-gated) -----------------------------------------------
 
 /**
@@ -327,6 +346,14 @@ export async function buildClaimCreatorFeesTx(body: {
   unwrap?: boolean;
 }): Promise<BuiltTx> {
   return post("/tx/claim-creator-fees", body, "creator-fee claim build");
+}
+
+/** Shares on a graduated curve, turned into the token itself. Signed by the holder alone. */
+export async function buildClaimGraduatedTx(body: {
+  claimant: string;
+  pool: string;
+}): Promise<BuiltTx> {
+  return post("/tx/claim", { ...body, kind: "graduated_tokens" }, "graduated claim build");
 }
 
 // --- Derived -------------------------------------------------------------------------------------

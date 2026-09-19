@@ -22,7 +22,9 @@ const ALL = "ALL";
 
 /**
  * Where a pair stands. New and Soon are Coorwa launches still on their MomoSwap curve, split at 60%
- * of the graduation target. Migrated is every pair whose token trades in a real pool.
+ * of the graduation target. Migrated is every pair whose token trades in a real pool. A curve that
+ * has graduated stays in Soon, marked as migrating, until its pool shows up in Migrated, so a token
+ * never drops out of the terminal between the two.
  */
 type Stage = "new" | "soon" | "migrated";
 
@@ -66,7 +68,7 @@ export function PairList({
   );
   // Asked for only once a curve tab is open. The pair feed above still supplies the stock prices.
   const curves = useSWR<{ pools: CurvePool[]; cookPriceUsd: number | null }>(
-    onCurve ? "/api/launchpad/pools?status=live" : null,
+    onCurve ? "/api/launchpad/pools?status=all" : null,
     fetcher,
     { refreshInterval: 20_000, keepPreviousData: true },
   );
@@ -100,11 +102,17 @@ export function PairList({
 
   const curveRows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const pooled = new Set((data?.pairs ?? []).map((p) => p.base.mint));
+    const inStage = (p: CurvePool) => {
+      if (p.status === "graduated") return stage === "soon" && !pooled.has(p.tokenMint);
+      if (p.status !== "live") return false;
+      return stage === "soon" ? p.progress >= SOON_AT : p.progress < SOON_AT;
+    };
     const pools = (curves.data?.pools ?? []).filter(
       (p) =>
         p.ticker != null &&
         (ticker === ALL || p.ticker === ticker) &&
-        (stage === "soon" ? p.progress >= SOON_AT : p.progress < SOON_AT) &&
+        inStage(p) &&
         (!q ||
           p.symbol.toLowerCase().includes(q) ||
           p.name.toLowerCase().includes(q) ||
@@ -114,7 +122,7 @@ export function PairList({
     return stage === "soon"
       ? pools.sort((a, b) => b.progress - a.progress)
       : pools.sort((a, b) => b.launchTs - a.launchTs);
-  }, [curves.data, query, ticker, stage]);
+  }, [curves.data, data, query, ticker, stage]);
 
   const stockUsd = useMemo(
     () => new Map((data?.rwa ?? []).map((r) => [r.ticker, r.priceUsd])),
@@ -413,7 +421,17 @@ function curveHref(pool: CurvePool) {
   return `/terminal/${pool.tokenMint}-${(pool.ticker ?? "").toLowerCase()}`;
 }
 
-function Progress({ value }: { value: number }) {
+function Progress({ value, migrating }: { value: number; migrating: boolean }) {
+  if (migrating) {
+    return (
+      <span
+        className="pill pill-quiet text-[11px]"
+        title="Graduated. Its liquidity is moving to a pool, and the pair moves to Migrated once that pool is live."
+      >
+        Migrating
+      </span>
+    );
+  }
   return (
     <span className="flex items-center gap-2.5">
       <span className="h-1 flex-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
@@ -528,7 +546,7 @@ function CurveRow({
       <td className="num px-4 py-3 text-right text-primary">{ratio ? rwaRatio(ratio) : "—"}</td>
       <td className="num px-4 py-3 text-right text-muted">{ratio ? amount(1 / ratio) : "—"}</td>
       <td className="px-4 py-3">
-        <Progress value={pool.progress} />
+        <Progress value={pool.progress} migrating={pool.status === "graduated"} />
       </td>
       <td className="num px-4 py-3 text-right text-primary">
         {raised == null ? "—" : usd(raised)}
@@ -559,7 +577,7 @@ function MobileCurveRow({
             <span className="text-subtle"> / {pool.ticker}</span>
           </span>
           <span className="mt-1.5 block">
-            <Progress value={pool.progress} />
+            <Progress value={pool.progress} migrating={pool.status === "graduated"} />
           </span>
         </span>
         <span className="shrink-0 text-right">

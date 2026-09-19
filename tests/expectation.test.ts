@@ -60,6 +60,7 @@ const buyReferred = load<BuyRequest>("buy-referred");
 const buyPlain = load<BuyRequest>("buy-unreferred");
 const sell = load<{ seller: string; pool: string; tokenShares: string }>("sell");
 const claim = load<{ creator: string; pool: string }>("claim-creator-fees");
+const graduated = load<{ claimant: string; pool: string }>("claim-graduated-tokens");
 const create = load<CreateRequest>("create");
 const createDevBuy = load<CreateRequest>("create-dev-buy");
 
@@ -80,6 +81,14 @@ const claimIntent: LaunchpadIntent = {
   action: "claim-creator-fees",
   wallet: claim.request.creator,
   pool: claim.request.pool,
+};
+/** COTE, the token the captured graduated claim delivers. */
+const COTE = "BDEFBNgzV5MzCnF4ccWNYbjy5g8wh5Y76T4xkWn1momo";
+const graduatedIntent: LaunchpadIntent = {
+  action: "claim-graduated-tokens",
+  wallet: graduated.request.claimant,
+  pool: graduated.request.pool,
+  mint: COTE,
 };
 const createIntent = (c: Captured<CreateRequest>): LaunchpadIntent => ({
   action: "create",
@@ -157,6 +166,7 @@ test("every captured build passes against the request that produced it", async (
   await verifyLaunchpadBuild(buyPlain.response, buyIntent(buyPlain));
   await verifyLaunchpadBuild(sell.response, sellIntent);
   await verifyLaunchpadBuild(claim.response, claimIntent);
+  await verifyLaunchpadBuild(graduated.response, graduatedIntent);
   await verifyLaunchpadBuild(create.response, createIntent(create));
   await verifyLaunchpadBuild(createDevBuy.response, createIntent(createDevBuy));
 });
@@ -329,6 +339,27 @@ test("a claim on a different curve is refused", async () => {
     claim.response,
     { ...claimIntent, pool: stranger.toBase58() } as LaunchpadIntent,
     /curve other than/,
+  );
+});
+
+test("a graduated claim on a different curve, or for a different token, is refused", async () => {
+  await refused(
+    graduated.response,
+    { ...graduatedIntent, pool: stranger.toBase58() } as LaunchpadIntent,
+    /curve other than/,
+  );
+  await refused(
+    graduated.response,
+    { ...graduatedIntent, mint: stranger.toBase58() } as LaunchpadIntent,
+    /associated token program|token other than/,
+  );
+});
+
+test("a creator-fee claim may not open a token account for anything but COOK", async () => {
+  await refused(
+    graduated.response,
+    { action: "claim-creator-fees", wallet: graduatedIntent.wallet, pool: graduatedIntent.pool },
+    /associated token program/,
   );
 });
 

@@ -1,0 +1,105 @@
+{
+  "request": {
+    "claimant": "3E7y8AHawGqAUJV8V2zBFbxWuyttEAjGtDoD6BypjCA3",
+    "pool": "4xTT9ppfRykVxwofgFWCdiGFNLJiUZyDHLGi9vDGNkhJ",
+    "kind": "graduated_tokens"
+  },
+  "response": {
+    "success": true,
+    "transactionBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAcMIRPNfpWt8HPqXDIWE3w1yyTQx1TRbvraJ3001HW0ARg6x+nU6xYym9bZ8C/jZBWpudmulm4WSCC5CPe2WVWFJUltoNUJwYv7wWQZX0kqBuKfnfNNpfTqfJqplDP5hVlX8V5PfCOpkmJQdYLIlVv1MWeaNgHdg8a3m3lRGI40eTMKU/VQzY7v69JNXDihG1O0Vdo9msSIKDVrROgq882aawAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEoHvnWfKiV7jvWOps6MKwapGMLj+q/OBQdpJtcMxwj6MlyWPTiSJ8bs9ECkUjg2DC1oTmdr/EIQEjnvY2+n4WZe20IVXU8Fpkh1DEId0JK2gBuX+2RIQ19/OCHvTzwBeAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAALenD527ddiX7YUHBzdmF/xzIlw6R8QPZ+6qROkC0s1Abd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpxddK1R8OcuKJBklWiBED32fJOE/FVIf3binS7p5evTYDCQAFAkANAwAHBgADAAgFCwEBCggAAQYCBAMICwhVOWfwGeNcSw==",
+    "blockhash": "EKHit4ASH9h22AJLWgmnaTp7DwPkoYCNf1rBEstweFdF",
+    "lastValidBlockHeight": 25544708,
+    "expectation": {
+      "feePayer": "3E7y8AHawGqAUJV8V2zBFbxWuyttEAjGtDoD6BypjCA3",
+      "instructions": [
+        {
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "accounts": [],
+          "dataHash": "9bd1ac5b1b26ab8ca5f9def111cf4188b3da45e621b83ae858ed018aef8f96f1"
+        },
+        {
+          "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+          "accounts": [
+            {
+              "pubkey": "3E7y8AHawGqAUJV8V2zBFbxWuyttEAjGtDoD6BypjCA3",
+              "signer": true,
+              "writable": true
+            },
+            {
+              "pubkey": "HFCfW9162Jn98fNnFUkZdQfKgrX7A55jXRx6AqLe3SfL",
+              "signer": false,
+              "writable": true
+            },
+            {
+              "pubkey": "3E7y8AHawGqAUJV8V2zBFbxWuyttEAjGtDoD6BypjCA3",
+              "signer": true,
+              "writable": true
+            },
+            {
+              "pubkey": "BDEFBNgzV5MzCnF4ccWNYbjy5g8wh5Y76T4xkWn1momo",
+              "signer": false,
+              "writable": false
+            },
+            {
+              "pubkey": "11111111111111111111111111111111",
+              "signer": false,
+              "writable": false
+            },
+            {
+              "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "signer": false,
+              "writable": false
+            }
+          ],
+          "dataHash": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+        },
+        {
+          "programId": "momoL7wu4TrXjnXMLCLzGsbx8Pm7XGgoYo7FVqDoqcw",
+          "accounts": [
+            {
+              "pubkey": "3E7y8AHawGqAUJV8V2zBFbxWuyttEAjGtDoD6BypjCA3",
+              "signer": true,
+              "writable": true
+            },
+            {
+              "pubkey": "4xTT9ppfRykVxwofgFWCdiGFNLJiUZyDHLGi9vDGNkhJ",
+              "signer": false,
+              "writable": true
+            },
+            {
+              "pubkey": "2FFFmX2bYMkAYJQaNrZVfTjLs5Et2TScdmqQfiYy3h1o",
+              "signer": false,
+              "writable": false
+            },
+            {
+              "pubkey": "5wdidQFHPN44z7LdSGpcDbB6KnWgKhs1PPbCEaWeH3dx",
+              "signer": false,
+              "writable": true
+            },
+            {
+              "pubkey": "hKL9RvqfuA97x1hkjnruQhfCyFzhAYGgayvHCLR3Ssc",
+              "signer": false,
+              "writable": true
+            },
+            {
+              "pubkey": "HFCfW9162Jn98fNnFUkZdQfKgrX7A55jXRx6AqLe3SfL",
+              "signer": false,
+              "writable": true
+            },
+            {
+              "pubkey": "BDEFBNgzV5MzCnF4ccWNYbjy5g8wh5Y76T4xkWn1momo",
+              "signer": false,
+              "writable": false
+            },
+            {
+              "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              "signer": false,
+              "writable": false
+            }
+          ],
+          "dataHash": "6a7af058124548d13ce4b0d0f8fbd44d2e77753c7b36ac7e131cacf651ff5c5d"
+        }
+      ]
+    }
+  }
+}

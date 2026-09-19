@@ -54,7 +54,10 @@ export function CurvePairView({ initial }: { initial: CurvePair }) {
               {pair.quote.ticker}
             </h1>
             <p className="mt-1.5 text-[13px] text-muted">
-              {pair.base.name} priced in {pair.quote.name} shares · on the launchpad curve
+              {pair.base.name} priced in {pair.quote.name} shares ·{" "}
+              {pool.status === "graduated"
+                ? "graduated, its pool opens here once it is live"
+                : "on the launchpad curve"}
             </p>
           </div>
         </div>

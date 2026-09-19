@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-143%20passing-3fb950?style=flat-square" alt="143 tests passing">
+  <img src="https://img.shields.io/badge/tests-145%20passing-3fb950?style=flat-square" alt="145 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -110,7 +110,8 @@ are.
         <li>Candles built from executed fills, not standing quotes, so the chart is genuine performance against the stock.</li>
         <li>Swaps quoted on both Cookie Chain routers, Cookiebox and Candy Shop. The better fill wins.</li>
         <li>A pair that has not traded in 24 hours shows no return, never a fake one from a flat price against a moving stock.</li>
-        <li>New, Soon and Migrated: launches still on their curve, those past 60% of graduation, and pairs trading in a real pool. A curve pair has its own page too, priced from the curve's reserves and traded on the curve.</li>
+        <li>New, Soon and Migrated: launches still on their curve, those past 60% of graduation, and pairs trading in a real pool. A curve pair has its own page too, priced from the curve's reserves and traded on the curve. A graduated curve shows as migrating until its pool is live.</li>
+        <li>After graduation, whatever a wallet bought on the curve is claimed on the pair's own page, with one button, checked before signing like every launchpad transaction.</li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -301,7 +302,7 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 143 offline unit tests that run in a few seconds.
+sampler Worker, and 145 offline unit tests that run in a few seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
@@ -378,7 +379,7 @@ these in `.env.local`:
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 143 offline unit tests
+npm run test        # 145 offline unit tests
 npm run typecheck
 npm run build
 ```

@@ -6,6 +6,7 @@ import { RatioChart } from "./ratio-chart";
 import { SwapPanel } from "./swap-panel";
 import { RecentTrades } from "./recent-trades";
 import { TokenMark } from "./token-mark";
+import { GraduatedClaim } from "./graduated-claim";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
 import {
   REWARD_SPLIT,
@@ -108,7 +109,8 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
         </div>
 
         <div className="contents lg:block lg:space-y-4">
-          <div className="order-2 min-w-0 lg:contents">
+          <div className="order-2 min-w-0 space-y-4 lg:contents">
+            <GraduatedClaim mint={pair.base.mint} symbol={pair.base.symbol} />
             <SwapPanel pair={pair} />
           </div>
 

@@ -75,6 +75,7 @@ export type LaunchpadIntent =
   | { action: "buy"; wallet: string; pool: string; paymentRaw: string; referrer: string | null }
   | { action: "sell"; wallet: string; pool: string; sharesRaw: string }
   | { action: "claim-creator-fees"; wallet: string; pool: string }
+  | { action: "claim-graduated-tokens"; wallet: string; pool: string; mint: string }
   | {
       action: "create";
       wallet: string;
@@ -101,6 +102,8 @@ export const LAUNCHPAD_IX = {
   buy: "66063d1201daebea",
   sell: "33e685a4017f83ad",
   claim_creator_fees: "00177dea9c768659",
+  /** Turns a wallet's curve shares into real tokens once the curve has graduated. */
+  claim_graduated_tokens: "553967f019e35c4b",
   /**
    * An instruction with no arguments that the launchpad puts in front of every buy and sell,
    * signed by the trader and touching the pool. Its name is not published and was not among four
@@ -295,7 +298,10 @@ function matchesIntent(
     if (program === ATA) {
       const [payer, account, owner, mint] = ix.keys.map((k) => k.pubkey);
       const create = ix.data.length === 0 || (ix.data.length === 1 && ix.data[0] <= 1);
-      if (!create || !payer?.equals(wallet) || !owner || !mint?.equals(NATIVE_MINT)) {
+      // A graduated claim delivers the token itself, so it may open the wallet's account for it.
+      const claimed =
+        intent.action === "claim-graduated-tokens" && mint?.toBase58() === intent.mint;
+      if (!create || !payer?.equals(wallet) || !owner || !(mint?.equals(NATIVE_MINT) || claimed)) {
         throw new BuildMismatchError(
           "the launchpad's transaction asks the associated token program for more than opening a COOK account",
         );
@@ -418,6 +424,19 @@ function matchesAction(
       const claim = single(LAUNCHPAD_IX.claim_creator_fees, "claim");
       touching(launchpad, intent.pool);
       if (claim.data.length !== 8) throw unreadable("claim");
+      return 0n;
+    }
+
+    case "claim-graduated-tokens": {
+      only(LAUNCHPAD_IX.claim_graduated_tokens);
+      const claim = single(LAUNCHPAD_IX.claim_graduated_tokens, "claim");
+      touching(launchpad, intent.pool);
+      if (claim.data.length !== 8) throw unreadable("claim");
+      if (!claim.keys.some((k) => k.pubkey.toBase58() === intent.mint)) {
+        throw new BuildMismatchError(
+          `the launchpad's claim delivers a token other than ${shortAddr(intent.mint)}`,
+        );
+      }
       return 0n;
     }
 

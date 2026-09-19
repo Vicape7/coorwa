@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { buildBuyTx, buildSellTx, buildClaimCreatorFeesTx } from "@/lib/launchpad";
+import {
+  buildBuyTx,
+  buildSellTx,
+  buildClaimCreatorFeesTx,
+  buildClaimGraduatedTx,
+} from "@/lib/launchpad";
 import { ADDRESS_RE, COOK_DECIMALS, COORWA_REFERRER } from "@/lib/config";
 import { uiToRaw } from "@/lib/format";
 
@@ -23,6 +28,11 @@ const Body = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("claim-creator-fees"),
+    wallet: z.string().regex(ADDRESS_RE, "not an address"),
+    pool: z.string().regex(ADDRESS_RE, "not an address"),
+  }),
+  z.object({
+    action: z.literal("claim-graduated-tokens"),
     wallet: z.string().regex(ADDRESS_RE, "not an address"),
     pool: z.string().regex(ADDRESS_RE, "not an address"),
   }),
@@ -63,6 +73,10 @@ export async function POST(req: Request) {
       return NextResponse.json(
         await buildSellTx({ seller: b.wallet, pool: b.pool, tokenShares: b.shares, unwrap: true }),
       );
+    }
+
+    if (b.action === "claim-graduated-tokens") {
+      return NextResponse.json(await buildClaimGraduatedTx({ claimant: b.wallet, pool: b.pool }));
     }
 
     return NextResponse.json(
