@@ -52,10 +52,13 @@ export function RatioChart({
   mint,
   ticker,
   baseSymbol,
+  pool,
 }: {
   mint: string;
   ticker: string;
   baseSymbol: string;
+  /** A launchpad curve to chart, for a token whose fills are not in the pool feed yet. */
+  pool?: string;
 }) {
   const theme = useTheme();
   const holder = useRef<HTMLDivElement>(null);
@@ -156,7 +159,8 @@ export function RatioChart({
     const load = async () => {
       try {
         const res = await fetch(
-          `/api/candles?mint=${mint}&ticker=${ticker}&interval=${interval}&mode=ratio`,
+          `/api/candles?mint=${mint}&ticker=${ticker}&interval=${interval}&mode=ratio` +
+            (pool ? `&pool=${pool}` : ""),
         );
         const json = (await res.json()) as {
           candles?: Candle[];
@@ -215,7 +219,7 @@ export function RatioChart({
       alive = false;
       window.clearInterval(id);
     };
-  }, [mint, ticker, interval, key]);
+  }, [mint, ticker, interval, key, pool]);
 
   return (
     <div className="card flex h-full min-h-[420px] flex-col overflow-hidden">

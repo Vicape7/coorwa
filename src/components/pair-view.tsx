@@ -113,7 +113,11 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
           </div>
 
           <div className="order-4 min-w-0 lg:contents">
-            <HolderRewards pair={pair} />
+            <HolderRewards
+              mint={pair.base.mint}
+              symbol={pair.base.symbol}
+              stock={pair.quote.symbol}
+            />
           </div>
 
           <div className="order-5 min-w-0 lg:contents">
@@ -125,7 +129,7 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
   );
 }
 
-function Metric({
+export function Metric({
   label,
   value,
   sub,
@@ -164,9 +168,18 @@ function Metric({
  * What holding this token pays, in its pair's stock. The reason a pair exists at all, so it sits
  * right under the swap.
  */
-function HolderRewards({ pair }: { pair: CoorwaPair }) {
+export function HolderRewards({
+  mint,
+  symbol,
+  stock,
+}: {
+  mint: string;
+  symbol: string;
+  /** The xStock holders are paid in, e.g. "NVDAx". */
+  stock: string;
+}) {
   const { data } = useSWR<{ configured: boolean; pool: RewardPool | null; nextRunAt: string | null }>(
-    `/api/rewards/token?mint=${pair.base.mint}`,
+    `/api/rewards/token?mint=${mint}`,
     fetcher,
     { refreshInterval: 60_000 },
   );
@@ -178,8 +191,8 @@ function HolderRewards({ pair }: { pair: CoorwaPair }) {
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
         {/* Written out rather than rounded: 62.5 and 37.5 rounded separately read as 63 and 38,
             which adds up to 101% of a fee. */}
-        {REWARD_SPLIT.holders * 100}% of every fee Coorwa earns on {pair.base.symbol} is paid once
-        a day to wallets holding at least {usd(HOLDER_MIN_USD)} of it, in {pair.quote.symbol} sent
+        {REWARD_SPLIT.holders * 100}% of every fee Coorwa earns on {symbol} is paid once a day to
+        wallets holding at least {usd(HOLDER_MIN_USD)} of it, in {stock} sent
         to the same address on Solana. Nothing to claim. The creator is paid{" "}
         {REWARD_SPLIT.creator * 100}% of the fees and is not counted as a holder.
       </p>
@@ -244,7 +257,7 @@ function PairFacts({ pair }: { pair: CoorwaPair }) {
   );
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+export function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <dt className="text-muted">{label}</dt>
@@ -253,7 +266,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+export function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <a
       href={href}

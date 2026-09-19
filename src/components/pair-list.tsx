@@ -6,7 +6,7 @@ import useSWR from "swr";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { usd, amount, rwaRatio, pct } from "@/lib/format";
 import { curvePrice } from "@/lib/curve";
-import { COOK_DECIMALS } from "@/lib/config";
+import { COOK_DECIMALS, CURVE_TOKEN_DECIMALS } from "@/lib/config";
 import type { CoorwaPair, PairUniverse } from "@/lib/pairs";
 import type { LaunchpadPool } from "@/lib/launchpad";
 import { TokenMark } from "./token-mark";
@@ -34,9 +34,6 @@ const STAGES: [Stage, string][] = [
 
 /** Share of the graduation target a curve needs to count as about to migrate. */
 const SOON_AT = 0.6;
-
-/** MomoSwap mints every launchpad token with six decimals. */
-const CURVE_TOKEN_DECIMALS = 6;
 
 type CurvePool = LaunchpadPool & { progress: number; logo: string | null; ticker: string | null };
 
@@ -411,9 +408,9 @@ function age(launchTs: number): string {
   return `${Math.floor(s / 86_400)}d`;
 }
 
-/** A curve token has no pair page until it has a pool, so its row opens it on the launchpad. */
+/** Curve pairs are addressed by mint, never by symbol, so a copycat name cannot take the link. */
 function curveHref(pool: CurvePool) {
-  return `/launch?pool=${pool.pubkey}`;
+  return `/terminal/${pool.tokenMint}-${(pool.ticker ?? "").toLowerCase()}`;
 }
 
 function Progress({ value }: { value: number }) {

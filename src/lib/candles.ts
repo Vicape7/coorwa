@@ -121,6 +121,24 @@ export async function fetchRwaCandles(
   });
 }
 
+/**
+ * A price series' close in force at a moment: the last candle that opened at or before it. A moment
+ * older than the series takes the first candle's open, and with no series at all the fallback (the
+ * current price) stands in, so an outage of the series shows today's rate rather than nothing.
+ */
+export function closeAt(candles: readonly Candle[], ts: number, fallback: number | null) {
+  if (candles.length === 0) return fallback;
+  if (ts < candles[0].time) return candles[0].open;
+  let lo = 0;
+  let hi = candles.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (candles[mid].time <= ts) lo = mid;
+    else hi = mid - 1;
+  }
+  return candles[lo].close;
+}
+
 // --- The ratio -------------------------------------------------------------------------------------
 
 /** The most buckets a ratio chart returns. Enough for any interval, small enough to draw. */

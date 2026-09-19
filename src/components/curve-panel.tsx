@@ -45,7 +45,8 @@ export function CurvePanel({
   pool: LaunchpadPool;
   decimals: number;
   cookPriceUsd: number | null;
-  onClose: () => void;
+  /** Shown as a Close link when the panel sits in a list; a pair page leaves it out. */
+  onClose?: () => void;
 }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
@@ -216,12 +217,14 @@ export function CurvePanel({
             {cookPriceUsd ? ` · ${usd(priceCook * cookPriceUsd)}` : ""} per token
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="ml-auto shrink-0 text-[12px] text-muted transition-colors hover:text-[color:var(--text-primary)]"
-        >
-          Close
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-auto shrink-0 text-[12px] text-muted transition-colors hover:text-[color:var(--text-primary)]"
+          >
+            Close
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 border-b border-hair">

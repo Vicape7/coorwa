@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ratioCandles, type Candle } from "../src/lib/candles";
+import { closeAt, ratioCandles, type Candle } from "../src/lib/candles";
 import { tinyNumber } from "../src/lib/format";
 
 const H = 3600;
@@ -57,4 +57,17 @@ test("tiny numbers print with a subscript zero count", () => {
   assert.equal(tinyNumber(9.99996e-9), "0.0₇1");
   assert.equal(tinyNumber(1.5e-12), "0.0₁₁15");
   assert.equal(tinyNumber(0.0123), "0.0123");
+});
+
+test("a fill is valued at the close of the candle it traded in", () => {
+  const cook = [candle(0, 1, 1, 1, 2), candle(H, 2, 2, 2, 3), candle(2 * H, 3, 3, 3, 4)];
+
+  assert.equal(closeAt(cook, 30, 9), 2);
+  assert.equal(closeAt(cook, H, 9), 3);
+  assert.equal(closeAt(cook, 5 * H, 9), 4);
+  // Older than the series: where the series starts, not the fallback.
+  assert.equal(closeAt(cook, -10, 9), 1);
+  // No series at all: the fallback.
+  assert.equal(closeAt([], 30, 9), 9);
+  assert.equal(closeAt([], 30, null), null);
 });

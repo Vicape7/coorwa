@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { fetchTrades } from "@/lib/candles";
+import { curveFills } from "@/lib/curve-pairs";
+import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
 const Query = z.object({
   mint: z.string().min(32).max(44),
   limit: z.coerce.number().int().min(1).max(500).default(120),
+  /** A bonding curve whose fills to list instead of the pool feed's. */
+  pool: z.string().regex(ADDRESS_RE).optional(),
 });
 
 export async function GET(req: Request) {
@@ -17,9 +21,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const trades = await fetchTrades(parsed.data.mint, parsed.data.limit);
+    const { mint, limit, pool } = parsed.data;
+    const trades = pool ? await curveFills(pool, mint) : await fetchTrades(mint, limit);
     return NextResponse.json(
-      { trades: trades.slice(0, parsed.data.limit) },
+      { trades: trades.slice(0, limit) },
       { headers: { "cache-control": "public, s-maxage=10, stale-while-revalidate=30" } },
     );
   } catch (e) {

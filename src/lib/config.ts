@@ -147,6 +147,8 @@ export const COORWA_OPERATOR = process.env.NEXT_PUBLIC_COORWA_OPERATOR?.trim() |
  */
 export const COORWA_REFERRER = process.env.COORWA_REFERRER?.trim() || COORWA_OPERATOR;
 export const MOMOSWAP_TRADE_FEE_BPS = 100;
+/** MomoSwap mints every launchpad token with six decimals. */
+export const CURVE_TOKEN_DECIMALS = 6;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
 /**

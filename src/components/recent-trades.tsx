@@ -12,16 +12,20 @@ export function RecentTrades({
   baseSymbol,
   rwaPriceUsd,
   ticker,
+  pool,
 }: {
   mint: string;
   baseSymbol: string;
   rwaPriceUsd: number;
   ticker: string;
+  /** A launchpad curve, for a token whose fills are not in the pool feed yet. */
+  pool?: string;
 }) {
-  const { data, isLoading } = useSWR<{ trades: Trade[] }>(`/api/trades?mint=${mint}`, fetcher, {
-    refreshInterval: 15_000,
-    keepPreviousData: true,
-  });
+  const { data, isLoading } = useSWR<{ trades: Trade[] }>(
+    `/api/trades?mint=${mint}${pool ? `&pool=${pool}` : ""}`,
+    fetcher,
+    { refreshInterval: 15_000, keepPreviousData: true },
+  );
 
   const trades = data?.trades ?? [];
 
