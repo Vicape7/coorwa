@@ -35,6 +35,8 @@ import { fetchRwaPrices, type RwaQuote } from "./jupiter";
 import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
+import { fetchPools } from "./launchpad";
+import { logosByMint } from "./token-logos";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -250,6 +252,7 @@ export async function buildUniverse(opts?: {
   }
 
   pairs.sort((a, b) => b.base.liquidityUsd - a.base.liquidityUsd);
+  await fillMissingLogos(pairs);
 
   return {
     pairs: uniqueSlugs(pairs),
@@ -258,6 +261,20 @@ export async function buildUniverse(opts?: {
     skipped,
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * The registry has no logo for some tokens, a graduated launchpad token among them, long after it
+ * has a pool. Those are looked up the way lists of launchpad tokens do it: a logo stored earlier,
+ * then the token's own metadata, found through its launchpad pool when it came from one.
+ */
+async function fillMissingLogos(pairs: CoorwaPair[]): Promise<void> {
+  const missing = [...new Set(pairs.filter((p) => !p.base.logo).map((p) => p.base.mint))];
+  if (missing.length === 0) return;
+  const launchpad = await fetchPools("all").catch(() => []);
+  const uris = new Map(launchpad.map((p) => [p.tokenMint, p.uri]));
+  const logos = await logosByMint(missing.map((mint) => ({ mint, uri: uris.get(mint) })));
+  for (const p of pairs) p.base.logo ??= logos.get(p.base.mint) ?? null;
 }
 
 /** Resolve a slug like "cookhouse-nvda", or "<mint>-nvda", to a single pair. */
