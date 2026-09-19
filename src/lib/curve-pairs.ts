@@ -9,14 +9,12 @@
  * A curve pair is addressed by its mint (`<mint>-<ticker>`), never by its symbol. A symbol is free
  * text, and a new launch calling itself after an existing pair would otherwise take over its link.
  */
-import { COOK_DECIMALS, COOK_SOLANA_MINT, CURVE_TOKEN_DECIMALS } from "./config";
+import { COOK_DECIMALS, CURVE_TOKEN_DECIMALS } from "./config";
 import { fetchCookPriceUsd } from "./cookiescan";
 import { curvePrice } from "./curve";
-import { closeAt, fetchRwaCandles, type Candle, type Trade } from "./candles";
 import { fetchRwaPrices } from "./jupiter";
 import {
   fetchPools,
-  fetchPoolTrades,
   graduationProgress,
   type LaunchpadPool,
 } from "./launchpad";
@@ -109,38 +107,4 @@ export async function findCurvePair(slug: string): Promise<CurvePair | null> {
     inverse: priceUsd ? stock.priceUsd / priceUsd : null,
     raisedUsd: cookPriceUsd ? raisedCook * cookPriceUsd : null,
   };
-}
-
-/**
- * A curve's fills in the shape the pool feed uses, newest first. Each fill is valued in USD at COOK's
- * price in the hour it traded, so the chart and the list show what it was worth then.
- */
-export async function curveFills(pool: string, mint: string): Promise<Trade[]> {
-  const [trades, cook, cookNow] = await Promise.all([
-    fetchPoolTrades(pool),
-    fetchRwaCandles(COOK_SOLANA_MINT, "1h", 1000).catch(() => [] as Candle[]),
-    fetchCookPriceUsd(),
-  ]);
-  const series = [...cook].filter((c) => c.close > 0).sort((a, b) => a.time - b.time);
-
-  return trades
-    .map((t, i) => {
-      const cookUsd = closeAt(series, t.ts, cookNow) ?? 0;
-      return {
-        id: i,
-        mint,
-        ts: t.ts,
-        price: t.price,
-        price_usd: t.price * cookUsd,
-        base_amount: t.tokens,
-        quote_amount: t.payment,
-        side: t.side,
-        tx: t.sig,
-        maker: t.trader,
-        pool,
-        venue: "MomoSwap curve",
-        value_usd: t.payment * cookUsd,
-      };
-    })
-    .sort((a, b) => b.ts - a.ts);
 }

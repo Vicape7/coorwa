@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  fetchTrades,
   tradesToCandles,
   fetchRwaCandles,
   ratioCandles,
   INTERVAL_SECONDS,
 } from "@/lib/candles";
 import { rwaByTicker } from "@/lib/rwa";
-import { curveFills } from "@/lib/curve-pairs";
+import { curveFills, tokenFills } from "@/lib/chain-fills";
 import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +37,7 @@ export async function GET(req: Request) {
   if (!asset) return NextResponse.json({ error: `unknown RWA: ${ticker}` }, { status: 404 });
 
   try {
-    const trades = pool ? await curveFills(pool, mint) : await fetchTrades(mint, 1000);
+    const trades = pool ? await curveFills(pool, mint) : await tokenFills(mint, 1000);
     const tokenCandles = tradesToCandles(trades, interval);
 
     if (mode === "usd") {
