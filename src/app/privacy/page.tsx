@@ -103,12 +103,12 @@ export default function PrivacyPage() {
               <p>
                 Questions about your data go to{" "}
                 <a
-                  href="https://x.com/xVicape"
+                  href="https://x.com/coorwadotfun"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary underline underline-offset-4"
                 >
-                  @xVicape on X
+                  @coorwadotfun on X
                 </a>
                 .
               </p>

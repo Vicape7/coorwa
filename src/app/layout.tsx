@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   // The large card, so a link on X shows the banner rather than a small square beside the text.
-  twitter: { card: "summary_large_image" },
+  twitter: { card: "summary_large_image", site: "@coorwadotfun" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

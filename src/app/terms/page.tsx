@@ -190,12 +190,12 @@ export default function TermsPage() {
               <p>
                 Questions about these terms or about Coorwa go to{" "}
                 <a
-                  href="https://x.com/xVicape"
+                  href="https://x.com/coorwadotfun"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary underline underline-offset-4"
                 >
-                  @xVicape on X
+                  @coorwadotfun on X
                 </a>
                 .
               </p>
