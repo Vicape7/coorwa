@@ -43,7 +43,7 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 export function RewardsCalculator() {
   const [venue, setVenue] = useState<Venue>("terminal");
-  const [volume, setVolume] = useState(5_000);
+  const [volume, setVolume] = useState(10_000);
   const [days, setDays] = useState(30);
   const [wallets, setWallets] = useState(10);
   const [share, setShare] = useState(10);
