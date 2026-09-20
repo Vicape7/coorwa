@@ -8,7 +8,7 @@ import {
   COORWA_SWAP_FEE_BPS,
   MOMOSWAP_REFERRAL_SHARE,
   MOMOSWAP_TRADE_FEE_BPS,
-  PAIR_LISTING_USD,
+  HOLDER_MIN_USD,
 } from "@/lib/config";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { PillSelect } from "./ui/pill-select";
@@ -16,8 +16,9 @@ import { GlassEffect } from "./ui/liquid-glass";
 import { SlidingNumber } from "./ui/sliding-number";
 
 /**
- * "What would I get?" on the landing page: sliders for how much a token trades through Coorwa and
- * how much of it you hold, and the split that follows, in dollars and in the stock you would take.
+ * "What would I get?" on the landing page: sliders for how much a token trades through Coorwa, how
+ * many wallets clear the $5 floor and how much of what they hold is yours, and the split that
+ * follows, in dollars and in the stock you would take.
  *
  * Every rate comes from config, the same constants the daily payout runs on, so the page cannot
  * drift from what is actually paid. It is an estimate by construction: a real run pays on the
@@ -25,14 +26,14 @@ import { SlidingNumber } from "./ui/sliding-number";
  */
 
 const VENUES = {
+  terminal: {
+    label: "Terminal swap",
+    bps: COORWA_SWAP_FEE_BPS,
+  },
   launchpad: {
     label: "Launchpad curve",
     // MomoSwap's referral share of its own curve fee. Costs the trader nothing extra.
     bps: MOMOSWAP_TRADE_FEE_BPS * MOMOSWAP_REFERRAL_SHARE,
-  },
-  terminal: {
-    label: "Terminal swap",
-    bps: COORWA_SWAP_FEE_BPS,
   },
 } as const;
 
@@ -41,12 +42,26 @@ type Venue = keyof typeof VENUES;
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 export function RewardsCalculator() {
-  const [venue, setVenue] = useState<Venue>("launchpad");
-  const [volume, setVolume] = useState(2_000);
+  const [venue, setVenue] = useState<Venue>("terminal");
+  const [volume, setVolume] = useState(5_000);
   const [days, setDays] = useState(30);
-  const [share, setShare] = useState(5);
-  const [pairs, setPairs] = useState(0);
+  const [wallets, setWallets] = useState(10);
+  const [share, setShare] = useState(10);
   const [ticker, setTicker] = useState("NVDA");
+
+  /*
+   * A pool is shared out by what each wallet holds, never evenly, so the two holder sliders are
+   * free of each other - except at the ends: one wallet over the floor takes the whole pool, and
+   * anything less than the whole pool needs a second wallet to take the rest.
+   */
+  function pickWallets(n: number) {
+    setWallets(n);
+    if (n === 1) setShare(100);
+  }
+  function pickShare(pct: number) {
+    setShare(pct);
+    if (pct < 100 && wallets === 1) setWallets(2);
+  }
 
   /*
    * The prices take a few seconds, sixteen quotes behind one route, and the calculator sits well
@@ -76,9 +91,10 @@ export function RewardsCalculator() {
   const price = data?.prices?.[ticker];
 
   const fees = (volume * days * VENUES[venue].bps) / 10_000;
-  const holders = fees * REWARD_SPLIT.holders + pairs * PAIR_LISTING_USD;
+  const holders = fees * REWARD_SPLIT.holders;
   const creator = fees * REWARD_SPLIT.creator;
   const you = (holders * share) / 100;
+  const eachOther = wallets > 1 ? (holders - you) / (wallets - 1) : 0;
 
   return (
     <div ref={boxRef}>
@@ -123,20 +139,20 @@ export function RewardsCalculator() {
               onChange={setDays}
             />
             <Slider
-              id="calc-share"
-              label="Your share of what holders hold"
-              display={`${share}%`}
-              scale={logScale(0.1, 50, (n) => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n)))}
-              value={share}
-              onChange={setShare}
+              id="calc-wallets"
+              label={`Wallets holding over $${HOLDER_MIN_USD}`}
+              display={`${wallets} ${wallets === 1 ? "wallet" : "wallets"}`}
+              scale={linearScale(1, 20)}
+              value={wallets}
+              onChange={pickWallets}
             />
             <Slider
-              id="calc-pairs"
-              label="Pair paid for by the creator"
-              display={pairs > 0 ? `yes, $${PAIR_LISTING_USD}` : "no, picked at launch"}
-              scale={linearScale(0, 1)}
-              value={pairs}
-              onChange={setPairs}
+              id="calc-share"
+              label="Your share of what they hold"
+              display={`${share}%`}
+              scale={linearScale(1, 100)}
+              value={share}
+              onChange={pickShare}
             />
           </div>
 
@@ -160,6 +176,12 @@ export function RewardsCalculator() {
               <div className="num mt-2 text-[15px] text-muted">
                 <StockAmount usd={you} price={price} symbol={`${ticker}x`} />
               </div>
+              {wallets > 1 && (
+                <p className="num mt-3 text-[13px] text-subtle">
+                  The other {wallets - 1} {wallets === 2 ? "wallet" : "wallets"} over $
+                  {HOLDER_MIN_USD} share {money(holders - you)}, {money(eachOther)} each on average.
+                </p>
+              )}
               {you < PAYOUT_MIN_USD && (
                 <p className="mt-3 text-[13px] text-subtle">
                   Under ${PAYOUT_MIN_USD} it waits and adds up over later days; each stock is sent
@@ -187,8 +209,8 @@ export function RewardsCalculator() {
 
             <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
               {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
-              {(VENUES[venue].bps / 100).toFixed(2)}%
-              {pairs > 0 && <>, plus {money(pairs * PAIR_LISTING_USD)} from the pair to holders</>}.
+              {(VENUES[venue].bps / 100).toFixed(2)}%. A wallet under ${HOLDER_MIN_USD} at the
+              snapshot does not share the pool.
             </p>
           </div>
         </div>
@@ -259,7 +281,7 @@ function linearScale(min: number, max: number): Scale {
   };
 }
 
-/** Volume and holding share both span three orders of magnitude, so the track is logarithmic. */
+/** Volume spans three orders of magnitude, so its track is logarithmic; the rest are linear. */
 function logScale(min: number, max: number, round: (n: number) => number): Scale {
   const span = Math.log(max / min);
   return {
