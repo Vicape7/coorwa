@@ -9,7 +9,6 @@ import { TokenMark } from "./token-mark";
 import { GraduatedClaim } from "./graduated-claim";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
 import {
-  REWARD_SPLIT,
   COOKIE_EXPLORER,
   HOLDER_MIN_USD,
   cookieAccountUrl,
@@ -191,12 +190,9 @@ export function HolderRewards({
     <div className="card p-5">
       <div className="label">Holder rewards</div>
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
-        {/* Written out rather than rounded: 62.5 and 37.5 rounded separately read as 63 and 38,
-            which adds up to 101% of a fee. */}
-        {REWARD_SPLIT.holders * 100}% of every fee Coorwa earns on {symbol} is paid once a day to
-        wallets holding at least {usd(HOLDER_MIN_USD)} of it, in {stock} sent
-        to the same address on Solana. Nothing to claim. The creator is paid{" "}
-        {REWARD_SPLIT.creator * 100}% of the fees and is not counted as a holder.
+        Every fee Coorwa earns on {symbol} is paid once a day to wallets holding at least{" "}
+        {usd(HOLDER_MIN_USD)} of it, in {stock} sent to the same address on Solana. Nothing to
+        claim. Its creator is paid the same way, for what they hold, and takes no share of their own.
       </p>
       <dl className="mt-4 space-y-2 border-t border-hair pt-4 text-[13px]">
         <Fact label="Paid to holders">

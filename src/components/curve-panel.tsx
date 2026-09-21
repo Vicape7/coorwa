@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { COOK_DECIMALS, REWARD_SPLIT, cookieTxUrl } from "@/lib/config";
+import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
 import { quoteBuy, quoteSell, curvePrice } from "@/lib/curve";
 import { rawToUi, uiToRaw, amount, usd, shortAddr, pct } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
@@ -176,10 +176,8 @@ export function CurvePanel({
             side,
           }),
         }).then((r) => r.json());
-        if (typeof recorded?.feeUsd === "number") {
-          // With no creator to pay, the whole fee joins the holders' pool (see rewards-ledger.ts).
-          poolUsd = recorded.feeUsd * (recorded.creator ? REWARD_SPLIT.holders : 1);
-        }
+        // Every fee joins the token's holders' pool, whole (see rewards-ledger.ts).
+        if (typeof recorded?.feeUsd === "number") poolUsd = recorded.feeUsd;
       } catch {
         // The ledger can miss a row; the trade still happened.
       }

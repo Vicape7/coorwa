@@ -17,15 +17,6 @@ import {
   SAMPLE_MAX_GAP_MS,
   SAMPLE_MIN_GAP_MS,
 } from "../src/lib/holder-samples";
-import { REWARD_SPLIT } from "../src/lib/config";
-
-test("the split returns the whole fee to holders and creator", () => {
-  // A split that does not sum to 1 either invents money or quietly keeps some.
-  const total = Object.values(REWARD_SPLIT).reduce((a, b) => a + b, 0);
-  assert.ok(Math.abs(total - 1) < 1e-9, `split sums to ${total}`);
-  assert.deepEqual(Object.keys(REWARD_SPLIT).sort(), ["creator", "holders"]);
-});
-
 // --- holder pools ----------------------------------------------------------------------------------
 
 test("a token's pool is shared over its holders in proportion to what they hold", () => {

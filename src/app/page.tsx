@@ -1,7 +1,6 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import launchpadArt from "../../public/launchpad.webp";
-import lpArt from "../../public/lp.webp";
 import stocksArt from "../../public/stocks.webp";
 import terminalArt from "../../public/terminal.webp";
 import { Nav } from "@/components/nav";
@@ -58,9 +57,6 @@ export default function Home() {
           <Link href="/launch" className="btn btn-ghost btn-sm">
             Launch a token
           </Link>
-          <Link href="/pools" className="btn btn-quiet btn-sm">
-            Make a market
-          </Link>
         </div>
 
         <div className="rise mt-14 text-left">
@@ -69,7 +65,7 @@ export default function Home() {
       </section>
 
       <Section>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <Tool
             href="/terminal"
             title="Terminal"
@@ -81,12 +77,6 @@ export default function Home() {
             title="Launchpad"
             image={launchpadArt}
             body="Mint on a COOK bonding curve through MomoSwap and pick its stock at launch. MomoSwap's fee split is read live."
-          />
-          <Tool
-            href="/pools"
-            title="LP maker"
-            image={lpArt}
-            body="Cookiebox DAMM v2 positions managed natively - deposit, claim, withdraw - against the fork's own program and IDL."
           />
         </div>
       </Section>
@@ -128,10 +118,10 @@ export default function Home() {
       <Section>
         <RewardsCalculator />
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
-          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold, and
-          to whoever made it. It comes from MomoSwap&apos;s referral share of the curve fee, which
-          costs a trader nothing, Coorwa&apos;s own 1% on a swap, and the dollar a creator pays for
-          a pair. Once a day it is paid out in the token&apos;s stock, straight to holders&apos;
+          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold,
+          and the wallet that created it is one of them. It comes from Coorwa&apos;s own 1% on a
+          swap and from MomoSwap&apos;s referral share of the curve fee, which costs a trader
+          nothing. Once a day it is paid out in the token&apos;s stock, straight to holders&apos;
           wallets on Solana, with nothing to claim.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">
             See your rewards

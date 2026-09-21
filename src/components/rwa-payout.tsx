@@ -33,7 +33,6 @@ import {
   payoutBlocked,
   solanaReadiness,
   type CreatorClaim,
-  type LpClaim,
   type SolanaReadiness,
 } from "@/lib/payout";
 import { RouteSteps } from "./route-steps";
@@ -78,10 +77,9 @@ export interface PayoutSpec {
   /** What is owed, in COOK, for the "nothing yet" check. Only its sign matters to the gate. */
   owedCook: number;
   pricings: PayoutPricing[];
-  /** The Cookie Chain side the journey records: COOK for creator fees, the pool's token for LP fees. */
+  /** The Cookie Chain side the journey records, which is COOK for a creator's fees. */
   token: { mint: string; symbol: string; decimals: number };
   input: { amount: number; symbol: string };
-  lpClaim?: LpClaim;
   creatorClaim?: CreatorClaim;
   copy: {
     title: string;
@@ -294,7 +292,6 @@ export function StockPayout({
         token: spec.token,
         input: spec.input,
         legs: plan.legs,
-        lpClaim: spec.lpClaim,
         creatorClaim: spec.creatorClaim,
       }),
     );

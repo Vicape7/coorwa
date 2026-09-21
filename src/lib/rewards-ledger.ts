@@ -1,13 +1,10 @@
 /**
  * Who is owed what, in which asset, and what has been paid.
  *
- * Every fee Coorwa collects on a token belongs to that token: `REWARD_SPLIT.holders` of it to the
- * wallets holding it, the rest to its creator, and a pair payment entirely to its holders. A fee on a
- * token whose creator nobody can name goes entirely to its holders too, rather than staying with the
- * operator for want of a recipient. The creator is paid from fees only: their own holding never
- * counts toward the holders' share. The money
- * itself sits in the operator wallet. This file is the ledger that says whose it is, and
- * `payout-cycle.ts` is what moves it.
+ * Every fee Coorwa collects on a token belongs to that token's holders, all of it, and so does a
+ * pair payment. A token's creator is one of those holders and nothing else: they are paid for what
+ * they hold, like anyone else, and take no separate share. The money itself sits in the operator
+ * wallet. This file is the ledger that says whose it is, and `payout-cycle.ts` is what moves it.
  *
  * Once a day a run shares every token's waiting pool over its holders, weighted by what each wallet
  * held across the holder samples taken since the last run, and writes one line per wallet per token
@@ -18,14 +15,13 @@
  *
  * Server only.
  */
-import { and, desc, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, ne, sql } from "drizzle-orm";
 import { db, schema } from "./db";
 import { holderAllocationsFrom, holderWeightsFrom, samplesIn } from "./holder-samples";
 import { listedByMint } from "./listings";
 import { benchmarks } from "./launches";
-import { tokenCreator } from "./creators";
 import { fetchTokens } from "./cookiescan";
-import { REWARD_SPLIT, PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
+import { PAYOUT_EVERY_MS, PAYOUT_MIN_USD } from "./config";
 
 function requireDb() {
   if (!db) throw new Error("the rewards ledger needs DATABASE_URL");
@@ -93,9 +89,9 @@ export function payableLines(
  * Whether the next run could send anything at all.
  *
  * An upper bound, so it never says no when a wallet might be paid: each wallet's unpaid lines in an
- * asset, plus everything still waiting in that asset, holders' pools and creators' shares together,
- * as if that one wallet were to get all of it. When even that stays under the minimum for every
- * wallet, the run will allocate and carry over, and send nothing.
+ * asset, plus everything still waiting in that asset, as if that one wallet were to get all of it.
+ * When even that stays under the minimum for every wallet, the run will allocate and carry over,
+ * and send nothing.
  */
 export function nextRunCouldPay(
   unpaid: readonly { wallet: string; ticker: string; amountUsd: number }[],
@@ -105,11 +101,7 @@ export function nextRunCouldPay(
   const waitingByTicker = new Map<string, number>();
   for (const p of pools) {
     if (!p.ticker) continue;
-    const creatorLeft = Math.max(0, p.creatorAccruedUsd - p.creatorAllocatedUsd);
-    waitingByTicker.set(
-      p.ticker,
-      (waitingByTicker.get(p.ticker) ?? 0) + p.holdersWaitingUsd + creatorLeft,
-    );
+    waitingByTicker.set(p.ticker, (waitingByTicker.get(p.ticker) ?? 0) + p.holdersWaitingUsd);
   }
   const owed = new Map<string, number>();
   for (const l of unpaid) {
@@ -177,32 +169,6 @@ export function waitingUsd(accruedUsd: number, allocatedUsd: number): number {
   return left < DUST_USD ? 0 : left;
 }
 
-/**
- * Holder weights with the token's creator taken out. The creator is paid `REWARD_SPLIT.creator` of
- * the fees and nothing for holding their own token, so their tokens do not dilute real holders either.
- */
-export function withoutCreators(
-  weights: ReadonlyMap<string, bigint>,
-  creators: ReadonlySet<string>,
-): Map<string, bigint> {
-  return new Map([...weights].filter(([wallet]) => !creators.has(wallet)));
-}
-
-/** Every wallet counted as a token's creator: the one its fills named and the one resolved now. */
-async function creatorsByMint(pools: readonly RewardPool[]): Promise<Map<string, Set<string>>> {
-  const out = new Map<string, Set<string>>();
-  await Promise.all(
-    pools.map(async (p) => {
-      const wallets = new Set<string>();
-      if (p.creator) wallets.add(p.creator);
-      const resolved = await tokenCreator(p.mint).catch(() => null);
-      if (resolved) wallets.add(resolved.wallet);
-      out.set(p.mint, wallets);
-    }),
-  );
-  return out;
-}
-
 // --- pools ------------------------------------------------------------------------------------------
 
 export interface RewardPool {
@@ -218,11 +184,8 @@ export interface RewardPool {
   holdersWaitingUsd: number;
   /** What has actually reached holders' wallets. */
   holdersPaidUsd: number;
+  /** Who made the token, as its fills named them. They are paid as a holder, like anyone else. */
   creator: string | null;
-  creatorAccruedUsd: number;
-  creatorAllocatedUsd: number;
-  /** What has actually reached the creator's wallet. */
-  creatorPaidUsd: number;
 }
 
 /** Every token's pool as of a cutoff. */
@@ -230,26 +193,17 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
   const conn = requireDb();
   const { fills, listings, payoutLines } = schema;
 
-  const [holderFees, creatorFees, listingRows, allocated, pins, listed] = await Promise.all([
+  const [holderFees, listingRows, allocated, pins, listed] = await Promise.all([
     conn
       .select({
         mint: fills.mint,
         symbol: sql<string | null>`max(${fills.symbol})`,
-        // A fill with no creator has nobody to pay the creator's part to, so its holders get all of it.
-        usd: sql<number>`coalesce(sum(${fills.feeUsd} * case when ${fills.creator} is null then 1 else ${REWARD_SPLIT.holders}::float8 end), 0)`,
+        creator: sql<string | null>`max(${fills.creator})`,
+        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0)`,
       })
       .from(fills)
       .where(lte(fills.createdAt, asOf))
       .groupBy(fills.mint),
-    conn
-      .select({
-        mint: fills.mint,
-        creator: fills.creator,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.creator}::float8`,
-      })
-      .from(fills)
-      .where(and(lte(fills.createdAt, asOf), isNotNull(fills.creator)))
-      .groupBy(fills.mint, fills.creator),
     conn
       .select({ mint: listings.mint, usd: sql<number>`coalesce(sum(${listings.paidUsd}), 0)` })
       .from(listings)
@@ -258,12 +212,11 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
     conn
       .select({
         mint: payoutLines.mint,
-        role: payoutLines.role,
         usd: sql<number>`coalesce(sum(${payoutLines.amountUsd}), 0)`,
         paid: sql<number>`coalesce(sum(case when ${payoutLines.status} = 'sent' then ${payoutLines.amountUsd} else 0 end), 0)`,
       })
       .from(payoutLines)
-      .groupBy(payoutLines.mint, payoutLines.role),
+      .groupBy(payoutLines.mint),
     benchmarks(),
     listedByMint(),
   ]);
@@ -281,9 +234,6 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
         holdersWaitingUsd: 0,
         holdersPaidUsd: 0,
         creator: null,
-        creatorAccruedUsd: 0,
-        creatorAllocatedUsd: 0,
-        creatorPaidUsd: 0,
       };
       pools.set(mint, p);
     }
@@ -294,24 +244,15 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
     const p = pool(f.mint);
     p.holdersAccruedUsd += Number(f.usd ?? 0);
     p.symbol = f.symbol ?? p.symbol;
-  }
-  for (const c of creatorFees) {
-    const p = pool(c.mint);
-    // A token's creator is resolved per fill; if that ever changed, the latest name is shown and
-    // every share is still paid to the wallet each fill named (see `allocateRun`).
-    p.creator = c.creator;
-    p.creatorAccruedUsd += Number(c.usd ?? 0);
+    p.creator = f.creator ?? p.creator;
   }
   for (const l of listingRows) pool(l.mint).holdersAccruedUsd += Number(l.usd ?? 0);
+  // Every line a run ever wrote came out of this pool, the creator lines written while creators
+  // still took a share of their own included, so all of them count against what is left to share.
   for (const a of allocated) {
     const p = pool(a.mint);
-    if (a.role === "creator") {
-      p.creatorAllocatedUsd += Number(a.usd ?? 0);
-      p.creatorPaidUsd += Number(a.paid ?? 0);
-    } else {
-      p.holdersAllocatedUsd += Number(a.usd ?? 0);
-      p.holdersPaidUsd += Number(a.paid ?? 0);
-    }
+    p.holdersAllocatedUsd += Number(a.usd ?? 0);
+    p.holdersPaidUsd += Number(a.paid ?? 0);
   }
   for (const p of pools.values()) {
     p.holdersWaitingUsd = waitingUsd(p.holdersAccruedUsd, p.holdersAllocatedUsd);
@@ -369,30 +310,28 @@ const RUN_LOCK = 8_190_119;
 /**
  * Share every waiting pool out, and queue whatever has reached the minimum, as one new run.
  *
- * Holders are weighed by their balances across the samples since the last run, and by nothing else:
+ * Everyone holding the token is weighed the same way, its creator included, by their balances
+ * across the samples since the last run, and by nothing else:
  * the moment a run happens is public, so anything read at that moment could be held across on
  * purpose. A token without a pair keeps its pool until it has one, because there is no asset to pay
  * it in; a token nobody eligible held keeps its pool for the next run.
  */
 export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<AllocatedRun> {
   const conn = requireDb();
-  const { fills, payoutCycles, payoutLines } = schema;
+  const { payoutCycles, payoutLines } = schema;
 
   const pools = await rewardPools(asOf);
   const from = await lastRunAsOf();
 
   const waiting = pools.filter((p) => p.ticker && p.holdersWaitingUsd > 0);
   const mints = waiting.map((p) => p.mint);
-  const [sampled, creators] = await Promise.all([
-    samplesIn(mints, from, asOf),
-    creatorsByMint(waiting),
-  ]);
+  const sampled = await samplesIn(mints, from, asOf);
 
   const weights = new Map<string, Map<string, bigint>>();
   const counts = new Map<string, number>();
   for (const mint of mints) {
     const w = holderWeightsFrom(sampled.get(mint) ?? []);
-    weights.set(mint, withoutCreators(w.weights, creators.get(mint) ?? new Set()));
+    weights.set(mint, w.weights);
     counts.set(mint, w.samples);
   }
   const holderLines = holderAllocationsFrom({
@@ -400,31 +339,7 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
     holders: weights,
   });
 
-  // The creator's share per wallet the fills named, less what earlier runs allocated to that wallet.
-  const [creatorAccrued, creatorAllocated] = await Promise.all([
-    conn
-      .select({
-        mint: fills.mint,
-        wallet: fills.creator,
-        usd: sql<number>`coalesce(sum(${fills.feeUsd}), 0) * ${REWARD_SPLIT.creator}::float8`,
-      })
-      .from(fills)
-      .where(and(lte(fills.createdAt, asOf), isNotNull(fills.creator)))
-      .groupBy(fills.mint, fills.creator),
-    conn
-      .select({
-        mint: payoutLines.mint,
-        wallet: payoutLines.wallet,
-        usd: sql<number>`coalesce(sum(${payoutLines.amountUsd}), 0)`,
-      })
-      .from(payoutLines)
-      .where(eq(payoutLines.role, "creator"))
-      .groupBy(payoutLines.mint, payoutLines.wallet),
-  ]);
   const tickerOf = new Map(pools.map((p) => [p.mint, p.ticker]));
-  const givenToCreator = new Map(
-    creatorAllocated.map((r) => [`${r.mint}|${r.wallet}`, Number(r.usd ?? 0)]),
-  );
 
   return conn.transaction(async (tx) => {
     // Held until this transaction ends, so a second caller waits here rather than sharing the same
@@ -461,21 +376,6 @@ export async function allocateRun(asOf: Date, cookPriceUsd: number): Promise<All
         // Stored as the average balance across the samples, which is what a reader expects to see.
         balanceRaw: a.balanceRaw / BigInt(Math.max(1, counts.get(a.mint) ?? 1)),
         amountUsd: a.amountUsd,
-      });
-    }
-    for (const c of creatorAccrued) {
-      const ticker = tickerOf.get(c.mint);
-      if (!c.wallet || !ticker) continue;
-      const owed = Number(c.usd ?? 0) - (givenToCreator.get(`${c.mint}|${c.wallet}`) ?? 0);
-      if (!(owed > 0.000001)) continue;
-      rows.push({
-        allocatedIn: cycle.id,
-        wallet: c.wallet,
-        mint: c.mint,
-        ticker,
-        role: "creator",
-        balanceRaw: 0n,
-        amountUsd: owed,
       });
     }
     for (let i = 0; i < rows.length; i += 500) {
@@ -580,19 +480,16 @@ export interface HolderEstimate {
  */
 export async function holderEstimates(wallet: string): Promise<HolderEstimate[]> {
   const waiting = (await rewardPools()).filter((p) => p.ticker && p.holdersWaitingUsd > 0);
-  const [samples, creators] = await Promise.all([
-    samplesIn(
-      waiting.map((p) => p.mint),
-      await lastRunAsOf(),
-      new Date(),
-    ),
-    creatorsByMint(waiting),
-  ]);
+  const samples = await samplesIn(
+    waiting.map((p) => p.mint),
+    await lastRunAsOf(),
+    new Date(),
+  );
 
   const out: HolderEstimate[] = [];
   for (const pool of waiting) {
     const sampled = holderWeightsFrom(samples.get(pool.mint) ?? []);
-    const weights = withoutCreators(sampled.weights, creators.get(pool.mint) ?? new Set());
+    const weights = sampled.weights;
     const count = sampled.samples;
     const mine = weights.get(wallet);
     if (!mine) continue;

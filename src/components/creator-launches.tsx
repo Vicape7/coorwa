@@ -3,17 +3,15 @@
 /**
  * What a creator gets back from their own curve.
  *
- * Two different things arrive here and they come from different places, which is why they are shown
- * as separate lines rather than one total. MomoSwap pays the creator 35% of its 1% trade fee, so
- * 0.35% of every trade on the curve, and it sits on the pool until claimed with the creator's own
- * key. Coorwa also pays the creator 37.5% of the fees Coorwa earns on the token, and that arrives
- * with the daily payout run shown on the rewards page, not here.
+ * What arrives here is MomoSwap's, not Coorwa's: MomoSwap pays the creator 35% of its 1% trade
+ * fee, so 0.35% of every trade on the curve, and it sits on the pool until claimed with the
+ * creator's own key. Coorwa itself pays a creator nothing extra. Whatever they hold of their own
+ * token earns them the same as any other holder, through the daily run on the rewards page.
  *
  * The list comes from the pool feed rather than from Coorwa's own records, so a token launched
  * before any of this existed still shows up and can still be claimed. Once the token has a pair, the
  * same fees can also be taken as that pair's stock on Solana.
  */
-import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -141,9 +139,7 @@ function LaunchRow({
                 {pool.symbol}/{ticker}
               </>
             ) : (
-              <Link href="/pools" className="underline underline-offset-4">
-                no pair yet, choose one
-              </Link>
+              <span>no pair, launched outside Coorwa</span>
             )}
             {" · "}
             {usd(Number(pool.paymentRaisedNet) / 1e9)} raised

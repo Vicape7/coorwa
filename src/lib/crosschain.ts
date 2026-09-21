@@ -29,10 +29,10 @@ import { CoorwaError } from "./http";
 
 export interface RouteLeg {
   /**
-   * "lp-claim" and "creator-claim" only ever open a payout: this route with an LP position's fees,
-   * or a launchpad creator's fees, in front of it.
+   * "creator-claim" only ever opens a payout: this route with a launchpad creator's fees in
+   * front of it.
    */
-  kind: "lp-claim" | "creator-claim" | "cookie-swap" | "bridge" | "solana-swap";
+  kind: "creator-claim" | "cookie-swap" | "bridge" | "solana-swap";
   label: string;
   venue: string;
   inSymbol: string;

@@ -104,26 +104,7 @@ export function payoutBlocked(args: {
   return null;
 }
 
-// --- LP fees -------------------------------------------------------------------------------------
-
-/**
- * An LP position's fees taken as a stock. The same route again, with the position in front:
- *
- *   position --[claim fees]--> TOKEN + COOK --[Cookie agg, TOKEN side only]--> COOK --[bridge]--> ...
- *
- * Every pool Coorwa manages pairs a token with COOK (28 of 28 on 2026-09-15), so a claim pays at
- * most one side that has to be sold. A pool collecting fees in COOK alone has no swap leg at all.
- */
-export interface LpClaim {
-  pool: string;
-  position: string;
-  positionNftAccount: string;
-}
-
-/** One payout in flight per position, so two positions in the same pool never share a resume. */
-export function lpPayoutSlug(position: string): string {
-  return `lp:${position}`;
-}
+// --- Claimed fees --------------------------------------------------------------------------------
 
 /**
  * The COOK a fee claim brought in, in lamports, read off the claim transaction.
@@ -133,42 +114,18 @@ export function lpPayoutSlug(position: string): string {
  * Neither is a fee. So everything the account held before the transaction is taken back out of
  * the wallet's gain, which leaves the fees net of the transaction fee and any rent the claim paid.
  */
-export function lpClaimedCook(ownerDelta: bigint, wrappedAccountBefore: bigint): bigint {
+export function claimedCook(ownerDelta: bigint, wrappedAccountBefore: bigint): bigint {
   return ownerDelta - wrappedAccountBefore;
 }
 
 /**
- * What an LP payout hands the bridge, in lamports: the claim's COOK plus what the swap produced,
+ * What a payout hands the bridge, in lamports: the claim's COOK plus what a swap leg produced,
  * minus the reserve the bridge transaction pays its fee from. Either part may be absent. The claim's
  * part can be negative when opening a token account cost more than the COOK side paid, and that is
  * counted, so the route never bridges COOK the fees did not bring in.
  */
-export function lpToBridge(claimed: bigint, swapped: bigint, reserve: bigint): bigint {
+export function claimToBridge(claimed: bigint, swapped: bigint, reserve: bigint): bigint {
   return claimed + swapped - reserve;
-}
-
-/** The fee claim, drawn as the first leg of the route. */
-export function lpClaimLeg(args: {
-  cookFee: number;
-  /** The non-COOK side, when it has fees at all. */
-  token: { symbol: string; amount: number } | null;
-}): RouteLeg {
-  return {
-    kind: "lp-claim",
-    label: args.token
-      ? `Claim your LP fees in ${args.token.symbol} and COOK`
-      : "Claim your LP fees",
-    venue: "Cookiebox DAMM v2",
-    inSymbol: "COOK",
-    outSymbol: "COOK",
-    inAmount: args.cookFee,
-    outAmount: args.cookFee,
-    priceImpactPct: 0,
-    etaSeconds: 5,
-    note: args.token
-      ? `plus ${amount(args.token.amount)} ${args.token.symbol}, sold for COOK next`
-      : "this pool pays its fees in COOK",
-  };
 }
 
 // --- Launchpad creator fees ---------------------------------------------------------------------
@@ -179,7 +136,7 @@ export function lpClaimLeg(args: {
  *   pool --[claim creator fees]--> COOK --[bridge]--> COOK (Solana) --[Jupiter]--> xSTOCK
  *
  * MomoSwap's claim pays wrapped COOK into the creator's own account and closes it in the same
- * transaction, the way an LP claim does, so what it brought in is measured with `lpClaimedCook`.
+ * transaction, so what it brought in is measured with `claimedCook`.
  */
 export interface CreatorClaim {
   pool: string;

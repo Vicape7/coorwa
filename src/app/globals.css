@@ -331,9 +331,9 @@ body {
 
 /*
  * The default container. Glass rather than paper, which is what converts the rest of the product -
- * pools, rewards, launch, the terminal - without any of those files knowing the material changed.
+ * rewards, launch, the terminal - without any of those files knowing the material changed.
  *
- * Deliberately the cheap recipe: blur and a specular edge, no SVG displacement. The pools page can
+ * Deliberately the cheap recipe: blur and a specular edge, no SVG displacement. The terminal can
  * put fifty of these on screen at once, and fifty filtered backdrop layers is a different order of
  * cost from fifty blurred ones. `.glass-pane` stays reserved for the handful of large, deliberate
  * surfaces where the bend is actually visible.

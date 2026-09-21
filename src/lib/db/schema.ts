@@ -40,7 +40,7 @@ export const fills = pgTable(
     valueUsd: doublePrecision("value_usd").notNull(),
     /** The slice of fee Coorwa actually earned on this fill, in USD. */
     feeUsd: doublePrecision("fee_usd").notNull(),
-    /** Who launched the token, when known - this is who is paid the creator's share. */
+    /** Who launched the token, when known. Kept to name a token's creator, never to pay them. */
     creator: text("creator"),
     chain: text("chain").notNull().default("cookie"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

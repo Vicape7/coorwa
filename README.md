@@ -40,9 +40,8 @@ earned, buys the stock and sends it to every holder's own wallet. Nothing to cla
 
 - **Launch a token with a stock attached.** Pick NVDA at launch and your token is TOKEN/NVDA from
   its first trade.
-- **Or give an existing token its pair.** Its creator picks the stock once, for $1.
-- **Hold it and get paid in shares.** 62.5% of every fee goes to holders, 37.5% to the creator.
-  Coorwa keeps none of it.
+- **Hold it and get paid in shares.** Every fee goes to the token's holders, the wallet that
+  created it among them, by how much each one holds. Coorwa keeps none of it.
 
 <p align="center">
   <img src="docs/readme/terminal.png" alt="The COTE/NVDA pair on the Coorwa terminal" width="100%">
@@ -127,21 +126,11 @@ are.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/readme/art-lp.png" width="96" align="right" alt="">
-      <h3>LP maker</h3>
-      <ul>
-        <li>Every pair, with the real TOKEN/COOK pool behind it and its depth in shares.</li>
-        <li>Cookiebox DAMM v2 positions managed natively: deposit, claim fees, withdraw, built against the fork's own program and IDL.</li>
-        <li>LP fees can be paid out as a stock on Solana.</li>
-        <li>Positions are found from the position NFTs in your wallet. Coorwa keeps no records of its own.</li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
       <img src="docs/readme/art-stocks.png" width="96" align="right" alt="">
       <h3>Holder rewards</h3>
       <ul>
         <li>Hold a token and get paid in its stock, every day, with nothing to claim.</li>
-        <li>62.5% of every fee to holders, 37.5% to the creator. The creator is never also counted as a holder, and when nobody can tell who created a token, the creator's part goes to its holders too.</li>
+        <li>Every fee on a token goes to that token's holders, all of it, shared by what each wallet holds. A creator takes no separate share: they are paid for what they hold, like anyone else.</li>
         <li>Holders are sampled at random moments through the day, so a snapshot cannot be timed.</li>
         <li>The rewards page shows every token's waiting pool and the next run, and a connected wallet sees what is coming to it.</li>
       </ul>
@@ -192,16 +181,16 @@ CHAT's creator, and to nobody else.
 ```mermaid
 flowchart LR
   subgraph CC["Cookie Chain"]
-    F["Fees on a paired token<br/>curve referral · swap fee · pair payment"]
+    F["Fees on a paired token<br/>curve referral · swap fee"]
     O["Operator wallet<br/>public address"]
   end
   subgraph SOL["Solana"]
     J["Jupiter<br/>COOK to the stock"]
-    H["Holders and creator<br/>same address as on Cookie Chain"]
+    H["Holders<br/>same address as on Cookie Chain"]
   end
   F --> O
   O -- "Hyperlane warp route" --> J
-  J -- "62.5% holders · 37.5% creator" --> H
+  J -- "every fee, by what each wallet holds" --> H
 ```
 
 ### The daily run
@@ -209,8 +198,8 @@ flowchart LR
 A run starts a day after the first holder sample since the last one and moves one step at a time,
 because it spans two chains and a bridge that takes minutes (`src/lib/payout-cycle.ts`):
 
-1. **Allocate.** Each token's pool is shared over its holders by the day's samples, plus the
-   creator's share, as one line per wallet per stock (`src/lib/rewards-ledger.ts`).
+1. **Allocate.** Each token's pool is shared over its holders by the day's samples, as one line
+   per wallet per stock (`src/lib/rewards-ledger.ts`).
 2. **Bridge.** The run budgets its Solana costs, unwraps any wrapped COOK and bridges what it owes
    over the Hyperlane warp route, keeping a small reserve on Cookie Chain. Costs are paid from the
    operator's spare SOL first, and what that does not cover comes out of this run's own payouts,
@@ -332,9 +321,8 @@ src/
     expectation.ts    A launchpad transaction checked against what was asked for, before signing
     swap-check.ts     A swap build judged by what simulating it does to the wallet, before signing
     launches.ts       Tokens launched here and the stock each creator picked
-    listings.ts       The one pair a creator sets for a token launched elsewhere, priced and proved
+    listings.ts       The two pairs bought before pairing a token from outside was closed
     creators.ts       Who made a token, from the launch record or the mint's metadata authority
-    liquidity.ts      Cookiebox DAMM v2, built against the fork's IDL
     holders.ts        Who holds a token right now, read from the chain and filtered to real wallets
     holder-samples.ts Random holder samples, and a pool shared by what each wallet held
     rewards-ledger.ts Who is owed what in which stock, and what has been paid

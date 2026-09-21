@@ -162,7 +162,7 @@ export function lamportsCredited(proof: ProvenTransaction, account: string): big
  * Whether this transaction is the one that created this token on the launchpad.
  *
  * Naming the mint is not enough, because every trade on a token names its mint: anyone could point
- * at a stranger's token, call themselves its creator and be paid the creator's share of its fees.
+ * at a stranger's token, call themselves its creator and pick the pair its holders are paid in.
  * So the transaction has to carry the launchpad's own `create_pool` over this mint and pool, and
  * the mint has to have signed it. A mint signs exactly once, in the transaction that brings it into
  * existence, and only whoever holds its key can make it sign at all.

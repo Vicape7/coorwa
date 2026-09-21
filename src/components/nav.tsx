@@ -9,7 +9,6 @@ import { WalletButton } from "./wallet-button";
 const LINKS = [
   { href: "/terminal", label: "Terminal" },
   { href: "/launch", label: "Launch" },
-  { href: "/pools", label: "Pools" },
   { href: "/rewards", label: "Rewards" },
 ];
 

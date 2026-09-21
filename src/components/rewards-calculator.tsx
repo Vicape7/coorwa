@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import {
   PAYOUT_MIN_USD,
-  REWARD_SPLIT,
   COORWA_SWAP_FEE_BPS,
   MOMOSWAP_REFERRAL_SHARE,
   MOMOSWAP_TRADE_FEE_BPS,
@@ -91,8 +90,8 @@ export function RewardsCalculator() {
   const price = data?.prices?.[ticker];
 
   const fees = (volume * days * VENUES[venue].bps) / 10_000;
-  const holders = fees * REWARD_SPLIT.holders;
-  const creator = fees * REWARD_SPLIT.creator;
+  // All of it goes back to the token's holders, its creator among them, by what each one holds.
+  const holders = fees;
   const you = (holders * share) / 100;
   const eachOther = wallets > 1 ? (holders - you) / (wallets - 1) : 0;
 
@@ -190,22 +189,7 @@ export function RewardsCalculator() {
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Tile
-                who="All holders"
-                pct={REWARD_SPLIT.holders}
-                usd={holders}
-                price={price}
-                ticker={ticker}
-              />
-              <Tile
-                who="Creator"
-                pct={REWARD_SPLIT.creator}
-                usd={creator}
-                price={price}
-                ticker={ticker}
-              />
-            </div>
+            <Tile who="All holders, the creator among them" usd={holders} price={price} ticker={ticker} />
 
             <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
               {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
@@ -221,13 +205,11 @@ export function RewardsCalculator() {
 
 function Tile({
   who,
-  pct,
   usd,
   price,
   ticker,
 }: {
   who: string;
-  pct: number;
   usd: number;
   price: number | undefined;
   ticker: string;
@@ -236,7 +218,7 @@ function Tile({
     <div className="nav-well rounded-[var(--radius-card)] px-5 py-4">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[14px] font-medium text-primary">{who}</span>
-        <span className="num text-[13px] text-subtle">{(pct * 100).toFixed(1)}%</span>
+        <span className="num text-[13px] text-subtle">100%</span>
       </div>
       <SlidingNumber value={money(usd)} className="num mt-2 block text-[26px] text-primary" />
       <div className="num mt-1 text-[13px] text-muted">

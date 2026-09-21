@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://coorwa.fun"),
   title: "Coorwa - trade Cookie Chain in RWAs",
   description:
-    "Terminal, launchpad and LP maker for Cookie Chain. Every token is paired with a stock, and its holders are paid in that stock every day.",
+    "Terminal and launchpad for Cookie Chain. Every token is paired with a stock, and its holders are paid in that stock every day.",
   openGraph: {
     title: "Coorwa - trade Cookie Chain in RWAs",
     description:

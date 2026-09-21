@@ -76,7 +76,7 @@ export async function createdBy(wallet: string): Promise<string[]> {
   return [...mints];
 }
 
-/** Whether a wallet is the one paid the creator's share of a token's fees. */
+/** Whether a wallet is the one that created a token. */
 export async function isCreator(mint: string, wallet: string): Promise<boolean> {
   const creator = await tokenCreator(mint);
   return creator?.wallet === wallet;

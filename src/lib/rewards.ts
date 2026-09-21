@@ -45,9 +45,9 @@ export interface RewardsSummary {
   /** This wallet's estimated share of what is waiting, from the holder samples so far. */
   estimates: HolderEstimate[];
   /**
-   * Every token this wallet created, with or without fees yet. The creator's share is paid by the
-   * same daily run, in the token's pair asset, so there is nothing to claim; this is where a creator
-   * sees it. Empty for a wallet that never created a token.
+   * Every token this wallet created, with or without fees yet. A creator takes no share of their
+   * own: they are paid for what they hold, like every other holder. This is where they see what
+   * their tokens have earned their holders. Empty for a wallet that never created a token.
    */
   created: RewardPool[];
   pools: RewardPool[];
@@ -59,9 +59,9 @@ export interface RewardsSummary {
 }
 
 export interface RewardTotals {
-  /** Sent to holders and creators. */
+  /** Sent to holders. */
   paidUsd: number;
-  /** Earned by holders and creators and not sent yet. */
+  /** Earned by holders and not sent yet. */
   waitingUsd: number;
   /** Tokens with a pair, launched here or listed. */
   tokensPaired: number;
@@ -124,7 +124,7 @@ export async function summarise(wallet: string | null): Promise<RewardsSummary> 
   const created = [...mints]
     .map((mint) => poolOf.get(mint) ?? emptyPool(mint, pinned.get(mint) ?? listed.get(mint) ?? null))
     .map((p) => ({ ...p, symbol: p.symbol ?? symbolOf.get(p.mint) ?? null }))
-    .sort((a, b) => b.creatorAccruedUsd - a.creatorAccruedUsd);
+    .sort((a, b) => b.holdersAccruedUsd - a.holdersAccruedUsd);
   const logos = await logosFor([...base.pools, ...created, ...estimates, ...mine.paid]);
   return { ...base, pending: mine.pending, paid: mine.paid, estimates, created, logos };
 }
@@ -145,9 +145,6 @@ function emptyPool(mint: string, ticker: string | null): RewardPool {
     holdersWaitingUsd: 0,
     holdersPaidUsd: 0,
     creator: null,
-    creatorAccruedUsd: 0,
-    creatorAllocatedUsd: 0,
-    creatorPaidUsd: 0,
   };
 }
 
@@ -155,8 +152,8 @@ export function rewardTotals(pools: readonly RewardPool[], tokensPaired: number)
   let paidUsd = 0;
   let earnedUsd = 0;
   for (const p of pools) {
-    paidUsd += p.holdersPaidUsd + p.creatorPaidUsd;
-    earnedUsd += p.holdersAccruedUsd + p.creatorAccruedUsd;
+    paidUsd += p.holdersPaidUsd;
+    earnedUsd += p.holdersAccruedUsd;
   }
   return { paidUsd, waitingUsd: Math.max(0, earnedUsd - paidUsd), tokensPaired };
 }

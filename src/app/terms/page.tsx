@@ -2,10 +2,8 @@ import Link from "next/link";
 import { SiteShell } from "@/components/site-shell";
 import { LegalPage } from "@/components/legal-page";
 import {
-  REWARD_SPLIT,
   COORWA_SWAP_FEE_BPS,
   HOLDER_MIN_USD,
-  PAIR_LISTING_USD,
   PAYOUT_MIN_USD,
 } from "@/lib/config";
 
@@ -85,10 +83,6 @@ export default function TermsPage() {
                   On a launchpad buy, MomoSwap pays Coorwa part of its own curve fee. This does not
                   add to what you pay.
                 </li>
-                <li>
-                  The creator of a token launched outside Coorwa pays ${PAIR_LISTING_USD} in COOK,
-                  once, to choose the token&apos;s pair. This payment is not refundable.
-                </li>
                 <li>Network fees are paid by you to the network, not to Coorwa.</li>
               </ul>
             ),
@@ -98,13 +92,12 @@ export default function TermsPage() {
             body: (
               <>
                 <p>
-                  Coorwa shares the fees it earns on a token with that token&apos;s holders (
-                  {REWARD_SPLIT.holders * 100}%) and its creator ({REWARD_SPLIT.creator * 100}
-                  %). When Coorwa cannot tell who created a token, the creator&apos;s part goes to
-                  its holders as well. Fees are collected in Coorwa&apos;s operator wallet and, once
-                  a day, bridged to Solana, used to buy the token&apos;s pair stock and sent to
-                  eligible wallets.
-                  While this happens, the fees are held by Coorwa.
+                  Coorwa returns every fee it earns on a token to that token&apos;s holders. The
+                  wallet that created the token is one of them: it is paid for what it holds, on the
+                  same terms as anyone else, and receives no separate share. Fees are collected in
+                  Coorwa&apos;s operator wallet and, once a day, bridged to Solana, used to buy the
+                  token&apos;s pair stock and sent to eligible wallets. While this happens, the fees
+                  are held by Coorwa.
                 </p>
                 <p>
                   To count as a holder a wallet must hold at least ${HOLDER_MIN_USD} of the token.

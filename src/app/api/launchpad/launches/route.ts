@@ -31,7 +31,7 @@ const Body = z.object({
  * The benchmark decides what pair the token trades as for the rest of its life, so it is not taken
  * on trust: the launch transaction is read back from the chain, has to have been signed by the
  * creator, and has to be the launch itself (see `createsToken`). Without that a wallet could pin
- * somebody else's token to whatever asset flattered it, and be paid its creator's share.
+ * somebody else's token to whatever asset flattered it.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));

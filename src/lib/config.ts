@@ -152,16 +152,6 @@ export const CURVE_TOKEN_DECIMALS = 6;
 export const MOMOSWAP_REFERRAL_SHARE = 0.2;
 
 /**
- * What a token's one pair costs, in USD, paid in COOK to the operator by the token's creator.
- *
- * A token has exactly one pair, and the pair is the asset its holders are paid in. A token launched
- * through Coorwa gets it free, picked at launch. A token from anywhere else gets it once its creator
- * pays this, which keeps the list to tokens somebody actually stands behind. The dollar joins that
- * token's holder rewards.
- */
-export const PAIR_LISTING_USD = 1;
-
-/**
  * Coorwa's own fee on a terminal swap, in basis points of the COOK leg.
  *
  * Neither Cookie Chain aggregator will pay a referrer - six plausible parameter names were tried on
@@ -174,19 +164,6 @@ export const PAIR_LISTING_USD = 1;
  * to see what routing through it costs.
  */
 export const COORWA_SWAP_FEE_BPS = 100;
-
-/**
- * Where every fee Coorwa collects on a token goes back to: the launchpad referral share and the swap
- * fee alike. Must sum to 1: all of it is returned, none of it kept.
- *
- * The holders' part is not paid to whoever generated the fee. It joins that token's holder pool, and
- * the daily run shares the pool out over the wallets holding the token across the day's samples, in
- * proportion to what they held. The creator's part goes to whoever made the token.
- */
-export const REWARD_SPLIT = {
-  holders: 0.625,
-  creator: 0.375,
-} as const;
 
 /**
  * The least a wallet has to hold of a token, in USD at the snapshot, to share its holder pool.

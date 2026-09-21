@@ -1,50 +1,17 @@
 /**
- * A token's one pair, for tokens that were not launched through Coorwa.
+ * The pairs two tokens bought before pairing a token from outside was closed.
  *
- * A pair is the asset a token's holders are paid in, so a token has exactly one and it belongs to the
- * token's creator to choose. A token launched here gets it at launch (`launches.ts`). Any other token
- * has none, and is not in the terminal, until its creator pays `PAIR_LISTING_USD` once and picks it.
- * Nobody else can set it and it cannot be changed, because holders buy a token expecting to be paid
- * in that asset.
- *
- * The payment is a plain COOK transfer to the operator, and the dollar joins the token's holder
- * rewards. Optional like the rest of the database: with no DATABASE_URL nothing can be listed.
+ * A pair is the asset a token's holders are paid in, so a token has exactly one. A token launched
+ * here picks it at launch (`launches.ts`). A token from anywhere else could once be paired by its
+ * creator for a dollar; that is gone, and only a token launched through Coorwa gets a pair now. The
+ * two pairs already paid for are read here and stay as they are, because holders bought those
+ * tokens expecting to be paid in those assets.
  */
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
 import { cached } from "./http";
-import { COOK_DECIMALS, PAIR_LISTING_USD } from "./config";
 import { rwaByTicker } from "./rwa";
-import { rawToUi } from "./format";
 import { benchmarks } from "./launches";
-
-export interface Listing {
-  mint: string;
-  ticker: string;
-  payer: string;
-  signature: string;
-  paidUsd: number;
-  createdAt: string;
-}
-
-/**
- * Whether a payment covers the pair.
- *
- * Priced at what reached the operator rather than at what was quoted, because COOK moves between the
- * two and a quote is not a promise. The grace is there so a payment that was correct when it was
- * signed does not come up one cent short by the time it confirms.
- */
-export function paymentCovers(paidUsd: number): boolean {
-  return paidUsd > 0 && paidUsd / PAIR_LISTING_USD + 0.02 >= 1;
-}
-
-/** What to charge for the pair, in COOK at the price given. */
-export function listingQuote(cookPriceUsd: number | null) {
-  const usd = PAIR_LISTING_USD;
-  // A little over the line, for the same reason `paymentCovers` forgives a little under it.
-  const cook = cookPriceUsd && cookPriceUsd > 0 ? (usd * 1.02) / cookPriceUsd : null;
-  return { usd, cook };
-}
 
 /** The pair bought for a token, if one was. The oldest row wins, from before one pair was the rule. */
 export async function listedFor(mint: string): Promise<string | null> {
@@ -105,52 +72,4 @@ export async function signatureSpent(signature: string): Promise<boolean> {
     .where(eq(schema.listings.signature, signature))
     .limit(1);
   return row != null;
-}
-
-export async function recordListing(args: {
-  mint: string;
-  ticker: string;
-  payer: string;
-  signature: string;
-  paidRaw: bigint;
-  paidUsd: number;
-}): Promise<boolean> {
-  if (!dbEnabled || !db) return false;
-
-  // Any conflict means this pair is already bought: the same pair twice, a second pair for a token
-  // that has one, or the same payment presented again. All three are no-ops rather than errors,
-  // and the database is what settles them, because two requests can pass the route's checks at once.
-  const rows = await db
-    .insert(schema.listings)
-    .values(args)
-    .onConflictDoNothing()
-    .returning({ ticker: schema.listings.ticker });
-
-  return rows.length > 0;
-}
-
-/** Every payment recorded for one token, newest first. Backs the receipt on the listing panel. */
-export async function listingsFor(mint: string): Promise<Listing[]> {
-  if (!dbEnabled || !db) return [];
-
-  const rows = await db
-    .select()
-    .from(schema.listings)
-    .where(eq(schema.listings.mint, mint))
-    .orderBy(desc(schema.listings.createdAt))
-    .limit(50);
-
-  return rows.map((r) => ({
-    mint: r.mint,
-    ticker: r.ticker,
-    payer: r.payer,
-    signature: r.signature,
-    paidUsd: r.paidUsd,
-    createdAt: r.createdAt.toISOString(),
-  }));
-}
-
-/** Raw COOK as a USD figure, for pricing what actually reached the operator. */
-export function cookToUsd(raw: bigint, cookPriceUsd: number): number {
-  return rawToUi(raw, COOK_DECIMALS) * cookPriceUsd;
 }

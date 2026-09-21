@@ -5,7 +5,6 @@ import wordmark from "../../public/coorwa-wordmark.webp";
 const LINKS: { label: string; href: string }[] = [
   { label: "Terminal", href: "/terminal" },
   { label: "Launch", href: "/launch" },
-  { label: "Pools", href: "/pools" },
   { label: "Rewards", href: "/rewards" },
   { label: "Status", href: "/status" },
   { label: "Explorer", href: "https://cookiescan.io" },

@@ -14,7 +14,6 @@ import {
   COOK_MINT,
   COOK_DECIMALS,
   COORWA_SWAP_FEE_BPS,
-  REWARD_SPLIT,
   cookieTxUrl,
   DEFAULT_SLIPPAGE_BPS,
 } from "@/lib/config";
@@ -477,10 +476,8 @@ function RouteDetail({
           <p className="pt-1.5 text-[11px] leading-relaxed text-subtle">
             Both Cookie Chain routers were quoted; this is the better fill. The transaction is built
             upstream and signed in your wallet - Coorwa never holds your funds. Coorwa&apos;s fee is
-            a visible transfer to Coorwa&apos;s payout wallet, and all of it is returned:{" "}
-            {/* One decimal, or 62.5 and 37.5 round to 63 and 38 and appear to sum to 101%. */}
-            {(REWARD_SPLIT.holders * 100).toFixed(1)}% to the token&apos;s holders,{" "}
-            {(REWARD_SPLIT.creator * 100).toFixed(1)}% to whoever made the token. Neither
+            a visible transfer to Coorwa&apos;s payout wallet, and all of it is returned to the
+            token&apos;s holders, the wallet that made it included, for what they hold. Neither
             router will pay a referrer, so this is the only thing funding the rewards here.
           </p>
         </div>

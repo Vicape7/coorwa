@@ -258,11 +258,7 @@ export function PairList({
             ) : (
               <>
                 No pairs {ticker === ALL ? "listed yet" : `in ${ticker} yet`}. A token appears here
-                once its creator gives it a pair, at launch or on{" "}
-                <Link href="/pools" className="text-primary underline underline-offset-4">
-                  Pools
-                </Link>
-                .
+                once its creator picks its pair, which happens at launch.
               </>
             )}
           </div>

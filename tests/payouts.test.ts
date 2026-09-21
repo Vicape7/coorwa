@@ -15,8 +15,8 @@ import {
   payableLines,
   splitRaw,
   waitingUsd,
-  withoutCreators,
 } from "../src/lib/rewards-ledger";
+import { holderAllocationsFrom } from "../src/lib/holder-samples";
 import {
   MAX_CYCLE_ATTEMPTS,
   MAX_LINE_ATTEMPTS,
@@ -91,13 +91,26 @@ test("an asset the run bought nothing of pays zero rather than failing", () => {
   assert.equal(out.get(9), 0n);
 });
 
-test("the creator is paid from fees only, never as a holder of their own token", () => {
-  const weights = new Map([
-    ["creator", 900n],
-    ["holder", 100n],
-  ]);
-  const out = withoutCreators(weights, new Set(["creator"]));
-  assert.deepEqual([...out], [["holder", 100n]]);
+test("a token's creator shares its pool on what they hold, like every other wallet", () => {
+  const out = holderAllocationsFrom({
+    waitingByMint: new Map([["mint", 10]]),
+    holders: new Map([
+      [
+        "mint",
+        new Map([
+          ["creator", 900n],
+          ["holder", 100n],
+        ]),
+      ],
+    ]),
+  });
+  assert.deepEqual(
+    out.map((a) => [a.wallet, a.amountUsd]),
+    [
+      ["creator", 9],
+      ["holder", 1],
+    ],
+  );
 });
 
 test("a pool left with rounding dust has nothing waiting, and a real cent still counts", () => {
@@ -220,7 +233,7 @@ test("a run that arrived short shares what did arrive, in the same proportions",
 
 // --- Whether the next run sends anything -----------------------------------------------------------
 
-function pool(ticker: string | null, holdersWaitingUsd: number, creatorLeftUsd = 0) {
+function pool(ticker: string | null, holdersWaitingUsd: number) {
   return {
     mint: `mint-${ticker}`,
     symbol: null,
@@ -230,9 +243,6 @@ function pool(ticker: string | null, holdersWaitingUsd: number, creatorLeftUsd =
     holdersWaitingUsd,
     holdersPaidUsd: 0,
     creator: null,
-    creatorAccruedUsd: creatorLeftUsd,
-    creatorAllocatedUsd: 0,
-    creatorPaidUsd: 0,
   };
 }
 
@@ -242,12 +252,12 @@ test("a run where nobody can reach the minimum sends nothing, and says so", () =
     { wallet: "a", ticker: "NVDA", amountUsd: 0.2 },
     { wallet: "b", ticker: "NVDA", amountUsd: 0.1 },
   ];
-  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.3, 0.1)], 1), false);
+  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.4)], 1), false);
 });
 
 test("a wallet whose lines and the waiting pool could reach the minimum may be paid", () => {
   const unpaid = [{ wallet: "a", ticker: "NVDA", amountUsd: 0.7 }];
-  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.2, 0.1)], 1), true);
+  assert.equal(nextRunCouldPay(unpaid, [pool("NVDA", 0.3)], 1), true);
   // Only the same asset counts: a TSLA pool does not lift an NVDA line.
   assert.equal(nextRunCouldPay(unpaid, [pool("TSLA", 0.9)], 1), false);
 });

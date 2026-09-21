@@ -51,6 +51,9 @@ export function RewardsView() {
     </span>
   );
 
+  // A creator is paid for what they hold, like anyone else, so their own line on a token they
+  // made is the holder estimate for it. The tab is a different list, never a different share.
+  const estimateOf = new Map((data?.estimates ?? []).map((e) => [e.mint, e]));
   const lines: MyLine[] =
     role === "holder"
       ? (data?.estimates ?? []).map((e) => ({
@@ -64,17 +67,15 @@ export function RewardsView() {
           mint: p.mint,
           token: tokenName(p.mint),
           ticker: p.ticker,
-          nextUsd: Math.max(0, p.creatorAccruedUsd - p.creatorAllocatedUsd),
-          detail: `${usd(p.creatorAccruedUsd)} earned, ${usd(p.creatorPaidUsd)} paid`,
+          nextUsd: estimateOf.get(p.mint)?.estimatedUsd ?? 0,
+          detail: `${usd(p.holdersWaitingUsd)} to its holders, ${usd(p.holdersAccruedUsd)} earned so far`,
         }));
   lines.sort((a, b) => b.nextUsd - a.nextUsd);
 
   const nextUsd = lines.reduce((sum, l) => sum + l.nextUsd, 0);
-  const paid = (data?.paid ?? []).filter((p) => p.role === role);
+  const paid = data?.paid ?? [];
   const paidUsd = paid.reduce((sum, p) => sum + p.usd, 0);
-  const pendingUsd = (data?.pending ?? [])
-    .filter((p) => p.role === role)
-    .reduce((sum, p) => sum + p.usd, 0);
+  const pendingUsd = (data?.pending ?? []).reduce((sum, p) => sum + p.usd, 0);
 
   const nextRun = data?.nextRunAt ? new Date(data.nextRunAt) : null;
 
@@ -98,13 +99,15 @@ export function RewardsView() {
               As a holder
             </button>
             <button onClick={() => setTab("creator")} data-active={role === "creator"}>
-              As a creator
+              Your launches
             </button>
           </div>
         )}
 
         <div className="flex flex-wrap items-baseline gap-3">
-          <h2 className="title text-primary">Your rewards as a {role}</h2>
+          <h2 className="title text-primary">
+            {role === "holder" ? "Your rewards as a holder" : "The tokens you launched"}
+          </h2>
           {nextRun && (
             <span className="text-[13px] text-muted">
               Next payout {untilText(nextRun)} · {nextRun.toLocaleString()}
@@ -132,7 +135,11 @@ export function RewardsView() {
               <Figure
                 label="Next payout"
                 value={usd(nextUsd)}
-                sub={role === "holder" ? "Estimated, from today so far" : "From fees so far"}
+                sub={
+                  role === "holder"
+                    ? "Estimated, from today so far"
+                    : "What you hold of your own tokens"
+                }
                 emphasis
               />
               <Figure label="Paid to you" value={usd(paidUsd)} sub="Already on Solana" />
@@ -153,12 +160,7 @@ export function RewardsView() {
                     {l.ticker ? (
                       <span className="text-[13px] text-muted">paid in {l.ticker}x</span>
                     ) : (
-                      <Link
-                        href="/pools"
-                        className="text-[13px] text-primary underline underline-offset-4"
-                      >
-                        Choose a pair to get paid
-                      </Link>
+                      <span className="text-[13px] text-muted">no pair to pay in</span>
                     )}
                     <span className="ml-auto text-right">
                       <span className="num block text-[15px] text-primary">{usd(l.nextUsd)}</span>
