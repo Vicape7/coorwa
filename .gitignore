@@ -66,3 +66,6 @@ target/deploy/*-keypair.json
 
 # OpenNext Cloudflare build output
 .open-next
+
+# Token metadata written by `next dev`, which has no R2 bucket. On Cloudflare this lives in R2.
+/.coorwa-metadata

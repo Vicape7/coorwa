@@ -63,10 +63,17 @@ const PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
  */
 export const SOLANA_RPC_PATH = "/api/solana-rpc";
 
+/**
+ * Where the app lives. It is written into things that outlive a request, above all the uri a
+ * launched mint carries, so it is a constant rather than whatever host a request happened to
+ * arrive on. Overridable for a fork.
+ */
+export const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN?.trim() || "https://coorwa.fun";
+
 export function browserSolanaRpc(): string {
   // web3.js insists on an absolute URL. On the server this value is never used to make a call: the
   // panels that build a connection only ever run in the browser.
-  const origin = typeof window === "undefined" ? "https://coorwa.fun" : window.location.origin;
+  const origin = typeof window === "undefined" ? SITE_ORIGIN : window.location.origin;
   return `${origin}${SOLANA_RPC_PATH}`;
 }
 

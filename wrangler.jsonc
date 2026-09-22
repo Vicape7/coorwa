@@ -26,6 +26,17 @@
   "images": {
     "binding": "IMAGES"
   },
+  // Token metadata for launches made by Coorwa's own program: one JSON document per mint and the
+  // image it names, written by /api/launch/metadata and served back at /t/<mint>. The bucket is
+  // created once with `npx wrangler r2 bucket create coorwa-metadata`, and R2 has to be enabled on
+  // the account before that works. Without the binding the app runs exactly as before and only a
+  // launch through the new program is refused.
+  "r2_buckets": [
+    {
+      "binding": "METADATA",
+      "bucket_name": "coorwa-metadata"
+    }
+  ],
   // Neon, through Hyperdrive, which keeps the connections warm so each request can open its own
   // client (see src/lib/db/index.ts). Points at Neon's direct host, not the -pooler one.
   "hyperdrive": [
