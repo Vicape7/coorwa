@@ -16,7 +16,8 @@
     "program:test": "node scripts/program.mjs test",
     "program:deploy": "node scripts/program.mjs deploy",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "program:fixtures": "node scripts/program.mjs fixtures"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

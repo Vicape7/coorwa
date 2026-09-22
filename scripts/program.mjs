@@ -38,6 +38,56 @@ const PROGRAMS = [
   { crate: "corwa-launch", lib: "corwa_launch" },
 ];
 
+/**
+ * Pieces of Cookie Chain the launch program talks to, copied into the test validator.
+ *
+ * `corwa_launch` opens its pool by calling Cookiebox's pool program, so a test that stops short of
+ * that call proves nothing about the part most likely to be wrong. `npm run program:fixtures` dumps
+ * the real program and the real pool config off the chain, and the validator below loads them, so the
+ * rehearsal runs against the same bytes production will.
+ */
+const FIXTURES = [
+  {
+    kind: "program",
+    name: "cookiebox pool program",
+    address: "DAMMjDCEFTDkt7ywazZS8GoaLtjb3HaJo3pLbf64xrPY",
+    file: "cp_amm.so",
+  },
+  {
+    kind: "account",
+    name: "1% pool config, public, fees in quote only",
+    address: "9H6eQjax36XECa73mAufWiq8yVKae6K7NLK5ZubUzxnf",
+    file: "damm_config.json",
+  },
+];
+
+const FIXTURE_DIR = join(ROOT, "target", "fixtures");
+
+/** Copy the fixtures above off Cookie Chain. Read-only, and the files land in target/. */
+function fixtures() {
+  const rpc = process.env.NEXT_PUBLIC_COOKIE_RPC_URL?.trim() || "https://rpc.cookiescan.io";
+  mkdirSync(FIXTURE_DIR, { recursive: true });
+  const lines = [`solana config set --url $CORWA_RPC >/dev/null`];
+  for (const f of FIXTURES) {
+    lines.push(
+      f.kind === "program"
+        ? `solana program dump ${f.address} target/fixtures/${f.file}`
+        : `solana account ${f.address} --output json-compact --output-file target/fixtures/${f.file} >/dev/null`,
+    );
+  }
+  const code = inContainer(lines.join(" && "), { extraArgs: ["-e", `CORWA_RPC=${rpc}`] });
+  if (code !== 0) return code;
+  for (const f of FIXTURES) {
+    const path = join(FIXTURE_DIR, f.file);
+    if (!existsSync(path)) {
+      console.error(`missing ${f.file} after the dump`);
+      return 1;
+    }
+    console.log(`${f.file.padEnd(18)} ${statSync(path).size.toLocaleString("en-US")} bytes  ${f.name}`);
+  }
+  return 0;
+}
+
 /** Resolve the program named on the command line, or every program when none was. */
 function pick(name) {
   if (!name) return PROGRAMS;
@@ -195,6 +245,15 @@ async function integrationTest() {
     return 1;
   }
 
+  const missingFixtures = FIXTURES.filter((f) => !existsSync(join(FIXTURE_DIR, f.file)));
+  if (missingFixtures.length > 0) {
+    console.error(
+      `missing fixtures: ${missingFixtures.map((f) => f.file).join(", ")}`
+        + " - run npm run program:fixtures once to copy them off Cookie Chain",
+    );
+    return 1;
+  }
+
   stopValidator();
   console.log(`starting a validator with ${loaded.map((p) => p.lib).join(", ")} loaded`);
 
@@ -217,6 +276,11 @@ async function integrationTest() {
       "--rpc-port", "8899",
       "--limit-ledger-size", "10000",
       ...loaded.flatMap((p) => ["--bpf-program", p.id, `/work/target/deploy/${p.lib}.so`]),
+      ...FIXTURES.flatMap((f) =>
+        f.kind === "program"
+          ? ["--bpf-program", f.address, `/work/target/fixtures/${f.file}`]
+          : ["--account", f.address, `/work/target/fixtures/${f.file}`],
+      ),
     ],
     { encoding: "utf8" },
   );
@@ -267,7 +331,7 @@ async function integrationTest() {
 
 const command = process.argv[2];
 const target = process.argv[3];
-const commands = { build, deploy, test: integrationTest };
+const commands = { build, deploy, test: integrationTest, fixtures };
 
 if (!commands[command]) {
   console.error(

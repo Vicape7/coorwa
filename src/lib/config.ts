@@ -212,6 +212,30 @@ export const VAULT_PROGRAM_ADDRESS =
   "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg";
 
 /**
+ * Coorwa's launch program, in `programs/corwa-launch`: it mints a token whose transfer tax pays that
+ * token's holders, sells it on a bonding curve against COOK, and at its target opens a Cookiebox
+ * pool and locks the liquidity there forever. Its client is `src/lib/launch-program.ts`.
+ *
+ * Overridable for the same reason as the vault's: a fork should be able to point at its own
+ * deployment without rebuilding anything.
+ */
+export const LAUNCH_PROGRAM_ADDRESS =
+  process.env.NEXT_PUBLIC_LAUNCH_PROGRAM_ID?.trim() ||
+  "DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq";
+
+/**
+ * The Cookiebox pool config a graduated curve opens its pool against, and the pool program itself.
+ *
+ * The config fixes the pool's fee and its price range, so it is part of what a launch promises
+ * rather than something the crank picks: this one is public, charges a flat 1% and collects its fees
+ * in the quote token only, which keeps the taxed side out of the fee accounting entirely.
+ */
+export const DAMM_PROGRAM_ADDRESS = "DAMMjDCEFTDkt7ywazZS8GoaLtjb3HaJo3pLbf64xrPY";
+export const DAMM_POOL_CONFIG =
+  process.env.NEXT_PUBLIC_DAMM_POOL_CONFIG?.trim() ||
+  "9H6eQjax36XECa73mAufWiq8yVKae6K7NLK5ZubUzxnf";
+
+/**
  * The vault's authority, a wallet Coorwa holds. It was the launchpad referrer before the operator
  * took over, so it is kept out of holder pools like the operator is.
  */

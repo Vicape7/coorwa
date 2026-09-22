@@ -40,10 +40,11 @@
 //! what the curve sends, not against what the buyer nets.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke;
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+use anchor_lang::solana_program::program::{invoke, invoke_signed};
 use anchor_lang::system_program;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token_2022::spl_token_2022;
+use anchor_spl::token_2022::{spl_token_2022, Token2022};
 use anchor_spl::token_interface::{
     self, Mint, TokenAccount, TokenInterface, TokenMetadataInitialize,
 };
@@ -55,10 +56,15 @@ declare_id!("DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq");
 
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const CURVE_SEED: &[u8] = b"curve";
+/// Seed of the account that actually holds a curve's assets. See `VaultAuthority` below.
+pub const AUTHORITY_SEED: &[u8] = b"authority";
 
-/// A live curve trades. A graduated one is closed to trading and waiting for its pool.
+/// A live curve trades. A graduated one has hit its target and is closed to trading, waiting for
+/// someone to open its pool. A pooled one is done: its liquidity is locked on Cookiebox forever and
+/// all that is left to do is collect fees.
 pub const STATE_LIVE: u8 = 0;
 pub const STATE_GRADUATED: u8 = 1;
+pub const STATE_POOLED: u8 = 2;
 
 /// Basis-point denominator, used for the curve fee, the tax tiers and the LP split alike.
 pub const BPS: u128 = 10_000;
@@ -74,6 +80,38 @@ pub const MAX_TRANSFER_FEE: u64 = u64::MAX;
 /// Room for fields we have not thought of yet, so adding one later does not move every field after
 /// it and invalidate every client at once.
 pub const RESERVED: usize = 64;
+
+/// Why a curve's money does not live under the curve account.
+///
+/// Two constraints meet here. Cookiebox's pool program takes the tokens for a new pool from accounts
+/// owned by whoever pays the rent, so one account has to be both the token authority and the rent
+/// payer. And the system program refuses to move lamports out of an account that carries data, which
+/// the curve account does.
+///
+/// So every curve has a second address, `[b"authority", mint]`, that holds nothing but lamports and
+/// owns the two vaults. It can pay rent because it has no data, it can sign for the vaults because
+/// it is a PDA of this program, and the curve account next to it stays pure bookkeeping.
+pub struct VaultAuthority;
+
+/// Cookiebox's pool program, a cp-amm fork, and its one fixed authority account. Both are chain
+/// furniture rather than settings: a different pool program would be a different product.
+pub mod damm {
+    use anchor_lang::prelude::*;
+
+    #[constant]
+    pub const PROGRAM_ID: Pubkey = pubkey!("DAMMjDCEFTDkt7ywazZS8GoaLtjb3HaJo3pLbf64xrPY");
+    #[constant]
+    pub const POOL_AUTHORITY: Pubkey = pubkey!("8WYfVSBcP3T1amRNmTnLfzYd44VDjGpw1jZxrEL8638o");
+
+    /// Anchor discriminators of the three instructions this program calls.
+    pub const IX_INITIALIZE_POOL: [u8; 8] = [0x5f, 0xb4, 0x0a, 0xac, 0x54, 0xae, 0xe8, 0x28];
+    pub const IX_PERMANENT_LOCK: [u8; 8] = [0xa5, 0xb0, 0x7d, 0x06, 0xe7, 0xab, 0xba, 0xd5];
+    pub const IX_CLAIM_POSITION_FEE: [u8; 8] = [0xb4, 0x26, 0x9a, 0x11, 0x85, 0x21, 0xa2, 0xd3];
+
+    /// The bounds of a full-range position, in the same Q64.64 form the pool stores its price in.
+    pub const MIN_SQRT_PRICE: u128 = 4_295_048_016;
+    pub const MAX_SQRT_PRICE: u128 = 79_226_673_521_066_979_257_578_248_091;
+}
 
 #[program]
 pub mod corwa_launch {
@@ -183,7 +221,7 @@ pub mod corwa_launch {
         require!(room > 0, LaunchError::CurveClosed);
 
         let mint_key = curve.mint;
-        let curve_bump = curve.bump;
+        let authority_bump = ctx.bumps.vault_authority;
 
         let (quote_taken, fee, net) = math::split_buy(max_quote_in, curve.curve_fee_bps, room)?;
         require!(net > 0, LaunchError::AmountTooSmall);
@@ -206,7 +244,7 @@ pub mod corwa_launch {
             ctx.accounts.quote_mint.decimals,
         )?;
 
-        let seeds: &[&[u8]] = &[CURVE_SEED, mint_key.as_ref(), &[curve_bump]];
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[authority_bump]];
         let signer: &[&[&[u8]]] = &[seeds];
         token_interface::transfer_checked(
             ctx.accounts.base_out_ctx(signer),
@@ -264,7 +302,7 @@ pub mod corwa_launch {
 
         let curve = &ctx.accounts.curve;
         let mint_key = curve.mint;
-        let curve_bump = curve.bump;
+        let authority_bump = ctx.bumps.vault_authority;
         let gross = math::swap_out(curve.reserve_quote()?, curve.reserve_base()?, received as u128)?;
         let gross = u64::try_from(gross).map_err(|_| LaunchError::MathOverflow)?;
         require!(gross > 0, LaunchError::AmountTooSmall);
@@ -274,7 +312,7 @@ pub mod corwa_launch {
         let to_seller = gross.checked_sub(fee).ok_or(LaunchError::MathOverflow)?;
         require!(to_seller >= min_quote_out, LaunchError::SlippageExceeded);
 
-        let seeds: &[&[u8]] = &[CURVE_SEED, mint_key.as_ref(), &[curve_bump]];
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[authority_bump]];
         let signer: &[&[&[u8]]] = &[seeds];
         token_interface::transfer_checked(
             ctx.accounts.quote_out_ctx(signer),
@@ -315,7 +353,7 @@ pub mod corwa_launch {
         require!(amount > 0, LaunchError::NothingToClaim);
 
         let mint_key = curve.mint;
-        let seeds: &[&[u8]] = &[CURVE_SEED, mint_key.as_ref(), &[curve.bump]];
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[ctx.bumps.vault_authority]];
         let signer: &[&[&[u8]]] = &[seeds];
         token_interface::transfer_checked(
             ctx.accounts.transfer_ctx(signer),
@@ -327,6 +365,164 @@ pub mod corwa_launch {
         curve.fees_quote = 0;
 
         emit!(FeesClaimed { curve: curve.key(), mint: curve.mint, amount });
+        Ok(())
+    }
+
+    /// Open the token's pool on Cookiebox and lock the liquidity there forever.
+    ///
+    /// Permissionless, because a curve that has hit its target should not wait on us. Whoever sends
+    /// it pays the rent for the pool accounts, which is why the vault authority needs lamports in it
+    /// by the time this runs: a plain transfer in the same transaction is enough, and the crank that
+    /// normally does this is ours.
+    ///
+    /// `liquidity` and `sqrt_price` are worked out by the caller, because reproducing the pool's own
+    /// fixed-point liquidity maths here would cost more than it buys. What the program does instead
+    /// is check the result: the price has to match the price the curve closed at, and the amounts the
+    /// pool actually took have to match the reserve and the migration supply. A caller who passes
+    /// bad numbers gets a failed transaction, not a bad pool.
+    pub fn graduate(ctx: Context<Graduate>, liquidity: u128, sqrt_price: u128) -> Result<()> {
+        let curve = &ctx.accounts.curve;
+        require!(curve.state == STATE_GRADUATED, LaunchError::NotGraduated);
+        require!(liquidity > 0, LaunchError::ZeroAmount);
+
+        // The pool asks for the amount it wants to *hold* and the token program takes the tax on
+        // top, so the base that reaches the pool is the migration supply less the tax. Pricing the
+        // pool off the gross would ask the vault for more base than a fully sold curve has left.
+        let seeded_base = math::net_of_tax(curve.migration_base, curve.tax_bps)?;
+        let expected = math::expected_sqrt_price(curve.quote_raised, seeded_base)?;
+        require!(math::within_one_percent(sqrt_price, expected), LaunchError::PriceMismatch);
+
+        let mint_key = curve.mint;
+        let authority_bump = ctx.bumps.vault_authority;
+        let quote_raised = curve.quote_raised;
+        let migration_base = curve.migration_base;
+
+        let base_before = ctx.accounts.base_vault.amount;
+        let quote_before = ctx.accounts.quote_vault.amount;
+
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[authority_bump]];
+        ctx.accounts.initialize_pool(liquidity, sqrt_price, seeds)?;
+
+        ctx.accounts.base_vault.reload()?;
+        ctx.accounts.quote_vault.reload()?;
+        let base_spent = base_before
+            .checked_sub(ctx.accounts.base_vault.amount)
+            .ok_or(LaunchError::MathOverflow)?;
+        let quote_spent = quote_before
+            .checked_sub(ctx.accounts.quote_vault.amount)
+            .ok_or(LaunchError::MathOverflow)?;
+
+        // The whole reserve goes into the pool, give or take the rounding the pool does on the way
+        // in. Anything less would be liquidity quietly left behind.
+        require!(quote_spent <= quote_raised, LaunchError::SeedOutOfRange);
+        require!(
+            (quote_spent as u128) * 1000 >= (quote_raised as u128) * 999,
+            LaunchError::SeedOutOfRange
+        );
+        // What leaves the vault is the migration supply, tax included. A percent of slack covers the
+        // rounding on both sides of that, and nothing covers a caller trying to seed the pool with
+        // more of the supply than the launch set aside.
+        let slack = migration_base / 100;
+        require!(
+            base_spent <= migration_base.saturating_add(slack),
+            LaunchError::SeedOutOfRange
+        );
+        require!(
+            base_spent >= migration_base.saturating_sub(slack.saturating_mul(2)),
+            LaunchError::SeedOutOfRange
+        );
+
+        ctx.accounts.lock_liquidity(liquidity, seeds)?;
+
+        // Everything the curve did not sell and the pool did not take is burned. A launch's supply
+        // is what people actually hold plus what backs the pool, and nothing is kept in reserve for
+        // anyone, including us.
+        let leftover = ctx.accounts.base_vault.amount;
+        if leftover > 0 {
+            ctx.accounts.burn_leftover(leftover, seeds)?;
+        }
+
+        let curve = &mut ctx.accounts.curve;
+        curve.state = STATE_POOLED;
+        curve.position_nft_mint = ctx.accounts.position_nft_mint.key();
+
+        emit!(Graduated {
+            curve: curve.key(),
+            mint: curve.mint,
+            pool: ctx.accounts.pool.key(),
+            position: ctx.accounts.position.key(),
+            position_nft_mint: curve.position_nft_mint,
+            quote_seeded: quote_spent,
+            base_seeded: base_spent,
+            burned: leftover,
+            liquidity,
+        });
+        Ok(())
+    }
+
+    /// Collect the graduated pool's fees and split them.
+    ///
+    /// The position is locked forever, so this is the only thing it will ever produce. The split is
+    /// enforced here rather than promised anywhere: the creator's share is paid in the same
+    /// instruction that collects it, and neither we nor they can be paid without the other.
+    ///
+    /// Permissionless for the same reason as the curve fees: both destinations are fixed before the
+    /// instruction runs.
+    pub fn claim_pool_fees(ctx: Context<ClaimPoolFees>) -> Result<()> {
+        let curve = &ctx.accounts.curve;
+        require!(curve.state == STATE_POOLED, LaunchError::NotPooled);
+        require!(
+            curve.position_nft_mint == ctx.accounts.position_nft_mint.key(),
+            LaunchError::WrongPosition
+        );
+
+        let mint_key = curve.mint;
+        let authority_bump = ctx.bumps.vault_authority;
+        let creator_share_bps = curve.creator_lp_share_bps;
+
+        let base_before = ctx.accounts.base_vault.amount;
+        let quote_before = ctx.accounts.quote_vault.amount;
+
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[authority_bump]];
+        ctx.accounts.claim_position_fee(seeds)?;
+
+        ctx.accounts.base_vault.reload()?;
+        ctx.accounts.quote_vault.reload()?;
+        let base_fees = ctx
+            .accounts
+            .base_vault
+            .amount
+            .checked_sub(base_before)
+            .ok_or(LaunchError::MathOverflow)?;
+        let quote_fees = ctx
+            .accounts
+            .quote_vault
+            .amount
+            .checked_sub(quote_before)
+            .ok_or(LaunchError::MathOverflow)?;
+        require!(base_fees > 0 || quote_fees > 0, LaunchError::NothingToClaim);
+
+        // Only what this claim brought in is moved on, so a curve's own unclaimed trading fees and
+        // any dust already sitting in the vaults are left where they are.
+        let creator_quote = math::bps_of(quote_fees, creator_share_bps)?;
+        let platform_quote = quote_fees
+            .checked_sub(creator_quote)
+            .ok_or(LaunchError::MathOverflow)?;
+        let creator_base = math::bps_of(base_fees, creator_share_bps)?;
+        let platform_base = base_fees
+            .checked_sub(creator_base)
+            .ok_or(LaunchError::MathOverflow)?;
+
+        ctx.accounts.pay_out(creator_quote, platform_quote, creator_base, platform_base, seeds)?;
+
+        emit!(PoolFeesClaimed {
+            curve: ctx.accounts.curve.key(),
+            mint: mint_key,
+            quote_to_creator: creator_quote,
+            quote_to_platform: platform_quote,
+            base_to_creator: creator_base,
+            base_to_platform: platform_base,
+        });
         Ok(())
     }
 }
@@ -393,6 +589,67 @@ pub mod math {
         .map_err(|_| LaunchError::MathOverflow)?;
         let taken = room.checked_add(fee).ok_or(LaunchError::MathOverflow)?;
         Ok((taken, fee, room))
+    }
+
+    /// The price the pool has to open at, as sqrt(quote per base) in Q64.64, which is how the pool
+    /// program stores a price.
+    ///
+    /// `sqrt(q / b) * 2^64` is the same number as `sqrt((q << 64) / b) << 32`, and the second form
+    /// stays inside a u128 for every amount this program can hold. The shift costs the low 32 bits of
+    /// a 128-bit value, which is far below the precision any pool cares about.
+    pub fn expected_sqrt_price(quote: u64, base: u64) -> Result<u128> {
+        require!(quote > 0 && base > 0, LaunchError::ZeroAmount);
+        let scaled = ((quote as u128) << 64) / (base as u128);
+        Ok(isqrt(scaled) << 32)
+    }
+
+    /// Integer square root, by the usual bit-by-bit method. No floats in a program.
+    pub fn isqrt(value: u128) -> u128 {
+        if value < 2 {
+            return value;
+        }
+        let mut bit = 1u128 << ((127 - value.leading_zeros()) & !1);
+        let mut root = 0u128;
+        let mut rest = value;
+        while bit != 0 {
+            let candidate = root + bit;
+            root >>= 1;
+            if rest >= candidate {
+                rest -= candidate;
+                root += bit;
+            }
+            bit >>= 2;
+        }
+        root
+    }
+
+    /// True when two prices are within one percent of each other, which is the slack the caller gets
+    /// for its own rounding when it works out the pool's opening price.
+    pub fn within_one_percent(a: u128, b: u128) -> bool {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        match hi.checked_sub(lo) {
+            Some(gap) => gap.saturating_mul(100) <= hi,
+            None => false,
+        }
+    }
+
+    /// The transfer tax on an amount, rounded up, which is how Token-2022 computes it. The curve fee
+    /// rounds down because it rounds in the curve's favour; a transfer fee is not ours to round.
+    pub fn tax_of(amount: u64, bps: u16) -> Result<u64> {
+        if bps == 0 || amount == 0 {
+            return Ok(0);
+        }
+        let v = (amount as u128)
+            .checked_mul(bps as u128)
+            .ok_or(LaunchError::MathOverflow)?
+            .div_ceil(BPS);
+        u64::try_from(v).map_err(|_| LaunchError::MathOverflow.into())
+    }
+
+    /// What arrives when `amount` is sent and a transfer fee of `bps` is taken out of it on the way.
+    pub fn net_of_tax(amount: u64, bps: u16) -> Result<u64> {
+        let fee = tax_of(amount, bps)?;
+        amount.checked_sub(fee).ok_or(LaunchError::MathOverflow.into())
     }
 
     #[cfg(test)]
@@ -467,6 +724,60 @@ pub mod math {
         }
 
         #[test]
+        fn isqrt_is_a_square_root() {
+            for v in [0u128, 1, 2, 3, 4, 9, 10, 1 << 64, u128::MAX] {
+                let r = isqrt(v);
+                assert!(r.saturating_mul(r) <= v, "isqrt({v}) = {r} is too big");
+                let next = r + 1;
+                assert!(
+                    next.checked_mul(next).map(|sq| sq > v).unwrap_or(true),
+                    "isqrt({v}) = {r} is too small"
+                );
+            }
+        }
+
+        #[test]
+        fn the_pool_opens_where_the_curve_closed() {
+            // A pool seeded with the reserve and the migration supply has to open at the curve's
+            // closing price, or the first trade after graduation is free money.
+            let quote = GRADUATION as u64;
+            let base = 200_000_000_000_000u64; // 200M at 6 decimals
+            let sqrt_price = expected_sqrt_price(quote, base).unwrap();
+            // Square it back. Shifting a Q64.64 root down by 32 and squaring lands on the price in
+            // Q64.64 again, which is the form the ratio below is already in.
+            let price = (sqrt_price >> 32) * (sqrt_price >> 32);
+            let expected = ((quote as u128) << 64) / base as u128;
+            assert!(within_one_percent(price, expected), "{price} vs {expected}");
+        }
+
+        #[test]
+        fn the_pool_is_priced_on_what_it_receives() {
+            // A fully sold curve has exactly the migration supply left, so the pool can only ever
+            // hold that minus the tax. Pricing it any other way asks the vault for base it does not
+            // have.
+            let migration = 200_000_000_000_000u64;
+            let seeded = net_of_tax(migration, 300).unwrap();
+            assert_eq!(seeded, 194_000_000_000_000);
+            assert_eq!(net_of_tax(migration, 0).unwrap(), migration);
+            // rounded up, like the token program: a single unit still owes a whole unit of tax
+            assert_eq!(tax_of(1, 300).unwrap(), 1);
+            assert_eq!(tax_of(0, 300).unwrap(), 0);
+            assert_eq!(tax_of(u64::MAX, 10_000).unwrap(), u64::MAX);
+
+            let taxed = expected_sqrt_price(GRADUATION as u64, seeded).unwrap();
+            let untaxed = expected_sqrt_price(GRADUATION as u64, migration).unwrap();
+            assert!(taxed > untaxed, "a taxed pool opens dearer per token");
+        }
+
+        #[test]
+        fn one_percent_is_the_whole_slack() {
+            assert!(within_one_percent(100, 100));
+            assert!(within_one_percent(100, 101));
+            assert!(!within_one_percent(100, 102));
+            assert!(!within_one_percent(0, 1));
+        }
+
+        #[test]
         fn no_amount_the_chain_can_hold_overflows() {
             // Every amount on the way in is a u64, and u64::MAX squared still fits in a u128, so
             // the multiply inside swap_out cannot overflow for any input the chain can express.
@@ -512,7 +823,11 @@ pub struct Config {
     pub paused: bool,
     pub bump: u8,
     pub launch_count: u64,
-    pub _reserved: [u8; RESERVED],
+    /// The Cookiebox pool config a graduated curve opens its pool against. It fixes the pool's fee
+    /// and its price range, so it is part of what a launch promises and belongs here rather than in
+    /// whatever the crank feels like passing.
+    pub damm_config: Pubkey,
+    pub _reserved: [u8; RESERVED - 32],
 }
 
 impl Config {
@@ -550,7 +865,11 @@ pub struct Curve {
     pub state: u8,
     pub created_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; RESERVED],
+    /// Set when the pool is opened. The position that holds the locked liquidity is the PDA of this
+    /// mint, and the pool is the one that position belongs to, so this single key is enough to find
+    /// the rest and enough to refuse a claim aimed at somebody else's position.
+    pub position_nft_mint: Pubkey,
+    pub _reserved: [u8; RESERVED - 32],
 }
 
 impl Curve {
@@ -585,6 +904,7 @@ pub struct ConfigParams {
     pub virtual_base: u64,
     pub token_decimals: u8,
     pub paused: bool,
+    pub damm_config: Pubkey,
 }
 
 impl ConfigParams {
@@ -598,6 +918,8 @@ impl ConfigParams {
         // and the price goes to infinity mid-raise.
         require!(self.virtual_base > self.sale_base, LaunchError::BadConfig);
         require!(self.token_decimals <= 9, LaunchError::BadConfig);
+        require!(self.migration_base > 0, LaunchError::BadConfig);
+        require!(self.damm_config != Pubkey::default(), LaunchError::BadConfig);
         require!(self.tax_tiers.iter().any(|t| *t > 0), LaunchError::BadConfig);
         require!(
             self.tax_tiers.iter().all(|t| (*t as u128) < BPS),
@@ -619,6 +941,7 @@ impl ConfigParams {
         config.virtual_base = self.virtual_base;
         config.token_decimals = self.token_decimals;
         config.paused = self.paused;
+        config.damm_config = self.damm_config;
     }
 }
 
@@ -750,7 +1073,7 @@ fn open_vaults(ctx: &Context<Launch>) -> Result<()> {
         anchor_spl::associated_token::Create {
             payer: ctx.accounts.creator.to_account_info(),
             associated_token: ctx.accounts.base_vault.to_account_info(),
-            authority: ctx.accounts.curve.to_account_info(),
+            authority: ctx.accounts.vault_authority.to_account_info(),
             mint: ctx.accounts.mint.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
             token_program: ctx.accounts.token_program.to_account_info(),
@@ -762,7 +1085,7 @@ fn open_vaults(ctx: &Context<Launch>) -> Result<()> {
         anchor_spl::associated_token::Create {
             payer: ctx.accounts.creator.to_account_info(),
             associated_token: ctx.accounts.quote_vault.to_account_info(),
-            authority: ctx.accounts.curve.to_account_info(),
+            authority: ctx.accounts.vault_authority.to_account_info(),
             mint: ctx.accounts.quote_mint.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
             token_program: ctx.accounts.quote_token_program.to_account_info(),
@@ -812,24 +1135,24 @@ pub struct InitializeConfig<'info> {
         seeds = [CONFIG_SEED],
         bump,
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub quote_mint: InterfaceAccount<'info, Mint>,
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = authority)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Launch<'info> {
     #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         init,
@@ -838,15 +1161,20 @@ pub struct Launch<'info> {
         seeds = [CURVE_SEED, mint.key().as_ref()],
         bump,
     )]
-    pub curve: Account<'info, Curve>,
+    pub curve: Box<Account<'info, Curve>>,
 
     /// The mint to be. Created inside the instruction, so it arrives as a fresh keypair that has
     /// signed for its own address and nothing else.
     #[account(mut)]
     pub mint: Signer<'info>,
 
+    /// CHECK: holds this curve's assets and pays for its pool. Data-less on purpose, see
+    /// `VaultAuthority`.
+    #[account(mut, seeds = [AUTHORITY_SEED, mint.key().as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+
     /// CHECK: created in the instruction once the mint exists, at the address the associated token
-    /// program derives for the curve.
+    /// program derives for the vault authority.
     #[account(mut)]
     pub base_vault: UncheckedAccount<'info>,
     /// CHECK: as above, for the quote side.
@@ -854,7 +1182,7 @@ pub struct Launch<'info> {
     pub quote_vault: UncheckedAccount<'info>,
 
     #[account(address = config.quote_mint)]
-    pub quote_mint: InterfaceAccount<'info, Mint>,
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -868,7 +1196,7 @@ pub struct Launch<'info> {
 #[derive(Accounts)]
 pub struct Trade<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
@@ -879,21 +1207,25 @@ pub struct Trade<'info> {
         has_one = base_vault,
         has_one = quote_vault,
     )]
-    pub curve: Account<'info, Curve>,
+    pub curve: Box<Account<'info, Curve>>,
 
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(address = config.quote_mint)]
-    pub quote_mint: InterfaceAccount<'info, Mint>,
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    /// CHECK: signs for the vaults. Data-less, see `VaultAuthority`.
+    #[account(seeds = [AUTHORITY_SEED, curve.mint.as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
-    pub base_vault: InterfaceAccount<'info, TokenAccount>,
+    pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut)]
-    pub quote_vault: InterfaceAccount<'info, TokenAccount>,
+    pub quote_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, token::mint = mint, token::authority = trader)]
-    pub trader_base: InterfaceAccount<'info, TokenAccount>,
+    pub trader_base: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = quote_mint, token::authority = trader)]
-    pub trader_quote: InterfaceAccount<'info, TokenAccount>,
+    pub trader_quote: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub trader: Signer<'info>,
 
@@ -941,7 +1273,7 @@ impl<'info> Trade<'info> {
                 from: self.base_vault.to_account_info(),
                 mint: self.mint.to_account_info(),
                 to: self.trader_base.to_account_info(),
-                authority: self.curve.to_account_info(),
+                authority: self.vault_authority.to_account_info(),
             },
             seeds,
         )
@@ -960,7 +1292,7 @@ impl<'info> Trade<'info> {
                 from: self.quote_vault.to_account_info(),
                 mint: self.quote_mint.to_account_info(),
                 to: self.trader_quote.to_account_info(),
-                authority: self.curve.to_account_info(),
+                authority: self.vault_authority.to_account_info(),
             },
             seeds,
         )
@@ -970,7 +1302,7 @@ impl<'info> Trade<'info> {
 #[derive(Accounts)]
 pub struct ClaimCurveFees<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
@@ -979,17 +1311,21 @@ pub struct ClaimCurveFees<'info> {
         has_one = config,
         has_one = quote_vault,
     )]
-    pub curve: Account<'info, Curve>,
+    pub curve: Box<Account<'info, Curve>>,
 
     #[account(address = config.quote_mint)]
-    pub quote_mint: InterfaceAccount<'info, Mint>,
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    /// CHECK: signs for the vault. Data-less, see `VaultAuthority`.
+    #[account(seeds = [AUTHORITY_SEED, curve.mint.as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
-    pub quote_vault: InterfaceAccount<'info, TokenAccount>,
+    pub quote_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Fixed by the config, so it does not matter who sends this instruction.
     #[account(mut, token::mint = quote_mint, token::authority = config.fee_recipient)]
-    pub recipient: InterfaceAccount<'info, TokenAccount>,
+    pub recipient: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub quote_token_program: Interface<'info, TokenInterface>,
 }
@@ -1008,10 +1344,362 @@ impl<'info> ClaimCurveFees<'info> {
                 from: self.quote_vault.to_account_info(),
                 mint: self.quote_mint.to_account_info(),
                 to: self.recipient.to_account_info(),
-                authority: self.curve.to_account_info(),
+                authority: self.vault_authority.to_account_info(),
             },
             seeds,
         )
+    }
+}
+
+#[derive(Accounts)]
+pub struct Graduate<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    #[account(
+        mut,
+        seeds = [CURVE_SEED, curve.mint.as_ref()],
+        bump = curve.bump,
+        has_one = config,
+        has_one = mint,
+        has_one = base_vault,
+        has_one = quote_vault,
+    )]
+    pub curve: Box<Account<'info, Curve>>,
+
+    /// CHECK: pays the pool's rent and signs for the vaults. Data-less, see `VaultAuthority`.
+    #[account(mut, seeds = [AUTHORITY_SEED, curve.mint.as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = config.quote_mint)]
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    #[account(mut)]
+    pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut)]
+    pub quote_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// CHECK: checked by address against the config, which is what fixes the pool's fee and range.
+    #[account(address = config.damm_config)]
+    pub damm_config: UncheckedAccount<'info>,
+    /// CHECK: the pool program's one authority account, checked by address.
+    #[account(address = damm::POOL_AUTHORITY)]
+    pub damm_pool_authority: UncheckedAccount<'info>,
+    /// CHECK: created by the pool program, which derives and checks its own address.
+    #[account(mut)]
+    pub pool: UncheckedAccount<'info>,
+    /// CHECK: as above.
+    #[account(mut)]
+    pub position: UncheckedAccount<'info>,
+    /// The position NFT. A fresh keypair, and the only thing that identifies the locked liquidity
+    /// afterwards, so it is written onto the curve.
+    #[account(mut)]
+    pub position_nft_mint: Signer<'info>,
+    /// CHECK: derived and checked by the pool program.
+    #[account(mut)]
+    pub position_nft_account: UncheckedAccount<'info>,
+    /// CHECK: the pool's own token accounts, derived and checked by the pool program.
+    #[account(mut)]
+    pub pool_base_vault: UncheckedAccount<'info>,
+    /// CHECK: as above.
+    #[account(mut)]
+    pub pool_quote_vault: UncheckedAccount<'info>,
+    /// CHECK: the pool program's event authority, checked by the pool program.
+    pub damm_event_authority: UncheckedAccount<'info>,
+    /// CHECK: checked by address.
+    #[account(address = damm::PROGRAM_ID)]
+    pub damm_program: UncheckedAccount<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+    pub quote_token_program: Interface<'info, TokenInterface>,
+    /// The pool program takes this separately from the two token programs above, because it creates
+    /// its position NFT with it whatever the pool's own tokens are.
+    pub token_2022_program: Program<'info, Token2022>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> Graduate<'info> {
+    fn initialize_pool(&self, liquidity: u128, sqrt_price: u128, seeds: &[&[u8]]) -> Result<()> {
+        let mut data = Vec::with_capacity(8 + 16 + 16 + 1);
+        data.extend_from_slice(&damm::IX_INITIALIZE_POOL);
+        data.extend_from_slice(&liquidity.to_le_bytes());
+        data.extend_from_slice(&sqrt_price.to_le_bytes());
+        data.push(0); // activation_point: None, so the pool is live as soon as it exists
+
+        let accounts = vec![
+            // creator: the position owner, which is this curve's authority and nobody else
+            AccountMeta::new_readonly(self.vault_authority.key(), false),
+            AccountMeta::new(self.position_nft_mint.key(), true),
+            AccountMeta::new(self.position_nft_account.key(), false),
+            // payer: the same authority, signing as a PDA of this program
+            AccountMeta::new(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(self.damm_config.key(), false),
+            AccountMeta::new_readonly(self.damm_pool_authority.key(), false),
+            AccountMeta::new(self.pool.key(), false),
+            AccountMeta::new(self.position.key(), false),
+            AccountMeta::new_readonly(self.mint.key(), false),
+            AccountMeta::new_readonly(self.quote_mint.key(), false),
+            AccountMeta::new(self.pool_base_vault.key(), false),
+            AccountMeta::new(self.pool_quote_vault.key(), false),
+            AccountMeta::new(self.base_vault.key(), false),
+            AccountMeta::new(self.quote_vault.key(), false),
+            AccountMeta::new_readonly(self.token_program.key(), false),
+            AccountMeta::new_readonly(self.quote_token_program.key(), false),
+            AccountMeta::new_readonly(self.token_2022_program.key(), false),
+            AccountMeta::new_readonly(self.system_program.key(), false),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+
+        invoke_signed(
+            &Instruction { program_id: self.damm_program.key(), accounts, data },
+            &[
+                self.vault_authority.to_account_info(),
+                self.position_nft_mint.to_account_info(),
+                self.position_nft_account.to_account_info(),
+                self.damm_config.to_account_info(),
+                self.damm_pool_authority.to_account_info(),
+                self.pool.to_account_info(),
+                self.position.to_account_info(),
+                self.mint.to_account_info(),
+                self.quote_mint.to_account_info(),
+                self.pool_base_vault.to_account_info(),
+                self.pool_quote_vault.to_account_info(),
+                self.base_vault.to_account_info(),
+                self.quote_vault.to_account_info(),
+                self.token_program.to_account_info(),
+                self.quote_token_program.to_account_info(),
+                self.token_2022_program.to_account_info(),
+                self.system_program.to_account_info(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
+    fn lock_liquidity(&self, liquidity: u128, seeds: &[&[u8]]) -> Result<()> {
+        let mut data = Vec::with_capacity(8 + 16);
+        data.extend_from_slice(&damm::IX_PERMANENT_LOCK);
+        data.extend_from_slice(&liquidity.to_le_bytes());
+
+        let accounts = vec![
+            AccountMeta::new(self.pool.key(), false),
+            AccountMeta::new(self.position.key(), false),
+            AccountMeta::new_readonly(self.position_nft_account.key(), false),
+            AccountMeta::new_readonly(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+
+        invoke_signed(
+            &Instruction { program_id: self.damm_program.key(), accounts, data },
+            &[
+                self.pool.to_account_info(),
+                self.position.to_account_info(),
+                self.position_nft_account.to_account_info(),
+                self.vault_authority.to_account_info(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
+    fn burn_leftover(&self, amount: u64, seeds: &[&[u8]]) -> Result<()> {
+        token_interface::burn(
+            CpiContext::new_with_signer(
+                self.token_program.to_account_info(),
+                token_interface::Burn {
+                    mint: self.mint.to_account_info(),
+                    from: self.base_vault.to_account_info(),
+                    authority: self.vault_authority.to_account_info(),
+                },
+                &[seeds],
+            ),
+            amount,
+        )
+    }
+}
+
+#[derive(Accounts)]
+pub struct ClaimPoolFees<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    #[account(
+        seeds = [CURVE_SEED, curve.mint.as_ref()],
+        bump = curve.bump,
+        has_one = config,
+        has_one = mint,
+        has_one = base_vault,
+        has_one = quote_vault,
+        has_one = creator,
+    )]
+    pub curve: Box<Account<'info, Curve>>,
+
+    /// CHECK: owns the position and signs for the vaults. Data-less, see `VaultAuthority`.
+    #[account(seeds = [AUTHORITY_SEED, curve.mint.as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = config.quote_mint)]
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    #[account(mut)]
+    pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut)]
+    pub quote_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// CHECK: the pool program checks that the position belongs to this pool.
+    #[account(mut)]
+    pub pool: UncheckedAccount<'info>,
+    /// CHECK: the pool program derives this from the position NFT mint.
+    #[account(mut)]
+    pub position: UncheckedAccount<'info>,
+    /// CHECK: matched against the mint written on the curve when the pool was opened, so a claim
+    /// cannot be pointed at a position this curve does not own.
+    pub position_nft_mint: UncheckedAccount<'info>,
+    /// CHECK: derived and checked by the pool program.
+    pub position_nft_account: UncheckedAccount<'info>,
+    /// CHECK: the pool's own token accounts.
+    #[account(mut)]
+    pub pool_base_vault: UncheckedAccount<'info>,
+    /// CHECK: as above.
+    #[account(mut)]
+    pub pool_quote_vault: UncheckedAccount<'info>,
+    /// CHECK: the pool program's one authority account, checked by address.
+    #[account(address = damm::POOL_AUTHORITY)]
+    pub damm_pool_authority: UncheckedAccount<'info>,
+    /// CHECK: the pool program's event authority.
+    pub damm_event_authority: UncheckedAccount<'info>,
+    /// CHECK: checked by address.
+    #[account(address = damm::PROGRAM_ID)]
+    pub damm_program: UncheckedAccount<'info>,
+
+    /// CHECK: only its key is used, to check the creator's token accounts below.
+    pub creator: UncheckedAccount<'info>,
+
+    #[account(mut, token::mint = quote_mint, token::authority = creator)]
+    pub creator_quote: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, token::mint = quote_mint, token::authority = config.fee_recipient)]
+    pub platform_quote: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, token::mint = mint, token::authority = creator)]
+    pub creator_base: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, token::mint = mint, token::authority = config.fee_recipient)]
+    pub platform_base: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+    pub quote_token_program: Interface<'info, TokenInterface>,
+}
+
+impl<'info> ClaimPoolFees<'info> {
+    fn claim_position_fee(&self, seeds: &[&[u8]]) -> Result<()> {
+        let accounts = vec![
+            AccountMeta::new_readonly(self.damm_pool_authority.key(), false),
+            AccountMeta::new_readonly(self.pool.key(), false),
+            AccountMeta::new(self.position.key(), false),
+            AccountMeta::new(self.base_vault.key(), false),
+            AccountMeta::new(self.quote_vault.key(), false),
+            AccountMeta::new(self.pool_base_vault.key(), false),
+            AccountMeta::new(self.pool_quote_vault.key(), false),
+            AccountMeta::new_readonly(self.mint.key(), false),
+            AccountMeta::new_readonly(self.quote_mint.key(), false),
+            AccountMeta::new_readonly(self.position_nft_account.key(), false),
+            AccountMeta::new_readonly(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(self.token_program.key(), false),
+            AccountMeta::new_readonly(self.quote_token_program.key(), false),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+
+        invoke_signed(
+            &Instruction {
+                program_id: self.damm_program.key(),
+                accounts,
+                data: damm::IX_CLAIM_POSITION_FEE.to_vec(),
+            },
+            &[
+                self.damm_pool_authority.to_account_info(),
+                self.pool.to_account_info(),
+                self.position.to_account_info(),
+                self.base_vault.to_account_info(),
+                self.quote_vault.to_account_info(),
+                self.pool_base_vault.to_account_info(),
+                self.pool_quote_vault.to_account_info(),
+                self.mint.to_account_info(),
+                self.quote_mint.to_account_info(),
+                self.position_nft_account.to_account_info(),
+                self.vault_authority.to_account_info(),
+                self.token_program.to_account_info(),
+                self.quote_token_program.to_account_info(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
+    fn pay_out(
+        &self,
+        creator_quote: u64,
+        platform_quote: u64,
+        creator_base: u64,
+        platform_base: u64,
+        seeds: &[&[u8]],
+    ) -> Result<()> {
+        let quote_decimals = self.quote_mint.decimals;
+        let base_decimals = self.mint.decimals;
+        for (amount, to) in [
+            (creator_quote, self.creator_quote.to_account_info()),
+            (platform_quote, self.platform_quote.to_account_info()),
+        ] {
+            if amount == 0 {
+                continue;
+            }
+            token_interface::transfer_checked(
+                CpiContext::new_with_signer(
+                    self.quote_token_program.to_account_info(),
+                    token_interface::TransferChecked {
+                        from: self.quote_vault.to_account_info(),
+                        mint: self.quote_mint.to_account_info(),
+                        to,
+                        authority: self.vault_authority.to_account_info(),
+                    },
+                    &[seeds],
+                ),
+                amount,
+                quote_decimals,
+            )?;
+        }
+        for (amount, to) in [
+            (creator_base, self.creator_base.to_account_info()),
+            (platform_base, self.platform_base.to_account_info()),
+        ] {
+            if amount == 0 {
+                continue;
+            }
+            token_interface::transfer_checked(
+                CpiContext::new_with_signer(
+                    self.token_program.to_account_info(),
+                    token_interface::TransferChecked {
+                        from: self.base_vault.to_account_info(),
+                        mint: self.mint.to_account_info(),
+                        to,
+                        authority: self.vault_authority.to_account_info(),
+                    },
+                    &[seeds],
+                ),
+                amount,
+                base_decimals,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -1055,6 +1743,29 @@ pub struct Traded {
 }
 
 #[event]
+pub struct Graduated {
+    pub curve: Pubkey,
+    pub mint: Pubkey,
+    pub pool: Pubkey,
+    pub position: Pubkey,
+    pub position_nft_mint: Pubkey,
+    pub quote_seeded: u64,
+    pub base_seeded: u64,
+    pub burned: u64,
+    pub liquidity: u128,
+}
+
+#[event]
+pub struct PoolFeesClaimed {
+    pub curve: Pubkey,
+    pub mint: Pubkey,
+    pub quote_to_creator: u64,
+    pub quote_to_platform: u64,
+    pub base_to_creator: u64,
+    pub base_to_platform: u64,
+}
+
+#[event]
 pub struct FeesClaimed {
     pub curve: Pubkey,
     pub mint: Pubkey,
@@ -1089,4 +1800,14 @@ pub enum LaunchError {
     CurveInsolvent,
     #[msg("there is nothing to claim")]
     NothingToClaim,
+    #[msg("this curve has not reached its target yet")]
+    NotGraduated,
+    #[msg("this curve has no pool yet")]
+    NotPooled,
+    #[msg("the pool would not open at the price the curve closed at")]
+    PriceMismatch,
+    #[msg("the pool took a different amount than the curve raised")]
+    SeedOutOfRange,
+    #[msg("that is not this curve's position")]
+    WrongPosition,
 }
