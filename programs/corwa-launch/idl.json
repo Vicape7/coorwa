@@ -1,0 +1,1160 @@
+{
+  "address": "DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq",
+  "metadata": {
+    "name": "corwa_launch",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Coorwa launch curve - a bonding curve whose token carries a Token-2022 transfer tax"
+  },
+  "instructions": [
+    {
+      "name": "buy",
+      "docs": [
+        "Buy base with quote.",
+        "",
+        "`max_quote_in` is a ceiling rather than an amount. A curve that is close to its threshold",
+        "takes only what it has room for and leaves the rest in the buyer's account, which is how the",
+        "raise lands on the threshold exactly instead of overshooting it and needing a refund path."
+      ],
+      "discriminator": [
+        102,
+        6,
+        61,
+        18,
+        1,
+        218,
+        235,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "curve.mint",
+                "account": "Curve"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "base_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "trader_base",
+          "writable": true
+        },
+        {
+          "name": "trader_quote",
+          "writable": true
+        },
+        {
+          "name": "trader",
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "quote_token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_quote_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_base_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_curve_fees",
+      "docs": [
+        "Send the curve fees collected so far to the config's fee recipient.",
+        "",
+        "Permissionless, because the destination is fixed by the config rather than by whoever calls,",
+        "and a lost operator key should not strand the platform's own revenue."
+      ],
+      "discriminator": [
+        67,
+        48,
+        233,
+        11,
+        25,
+        119,
+        172,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "curve.mint",
+                "account": "Curve"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "Fixed by the config, so it does not matter who sends this instruction."
+          ],
+          "writable": true
+        },
+        {
+          "name": "quote_token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_config",
+      "docs": [
+        "Create the one config every launch reads. Whoever signs this owns the platform settings."
+      ],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "ConfigParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "launch",
+      "docs": [
+        "Mint a launch token and open its curve.",
+        "",
+        "Everything irreversible about the token happens here: the extensions it will carry, the tax",
+        "it will charge, its whole supply, and the loss of the mint authority. Nothing later in the",
+        "program's life can add to that list."
+      ],
+      "discriminator": [
+        153,
+        241,
+        93,
+        225,
+        22,
+        69,
+        74,
+        61
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "The mint to be. Created inside the instruction, so it arrives as a fresh keypair that has",
+            "signed for its own address and nothing else."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "base_vault",
+          "docs": [
+            "program derives for the curve."
+          ],
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "quote_token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "LaunchParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sell",
+      "docs": [
+        "Sell base back to the curve.",
+        "",
+        "The tax is charged on the way in, so the curve prices what the vault actually received. A",
+        "seller therefore pays the tax once, in the token, and again never: `min_quote_out` is checked",
+        "against the quote they will really see."
+      ],
+      "discriminator": [
+        51,
+        230,
+        133,
+        164,
+        1,
+        127,
+        131,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "curve.mint",
+                "account": "Curve"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "base_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "trader_base",
+          "writable": true
+        },
+        {
+          "name": "trader_quote",
+          "writable": true
+        },
+        {
+          "name": "trader",
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "quote_token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "base_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_quote_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Change the settings future launches will read.",
+        "",
+        "A live curve is untouched by this on purpose: every number that prices a trade is copied",
+        "onto the curve when it is created, so nobody's launch can be repriced under them."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "ConfigParams"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Curve",
+      "discriminator": [
+        191,
+        180,
+        249,
+        66,
+        180,
+        71,
+        51,
+        182
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ConfigInitialized",
+      "discriminator": [
+        181,
+        49,
+        200,
+        156,
+        19,
+        167,
+        178,
+        91
+      ]
+    },
+    {
+      "name": "ConfigUpdated",
+      "discriminator": [
+        40,
+        241,
+        230,
+        122,
+        11,
+        19,
+        198,
+        194
+      ]
+    },
+    {
+      "name": "FeesClaimed",
+      "discriminator": [
+        22,
+        104,
+        110,
+        222,
+        38,
+        157,
+        14,
+        62
+      ]
+    },
+    {
+      "name": "Launched",
+      "discriminator": [
+        209,
+        127,
+        29,
+        152,
+        129,
+        212,
+        189,
+        183
+      ]
+    },
+    {
+      "name": "Traded",
+      "discriminator": [
+        225,
+        202,
+        73,
+        175,
+        147,
+        43,
+        160,
+        150
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MathOverflow",
+      "msg": "arithmetic overflowed"
+    },
+    {
+      "code": 6001,
+      "name": "BadConfig",
+      "msg": "a config value is out of range"
+    },
+    {
+      "code": 6002,
+      "name": "LaunchesPaused",
+      "msg": "launches are paused"
+    },
+    {
+      "code": 6003,
+      "name": "TaxTierNotOffered",
+      "msg": "that tax rate is not one of the offered tiers"
+    },
+    {
+      "code": 6004,
+      "name": "BadMetadata",
+      "msg": "name, symbol or uri is empty or too long"
+    },
+    {
+      "code": 6005,
+      "name": "CurveClosed",
+      "msg": "this curve is closed to trading"
+    },
+    {
+      "code": 6006,
+      "name": "ZeroAmount",
+      "msg": "amount must be greater than zero"
+    },
+    {
+      "code": 6007,
+      "name": "AmountTooSmall",
+      "msg": "the amount is too small to move anything"
+    },
+    {
+      "code": 6008,
+      "name": "CurveExhausted",
+      "msg": "the curve has no base left to sell"
+    },
+    {
+      "code": 6009,
+      "name": "SlippageExceeded",
+      "msg": "the trade would return less than you asked for"
+    },
+    {
+      "code": 6010,
+      "name": "CurveInsolvent",
+      "msg": "the curve cannot pay out more quote than it holds"
+    },
+    {
+      "code": 6011,
+      "name": "NothingToClaim",
+      "msg": "there is nothing to claim"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Owns these settings. Cannot touch a live curve or any curve's money."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "docs": [
+              "Where curve fees go, and the platform's side of the graduated pool's fees."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "withhold_authority",
+            "docs": [
+              "Written onto every new mint as its withdraw-withheld authority: the wallet that collects the",
+              "tax and pays it out to holders."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "docs": [
+              "What every curve trades against. COOK on Cookie Chain."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "curve_fee_bps",
+            "docs": [
+              "Taken from the quote leg of every trade, both directions."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_lp_share_bps",
+            "docs": [
+              "The creator's share of the locked pool position at graduation. The rest is the platform's."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "tax_tiers",
+            "docs": [
+              "The tax rates a creator may pick from. A zero entry is an unused slot."
+            ],
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "graduation_quote",
+            "docs": [
+              "Raise that closes the curve, in quote units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sale_base",
+            "docs": [
+              "Base the curve may sell, in base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "migration_base",
+            "docs": [
+              "Base reserved for the pool at graduation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "virtual_quote",
+            "docs": [
+              "Virtual reserves, which set the opening price and how steeply it climbs."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "virtual_base",
+            "type": "u64"
+          },
+          {
+            "name": "token_decimals",
+            "type": "u8"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "launch_count",
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "withhold_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "curve_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "creator_lp_share_bps",
+            "type": "u16"
+          },
+          {
+            "name": "tax_tiers",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "graduation_quote",
+            "type": "u64"
+          },
+          {
+            "name": "sale_base",
+            "type": "u64"
+          },
+          {
+            "name": "migration_base",
+            "type": "u64"
+          },
+          {
+            "name": "virtual_quote",
+            "type": "u64"
+          },
+          {
+            "name": "virtual_base",
+            "type": "u64"
+          },
+          {
+            "name": "token_decimals",
+            "type": "u8"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Curve",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "virtual_base",
+            "docs": [
+              "Copied from the config at launch. A later config change must never reprice a live curve."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "virtual_quote",
+            "type": "u64"
+          },
+          {
+            "name": "sale_base",
+            "type": "u64"
+          },
+          {
+            "name": "migration_base",
+            "type": "u64"
+          },
+          {
+            "name": "graduation_quote",
+            "type": "u64"
+          },
+          {
+            "name": "base_sold",
+            "docs": [
+              "Base handed out so far, and quote in the reserve. Fees are not part of the reserve."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "quote_raised",
+            "type": "u64"
+          },
+          {
+            "name": "fees_quote",
+            "type": "u64"
+          },
+          {
+            "name": "tax_bps",
+            "type": "u16"
+          },
+          {
+            "name": "curve_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "creator_lp_share_bps",
+            "type": "u16"
+          },
+          {
+            "name": "state",
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeesClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LaunchParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "uri",
+            "type": "string"
+          },
+          {
+            "name": "tax_bps",
+            "docs": [
+              "The tax, in basis points, chosen by the creator from the config's tiers. Frozen forever."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Launched",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "tax_bps",
+            "type": "u16"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Traded",
+      "docs": [
+        "One trade. The app reads these to draw a chart, so everything a candle needs is here rather than",
+        "spread across the account state before and after."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_buy",
+            "type": "bool"
+          },
+          {
+            "name": "quote_amount",
+            "type": "u64"
+          },
+          {
+            "name": "base_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "quote_raised",
+            "type": "u64"
+          },
+          {
+            "name": "base_sold",
+            "type": "u64"
+          },
+          {
+            "name": "graduated",
+            "type": "bool"
+          }
+        ]
+      }
+    }
+  ]
+}

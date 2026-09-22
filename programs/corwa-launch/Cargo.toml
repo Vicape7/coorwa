@@ -1,0 +1,33 @@
+[package]
+name = "corwa-launch"
+version = "0.1.0"
+description = "Coorwa launch curve - a bonding curve whose token carries a Token-2022 transfer tax"
+edition = "2021"
+license = "MIT"
+# The floor the Solana platform-tools compiler sets. Dependency resolution reads it, so this one
+# line is what keeps edition-2024 crates out of the graph - see .cargo/config.toml.
+rust-version = "1.84"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "corwa_launch"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+# The launch token is Token-2022 and carries a transfer fee, so every base-side account here is
+# reached through the token interface rather than through `Program<Token>`. The quote side is COOK,
+# which is a classic SPL mint, hence both.
+anchor-spl = { version = "0.31.1", default-features = false, features = [
+    "token",
+    "token_2022",
+    "token_2022_extensions",
+    "associated_token",
+] }

@@ -8,6 +8,7 @@ skip-lint = false
 
 [programs.mainnet]
 corwa_vault = "83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg"
+corwa_launch = "DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq"
 
 [provider]
 # Cookie Chain is an SVM chain, so it is addressed by URL rather than by a cluster name.

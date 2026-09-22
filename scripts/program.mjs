@@ -27,7 +27,26 @@ const IMAGE = "solanafoundation/anchor:v0.32.1";
 const CARGO_VOLUME = "corwa-cargo32";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PROGRAM = "corwa_vault";
+
+/**
+ * Every program in the workspace, by crate directory and by the lib name the toolchain uses for its
+ * artefacts. `anchor build` compiles them all; build and deploy take an optional name so a slow
+ * rebuild or, more importantly, a deployment can be aimed at one of them.
+ */
+const PROGRAMS = [
+  { crate: "corwa-vault", lib: "corwa_vault" },
+  { crate: "corwa-launch", lib: "corwa_launch" },
+];
+
+/** Resolve the program named on the command line, or every program when none was. */
+function pick(name) {
+  if (!name) return PROGRAMS;
+  const found = PROGRAMS.filter((p) => p.lib === name || p.crate === name);
+  if (found.length === 0) {
+    throw new Error(`unknown program "${name}" - try ${PROGRAMS.map((p) => p.lib).join(" or ")}`);
+  }
+  return found;
+}
 
 function docker() {
   const onPath = spawnSync("docker", ["--version"], { encoding: "utf8" });
@@ -72,36 +91,52 @@ function inContainer(script, { extraArgs = [] } = {}) {
   return res.status ?? 1;
 }
 
-function build() {
-  console.log(`building ${PROGRAM} with ${IMAGE}\n`);
-  const code = inContainer("anchor build");
+function build(name) {
+  const targets = pick(name);
+  console.log(`building ${targets.map((p) => p.lib).join(", ")} with ${IMAGE}\n`);
+  const code = inContainer(
+    name ? `anchor build -p ${targets[0].lib}` : "anchor build",
+  );
   if (code !== 0) return code;
 
-  const so = join(ROOT, "target", "deploy", `${PROGRAM}.so`);
-  const idl = join(ROOT, "target", "idl", `${PROGRAM}.json`);
-  if (!existsSync(so)) {
-    console.error("the build reported success but produced no .so");
-    return 1;
-  }
+  let missing = 0;
+  for (const { crate, lib } of targets) {
+    const so = join(ROOT, "target", "deploy", `${lib}.so`);
+    const idl = join(ROOT, "target", "idl", `${lib}.json`);
+    if (!existsSync(so)) {
+      console.error(`the build reported success but produced no .so for ${lib}`);
+      missing += 1;
+      continue;
+    }
 
-  // The IDL lives next to the source, not only in target/, because it is the record of what the
-  // deployed program actually accepts. `tests/vault-idl.test.ts` checks the hand-written client
-  // against this file, so a change to the program that the client has not followed fails a test
-  // rather than a transaction.
-  if (existsSync(idl)) {
-    mkdirSync(join(ROOT, "programs", "corwa-vault"), { recursive: true });
-    copyFileSync(idl, join(ROOT, "programs", "corwa-vault", "idl.json"));
-    console.log("\nidl   programs/corwa-vault/idl.json");
-  }
+    // The IDL lives next to the source, not only in target/, because it is the record of what the
+    // deployed program actually accepts. The idl tests check the hand-written clients against these
+    // files, so a change to a program that a client has not followed fails a test rather than a
+    // transaction.
+    if (existsSync(idl)) {
+      mkdirSync(join(ROOT, "programs", crate), { recursive: true });
+      copyFileSync(idl, join(ROOT, "programs", crate, "idl.json"));
+    }
 
-  const bytes = readFileSync(so);
-  console.log(`so    target/deploy/${PROGRAM}.so`);
-  console.log(`size  ${statSync(so).size.toLocaleString("en-US")} bytes`);
-  console.log(`sha256 ${createHash("sha256").update(bytes).digest("hex")}`);
-  return 0;
+    const bytes = readFileSync(so);
+    console.log(`\n${lib}`);
+    console.log(`  idl    programs/${crate}/idl.json`);
+    console.log(`  so     target/deploy/${lib}.so`);
+    console.log(`  size   ${statSync(so).size.toLocaleString("en-US")} bytes`);
+    console.log(`  sha256 ${createHash("sha256").update(bytes).digest("hex")}`);
+  }
+  return missing === 0 ? 0 : 1;
 }
 
-function deploy() {
+function deploy(name) {
+  if (!name && PROGRAMS.length > 1) {
+    console.error(
+      `name the program to deploy: ${PROGRAMS.map((p) => p.lib).join(" or ")}. Deploying spends`
+        + " COOK and cannot be undone quietly, so this script will not guess.",
+    );
+    return 1;
+  }
+  const { lib } = pick(name)[0];
   const wallet = process.env.CORWA_DEPLOY_WALLET?.trim();
   if (!wallet) {
     console.error(
@@ -120,21 +155,21 @@ function deploy() {
     return 1;
   }
 
-  const so = join(ROOT, "target", "deploy", `${PROGRAM}.so`);
+  const so = join(ROOT, "target", "deploy", `${lib}.so`);
   if (!existsSync(so)) {
     console.error("nothing built yet - run npm run program:build first");
     return 1;
   }
 
   const rpc = process.env.NEXT_PUBLIC_COOKIE_RPC_URL?.trim() || "https://rpc.cookiescan.io";
-  console.log(`deploying ${PROGRAM} to ${rpc}\n`);
+  console.log(`deploying ${lib} to ${rpc}\n`);
 
   return inContainer(
     [
       "solana config set --url $CORWA_RPC --keypair /wallet.json >/dev/null",
       "echo payer: $(solana address)",
       "echo balance: $(solana balance)",
-      `solana program deploy target/deploy/${PROGRAM}.so --program-id target/deploy/${PROGRAM}-keypair.json`,
+      `solana program deploy target/deploy/${lib}.so --program-id target/deploy/${lib}-keypair.json`,
     ].join(" && "),
     { extraArgs: ["-v", `${resolve(wallet)}:/wallet.json:ro`, "-e", `CORWA_RPC=${rpc}`] },
   );
@@ -148,16 +183,20 @@ function stopValidator() {
 }
 
 async function integrationTest() {
-  const so = join(ROOT, "target", "deploy", `${PROGRAM}.so`);
-  const idlPath = join(ROOT, "programs", "corwa-vault", "idl.json");
-  if (!existsSync(so) || !existsSync(idlPath)) {
+  const loaded = [];
+  for (const { crate, lib } of PROGRAMS) {
+    const so = join(ROOT, "target", "deploy", `${lib}.so`);
+    const idlPath = join(ROOT, "programs", crate, "idl.json");
+    if (!existsSync(so) || !existsSync(idlPath)) continue;
+    loaded.push({ lib, so, id: JSON.parse(readFileSync(idlPath, "utf8")).address });
+  }
+  if (loaded.length === 0) {
     console.error("nothing built yet - run npm run program:build first");
     return 1;
   }
-  const programId = JSON.parse(readFileSync(idlPath, "utf8")).address;
 
   stopValidator();
-  console.log(`starting a validator with ${programId} loaded`);
+  console.log(`starting a validator with ${loaded.map((p) => p.lib).join(", ")} loaded`);
 
   const started = spawnSync(
     docker(),
@@ -177,7 +216,7 @@ async function integrationTest() {
       "--bind-address", "0.0.0.0",
       "--rpc-port", "8899",
       "--limit-ledger-size", "10000",
-      "--bpf-program", programId, `/work/target/deploy/${PROGRAM}.so`,
+      ...loaded.flatMap((p) => ["--bpf-program", p.id, `/work/target/deploy/${p.lib}.so`]),
     ],
     { encoding: "utf8" },
   );
@@ -227,10 +266,13 @@ async function integrationTest() {
 }
 
 const command = process.argv[2];
+const target = process.argv[3];
 const commands = { build, deploy, test: integrationTest };
 
 if (!commands[command]) {
-  console.error(`usage: node scripts/program.mjs <${Object.keys(commands).join("|")}>`);
+  console.error(
+    `usage: node scripts/program.mjs <${Object.keys(commands).join("|")}> [${PROGRAMS.map((p) => p.lib).join("|")}]`,
+  );
   process.exit(2);
 }
-process.exit(await commands[command]());
+process.exit(await commands[command](target));
