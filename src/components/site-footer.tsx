@@ -6,6 +6,7 @@ const LINKS: { label: string; href: string }[] = [
   { label: "Terminal", href: "/terminal" },
   { label: "Launch", href: "/launch" },
   { label: "Rewards", href: "/rewards" },
+  { label: "Roadmap", href: "/roadmap" },
   { label: "Status", href: "/status" },
   { label: "Explorer", href: "https://cookiescan.io" },
   { label: "Terms", href: "/terms" },
