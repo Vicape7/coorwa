@@ -50,14 +50,25 @@ const BUILT: Milestone[] = [
     ),
     note: "151 unit tests, 21 integration tests",
   },
+  {
+    sha: "aef153c",
+    date: "22 September 2026",
+    title: "Coorwa hosts the metadata",
+    body: (
+      <>
+        A token&apos;s name, symbol and picture have to live somewhere a wallet can read them, and
+        the link to them is written into the mint at launch, where it can never be edited again.
+        Coorwa serves that itself now, on its own domain: one document per mint, stored when the
+        launch is built, signed for by the creator so nobody can write in their name, and frozen the
+        moment the token exists on chain.
+      </>
+    ),
+    note: "734 lines added",
+  },
 ];
 
 /** Still to do, in the order it will be done. */
 const LEFT: { title: string; body: string }[] = [
-  {
-    title: "Coorwa hosts the token metadata",
-    body: "Name, symbol and image served by Coorwa, the one part of a launch the current launchpad does for us today.",
-  },
   {
     title: "Launch page rewritten",
     body: "A creator picks the tax tier there, and the page says plainly what it pays, what it costs and what happens at graduation.",
