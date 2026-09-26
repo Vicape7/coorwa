@@ -22,7 +22,10 @@
  *
  * Once a token has graduated, the tax is sold into the pool the program opened instead, straight on
  * the pool program and priced the way it prices. In the minutes between the curve filling and the
- * crank opening that pool there is nothing to sell into, and the token waits. Server only.
+ * crank opening that pool there is nothing to sell into, and the token waits.
+ *
+ * The same pass then claims the curve's and the pool's fees for that token (`fee-claims.ts`), after
+ * the sale, since the sale pays one. Server only.
  */
 import bs58 from "bs58";
 import { Connection, PublicKey, Transaction, type Keypair } from "@solana/web3.js";
@@ -55,6 +58,7 @@ import {
   type DammPoolState,
 } from "./launch-program";
 import { tradeInstructions } from "./launch-flow";
+import { claimFees } from "./fee-claims";
 import { COOKIE_RPC_URL, COOK_DECIMALS, COOK_MINT } from "./config";
 
 type Sweep = typeof schema.taxSweeps.$inferSelect;
@@ -464,6 +468,14 @@ export async function runTaxSweep(now = new Date()): Promise<TaxSweepResult> {
       report.push(await sweepCurve(cookie, signer, curve));
     } catch (e) {
       report.push(`${curve.mint.toBase58().slice(0, 4)} error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    // After the sale, which pays a fee of its own. A claim that fails costs nothing but the report
+    // line, and the next pass tries again.
+    try {
+      const fresh = (await fetchCurve(cookie, curve.mint)) ?? curve;
+      report.push(await claimFees(cookie, signer, fresh, config.feeRecipient));
+    } catch (e) {
+      report.push(`${curve.mint.toBase58().slice(0, 4)} fees error: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

@@ -19,7 +19,8 @@
     "db:push": "drizzle-kit push",
     "program:fixtures": "node scripts/program.mjs fixtures",
     "launch:config": "node --import ./tests/resolve.mjs scripts/launch-config.mjs",
-    "launch:graduate": "node --import ./tests/resolve.mjs scripts/graduate.mjs"
+    "launch:graduate": "node --import ./tests/resolve.mjs scripts/graduate.mjs",
+    "launch:claim": "node --import ./tests/resolve.mjs scripts/claim-fees.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
