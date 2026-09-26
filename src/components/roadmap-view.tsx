@@ -94,14 +94,25 @@ const BUILT: Milestone[] = [
     ),
     note: "3 fills, read from the chain",
   },
+  {
+    sha: "06ee8b5",
+    date: "26 September 2026",
+    title: "The tax collected for holders",
+    body: (
+      <>
+        Once an hour a scheduled run gathers the tax every token on the curve has withheld, takes it
+        out of the mint and sells it back to the curve for COOK in the same transaction. What the
+        sale paid, read from the program&apos;s own event, joins that token&apos;s holder pool, and
+        the daily payout buys the stock with it and sends it out. The first token&apos;s whole tax
+        was swept this way, for exactly the COOK the quote said it would bring.
+      </>
+    ),
+    note: "57.43 COOK from the first sweep",
+  },
 ];
 
 /** Still to do, in the order it will be done. */
 const LEFT: { title: string; body: string }[] = [
-  {
-    title: "The tax collected and paid out",
-    body: "A scheduled run sweeps what the mints withheld and hands it to the payout that already buys the stock and sends it to holders every day.",
-  },
   {
     title: "Graduation, watched and driven",
     body: "The program opens and locks the pool, but something has to call it the moment a curve fills. That job runs on a schedule, and the first graduation will be watched by hand.",
