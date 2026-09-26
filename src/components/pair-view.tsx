@@ -8,11 +8,7 @@ import { RecentTrades } from "./recent-trades";
 import { TokenMark } from "./token-mark";
 import { GraduatedClaim } from "./graduated-claim";
 import { usd, amount, rwaRatio, pct, shortAddr } from "@/lib/format";
-import {
-  COOKIE_EXPLORER,
-  HOLDER_MIN_USD,
-  cookieAccountUrl,
-} from "@/lib/config";
+import { HOLDER_MIN_USD, cookieAccountUrl } from "@/lib/config";
 import type { CoorwaPair } from "@/lib/pairs";
 import type { RewardPool } from "@/lib/rewards-ledger";
 
@@ -240,7 +236,7 @@ function PairFacts({ pair }: { pair: CoorwaPair }) {
         </Fact>
         <Fact label="Deepest pool">
           {pair.poolId ? (
-            <ExtLink href={`${COOKIE_EXPLORER}/account/${pair.poolId}`}>{pair.venue}</ExtLink>
+            <ExtLink href={cookieAccountUrl(pair.poolId)}>{pair.venue}</ExtLink>
           ) : (
             <span className="text-subtle">—</span>
           )}

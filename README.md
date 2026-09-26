@@ -225,7 +225,7 @@ checked against the chain on the next call instead of paying twice.
 - **No dust payouts.** A wallet is paid once it is owed $1 in a stock, since the first payout opens
   a token account on Solana. Anything smaller carries over to the next run.
 - **Open books.** Fees wait in one operator wallet,
-  [`3y5zHNgQ…Pt8R`](https://cookiescan.io/account/3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R),
+  [`3y5zHNgQ…Pt8R`](https://cookiescan.io/address/3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R),
   between collection and the daily run, the same model StonkFun uses, because buying a stock on
   Solana needs a key to sign it. Every run, with its total, its costs, how many wallets it paid and
   its bridge transaction, is published at [`/api/rewards`](https://coorwa.fun/api/rewards), and each payout
@@ -295,7 +295,7 @@ sampler Worker, and 145 offline unit tests that run in a few seconds.
 
 **Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
 Coorwa wrote and deployed on Cookie Chain at
-[`83cPao5i…ywdYg`](https://cookiescan.io/account/83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg). Its
+[`83cPao5i…ywdYg`](https://cookiescan.io/address/83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg). Its
 toolchain is pinned in a container, and `npm run program:test` exercises it against a real
 validator: claims, double claims, claiming someone else's line, forged proofs, epochs the vault
 cannot back, and publishing from the wrong key. It was Coorwa's claim-based payout path before

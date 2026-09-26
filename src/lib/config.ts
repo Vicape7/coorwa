@@ -279,7 +279,8 @@ export function cookieTxUrl(sig: string) {
   return `${COOKIE_EXPLORER}/tx/${sig}`;
 }
 export function cookieAccountUrl(addr: string) {
-  return `${COOKIE_EXPLORER}/account/${addr}`;
+  // Cookiescan's route for any address; a mint's redirects to its token page.
+  return `${COOKIE_EXPLORER}/address/${addr}`;
 }
 export function solanaTxUrl(sig: string) {
   return `${SOLANA_EXPLORER}/tx/${sig}`;
