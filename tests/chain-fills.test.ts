@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { swapFromTransaction, type RpcTransaction } from "../src/lib/chain-fills";
+import { swapFromTransaction, volume24h, type RpcTransaction } from "../src/lib/chain-fills";
 
 const COOKL = "62MbXm8LPfbYkhsQiwzpNHHHQvzhmmToLq9WhDPCmomo";
 
@@ -49,4 +49,16 @@ test("a swap of another token through the pool is not a fill of this one", () =>
 test("a failed transaction is not a fill", () => {
   const tx = load("cookl-buy");
   assert.equal(swapFromTransaction({ ...tx, meta: { ...tx.meta!, err: { custom: 1 } } }, COOKL), null);
+});
+
+test("24h volume sums the fills of the last day and nothing older", () => {
+  const now = 1_000_000;
+  const fills = [
+    { ts: now - 60, value_usd: 1.5 },
+    { ts: now - 23 * 3600, value_usd: 2 },
+    { ts: now - 24 * 3600, value_usd: 100 },
+    { ts: now - 30 * 3600, value_usd: 100 },
+  ];
+  assert.equal(volume24h(fills, now), 3.5);
+  assert.equal(volume24h([], now), 0);
 });

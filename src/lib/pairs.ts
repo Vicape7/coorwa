@@ -39,6 +39,7 @@ import { fetchPools } from "./launchpad";
 import { logosByMint } from "./token-logos";
 import { cachedStale } from "./http";
 import { coorwaPairs, type CoorwaPair as CoorwaCurvePair } from "./coorwa-pairs";
+import { coorwaVolume24h } from "./chain-fills";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -262,11 +263,27 @@ export async function buildUniverse(opts?: {
   // Coorwa's own tokens that have graduated, read from the pools the program opened, whether or not
   // any feed has indexed them yet.
   const wanted = new Set(quoteTickers.map((a) => a.ticker));
-  for (const p of launchedHere) {
+  const listedHere = launchedHere.filter((p) => {
     const asset = rwaByTicker(p.quote.ticker);
-    if (!p.pool || !asset || !wanted.has(asset.ticker) || p.priceUsd == null || p.price == null) continue;
-    const liquidityUsd = p.pool.liquidityUsd ?? 0;
-    if (liquidityUsd < minLiq) continue;
+    return (
+      p.pool != null &&
+      asset != null &&
+      wanted.has(asset.ticker) &&
+      p.priceUsd != null &&
+      p.price != null &&
+      (p.pool.liquidityUsd ?? 0) >= minLiq
+    );
+  });
+  // Read from the chain, since no feed indexes these pools; a failed read shows as no volume.
+  const volumes = await Promise.all(
+    listedHere.map((p) => coorwaVolume24h(p.base.mint).catch(() => null)),
+  );
+  for (const [i, p] of listedHere.entries()) {
+    // Every one of these was checked by the filter above.
+    const asset = rwaByTicker(p.quote.ticker)!;
+    const pool = p.pool!;
+    const priceUsd = p.priceUsd!;
+    const liquidityUsd = pool.liquidityUsd ?? 0;
     pairs.push({
       slug: p.slug,
       base: {
@@ -275,11 +292,11 @@ export async function buildUniverse(opts?: {
         name: p.base.name,
         logo: p.base.logo,
         decimals: p.base.decimals,
-        priceUsd: p.priceUsd,
-        priceCook: cookUsd ? p.priceUsd / cookUsd : null,
+        priceUsd,
+        priceCook: cookUsd ? priceUsd / cookUsd : null,
         change24h: null,
         liquidityUsd,
-        volume24h: null,
+        volume24h: volumes[i],
         marketCap: null,
         holders: null,
         stale: false,
@@ -294,11 +311,11 @@ export async function buildUniverse(opts?: {
         change24h: p.quote.change24h,
       },
       pinned: true,
-      price: p.price,
+      price: p.price!,
       inverse: p.inverse ?? 0,
       change24h: null,
       venue: "Coorwa pool",
-      poolId: p.pool.address,
+      poolId: pool.address,
     });
   }
 
