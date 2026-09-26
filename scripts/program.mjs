@@ -178,7 +178,7 @@ function build(name) {
   return missing === 0 ? 0 : 1;
 }
 
-function deploy(name) {
+async function deploy(name) {
   if (!name && PROGRAMS.length > 1) {
     console.error(
       `name the program to deploy: ${PROGRAMS.map((p) => p.lib).join(" or ")}. Deploying spends`
@@ -214,15 +214,81 @@ function deploy(name) {
   const rpc = process.env.NEXT_PUBLIC_COOKIE_RPC_URL?.trim() || "https://rpc.cookiescan.io";
   console.log(`deploying ${lib} to ${rpc}\n`);
 
+  const extended = await extendIfShort({ lib, so, wallet, rpc });
+  if (extended !== 0) return extended;
+
   return inContainer(
     [
       "solana config set --url $CORWA_RPC --keypair /wallet.json >/dev/null",
       "echo payer: $(solana address)",
       "echo balance: $(solana balance)",
-      `solana program deploy target/deploy/${lib}.so --program-id target/deploy/${lib}-keypair.json`,
+      // The account was made big enough above, in the form this chain accepts. See extendIfShort.
+      `solana program deploy target/deploy/${lib}.so --program-id target/deploy/${lib}-keypair.json --no-auto-extend`,
     ].join(" && "),
     { extraArgs: ["-v", `${resolve(wallet)}:/wallet.json:ro`, "-e", `CORWA_RPC=${rpc}`] },
   );
+}
+
+/**
+ * Make room for an upgrade that is bigger than the program it replaces.
+ *
+ * A program's bytes live in an account sized at its first deployment, and an upgrade has to fit in
+ * it. The CLI grows that account by itself, but with `ExtendProgramChecked`, which Cookie Chain's
+ * loader does not know yet (on 2026-09-26 it answered "invalid instruction data", and the whole
+ * upgrade was refused before anything was spent). The older `ExtendProgram` works, so this sends
+ * that first, sized to the new program plus a little room, and the deploy is told not to try.
+ */
+async function extendIfShort({ lib, so, wallet, rpc }) {
+  const {
+    Connection,
+    Keypair,
+    PublicKey,
+    SystemProgram,
+    Transaction,
+    TransactionInstruction,
+    sendAndConfirmTransaction,
+  } = await import("@solana/web3.js");
+  const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+  const programId = Keypair.fromSecretKey(
+    Uint8Array.from(JSON.parse(readFileSync(join(ROOT, "target", "deploy", `${lib}-keypair.json`), "utf8"))),
+  ).publicKey;
+  const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(wallet, "utf8"))));
+  const connection = new Connection(rpc, "confirmed");
+
+  // A first deployment sizes its own account, so there is nothing to grow.
+  if (!(await connection.getAccountInfo(programId))) return 0;
+  const [programData] = PublicKey.findProgramAddressSync([programId.toBytes()], loader);
+  const info = await connection.getAccountInfo(programData);
+  if (!info) {
+    console.error(`${programId.toBase58()} has no program data account`);
+    return 1;
+  }
+  // The account starts with a 45-byte header: its tag, the slot and the upgrade authority.
+  const room = info.data.length - 45;
+  const needed = statSync(so).size;
+  if (needed <= room) return 0;
+
+  // Rounded up to 8 KiB past what is needed, so the next small change fits without another trip.
+  const grow = Math.ceil((needed - room) / 8192) * 8192 + 8192;
+  console.log(`the program account holds ${room} bytes, the new build is ${needed}: growing it by ${grow}`);
+  const data = Buffer.alloc(8);
+  data.writeUInt32LE(6, 0); // ExtendProgram
+  data.writeUInt32LE(grow, 4);
+  const tx = new Transaction().add(
+    new TransactionInstruction({
+      programId: loader,
+      data,
+      keys: [
+        { pubkey: programData, isSigner: false, isWritable: true },
+        { pubkey: programId, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      ],
+    }),
+  );
+  const signature = await sendAndConfirmTransaction(connection, tx, [payer], { commitment: "confirmed" });
+  console.log(`grown: ${signature}\n`);
+  return 0;
 }
 
 /** Detached container running a validator with the program already loaded. */
