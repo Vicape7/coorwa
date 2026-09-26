@@ -540,19 +540,44 @@ function YourLaunches({ config }: { config: LaunchConfigState | null }) {
   );
 }
 
+/**
+ * A curve's name and picture.
+ *
+ * The curve account holds neither: the name lives on the mint and the picture behind the uri the
+ * mint carries, which is this document. Read by the mint's own path rather than by the absolute uri
+ * in it, so a token launched against a development server still shows itself.
+ */
+function useTokenMetadata(mint: string) {
+  const { data } = useSWR<{ name?: string; symbol?: string; image?: string }>(
+    `/t/${mint}`,
+    (u: string) => fetch(u).then((r) => (r.ok ? r.json() : {})),
+    { revalidateOnFocus: false },
+  );
+  return {
+    name: data?.name ?? null,
+    symbol: data?.symbol ?? null,
+    // Ours is served from this origin whatever the document says; a creator's own url is used as it is.
+    image: data?.image ? (data.image.includes(`/t/${mint}/image`) ? `/t/${mint}/image` : data.image) : null,
+  };
+}
+
 function CurveRow({ curve, decimals }: { curve: CurveState; decimals: number }) {
   const progress =
     curve.graduationQuote > 0n
       ? Number((curve.quoteRaised * 1000n) / curve.graduationQuote) / 1000
       : 0;
   const mint = curve.mint.toBase58();
+  const token = useTokenMetadata(mint);
 
   return (
     <li className="panel p-4">
       <div className="flex items-center gap-3">
-        <TokenMark logo={null} symbol={mint.slice(0, 4)} size={36} />
+        <TokenMark logo={token.image} symbol={token.symbol ?? mint.slice(0, 4)} size={36} />
         <div className="min-w-0 flex-1">
-          <div className="num truncate text-[14px] text-primary">{shortAddr(mint, 6)}</div>
+          <div className="truncate text-[14px] text-primary">
+            {token.name ?? shortAddr(mint, 6)}{" "}
+            {token.symbol && <span className="text-subtle">{token.symbol}</span>}
+          </div>
           <div className="num mt-0.5 text-[12px] text-muted">
             {amount(Number(curve.quoteRaised) / 10 ** COOK_DECIMALS, 0)} of{" "}
             {amount(Number(curve.graduationQuote) / 10 ** COOK_DECIMALS, 0)} COOK ·{" "}

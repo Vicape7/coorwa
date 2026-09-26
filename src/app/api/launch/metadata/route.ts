@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { COOKIE_RPC_URL } from "@/lib/config";
 import { rwaByTicker } from "@/lib/rwa";
+import { fetchCurve } from "@/lib/launch-program";
 import {
   IMAGE_TYPES,
   MAX_IMAGE_BYTES,
@@ -104,28 +105,47 @@ export async function POST(req: Request) {
     );
   }
 
-  // Metadata is rewritable only while the launch has not landed. Once the mint exists, what the uri
-  // returns is part of the token, and a creator changing it later would be changing the token.
   const existing = await store.head(metadataKey(b.mint));
-  if (existing) {
-    if (existing.creator && existing.creator !== b.creator) {
-      return bad("metadata for this mint was written by another wallet", undefined, 409);
-    }
-    let live: boolean;
-    try {
-      live = await mintExists(b.mint);
-    } catch {
-      return bad(
-        "could not check whether that mint is already on chain",
-        "Cookie Chain did not answer, and overwriting metadata for a token that is already live is not allowed. Try again shortly",
-        502,
-      );
-    }
-    if (live) {
+  if (existing?.creator && existing.creator !== b.creator) {
+    return bad("metadata for this mint was written by another wallet", undefined, 409);
+  }
+
+  let live: boolean;
+  try {
+    live = await mintExists(b.mint);
+  } catch {
+    return bad(
+      "could not check whether that mint is already on chain",
+      "Cookie Chain did not answer, and writing metadata for a token that is already live needs that answer. Try again shortly",
+      502,
+    );
+  }
+
+  // Before the launch lands, the wallet that wrote the metadata may rewrite it as often as it likes:
+  // nothing points at it yet. Once the mint exists the rules invert, because the uri is inside the
+  // mint and cannot be edited.
+  if (live) {
+    if (existing) {
       return bad(
         "that token is already on chain, so its metadata is fixed",
         "launch a new token if you need different metadata",
         409,
+      );
+    }
+    // Nothing stored for a mint that already exists: either its launch never reached this store, or
+    // somebody is trying to put metadata on a token that is not theirs. Only its own creator may,
+    // and only once, which is what makes the first case recoverable and the second impossible.
+    let curve: Awaited<ReturnType<typeof fetchCurve>>;
+    try {
+      curve = await fetchCurve(new Connection(COOKIE_RPC_URL, "confirmed"), new PublicKey(b.mint));
+    } catch {
+      return bad("could not read that token's curve", "Cookie Chain did not answer", 502);
+    }
+    if (!curve || curve.creator.toBase58() !== b.creator) {
+      return bad(
+        "that token is already on chain and it is not yours to describe",
+        "metadata can only be written for a token this wallet launched through Coorwa",
+        403,
       );
     }
   }
