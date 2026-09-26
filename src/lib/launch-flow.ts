@@ -40,6 +40,57 @@ import {
 /** A legacy transaction's hard limit, signatures included. */
 const PACKET_SIZE = 1232;
 
+/**
+ * COOK a buy leaves in the wallet: the transaction fee and the rent of the two token accounts a
+ * first buy opens come to well under a hundredth of a COOK, so this covers them with room to spare.
+ */
+export const COOK_RESERVE = 10_000_000n;
+
+/** What a wallet holds of COOK: plain, and wrapped in its token account (null when it has none). */
+export interface CookHoldings {
+  native: bigint;
+  wrapped: bigint | null;
+}
+
+export async function cookHoldings(connection: Connection, owner: PublicKey): Promise<CookHoldings> {
+  const account = getAssociatedTokenAddressSync(NATIVE_MINT, owner);
+  const [native, wrapped] = await Promise.all([
+    connection.getBalance(owner, "confirmed"),
+    connection.getTokenAccountBalance(account, "confirmed").catch(() => null),
+  ]);
+  return { native: BigInt(native), wrapped: wrapped ? BigInt(wrapped.value.amount) : null };
+}
+
+/** The most a buy can spend: wrapped COOK first, then plain COOK less the reserve. */
+export function spendableCook(holdings: CookHoldings): bigint {
+  const plain = holdings.native > COOK_RESERVE ? holdings.native - COOK_RESERVE : 0n;
+  return plain + (holdings.wrapped ?? 0n);
+}
+
+/**
+ * Fund the wrapped account for a buy of `amount`.
+ *
+ * Wrapped COOK already in the account is spent first and only the shortfall is wrapped, so COOK
+ * left wrapped by an earlier trade is used rather than stranded. The sync runs either way, which
+ * also counts any COOK sent to the account by hand.
+ */
+function wrapForBuy(
+  trader: PublicKey,
+  wrapped: PublicKey,
+  amount: bigint,
+  wrappedHeld: bigint,
+): TransactionInstruction[] {
+  const shortfall = amount > wrappedHeld ? amount - wrappedHeld : 0n;
+  const instructions: TransactionInstruction[] = [];
+  if (shortfall > 0n) {
+    instructions.push(
+      SystemProgram.transfer({ fromPubkey: trader, toPubkey: wrapped, lamports: shortfall }),
+    );
+  }
+  instructions.push(createSyncNativeInstruction(wrapped));
+  return instructions;
+}
+
 export interface LaunchFormInput {
   creator: PublicKey;
   mint: PublicKey;
@@ -57,6 +108,8 @@ export interface LaunchFormInput {
    * closed again at the end. False when they already had one, which must be left alone.
    */
   closeWrapped: boolean;
+  /** Wrapped COOK the creator already holds, spent before any more is wrapped. */
+  wrappedHeld?: bigint;
 }
 
 /**
@@ -156,6 +209,8 @@ export function tradeInstructions(input: {
   /** The least the trade may deliver, in raw units of the other side. */
   minOut: bigint;
   closeWrapped: boolean;
+  /** Wrapped COOK the trader already holds, spent before any more is wrapped. */
+  wrappedHeld?: bigint;
 }): TransactionInstruction[] {
   const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, input.trader);
   const base = getAssociatedTokenAddressSync(
@@ -183,12 +238,7 @@ export function tradeInstructions(input: {
 
   if (input.side === "buy") {
     instructions.push(
-      SystemProgram.transfer({
-        fromPubkey: input.trader,
-        toPubkey: wrapped,
-        lamports: input.amount,
-      }),
-      createSyncNativeInstruction(wrapped),
+      ...wrapForBuy(input.trader, wrapped, input.amount, input.wrappedHeld ?? 0n),
       createAssociatedTokenAccountIdempotentInstruction(
         input.trader,
         base,
@@ -222,6 +272,8 @@ export function poolTradeInstructions(input: {
   amount: bigint;
   minOut: bigint;
   closeWrapped: boolean;
+  /** Wrapped COOK the trader already holds, spent before any more is wrapped. */
+  wrappedHeld?: bigint;
 }): TransactionInstruction[] {
   const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, input.trader);
   const base = getAssociatedTokenAddressSync(
@@ -241,12 +293,7 @@ export function poolTradeInstructions(input: {
   ];
   if (input.side === "buy") {
     instructions.push(
-      SystemProgram.transfer({
-        fromPubkey: input.trader,
-        toPubkey: wrapped,
-        lamports: input.amount,
-      }),
-      createSyncNativeInstruction(wrapped),
+      ...wrapForBuy(input.trader, wrapped, input.amount, input.wrappedHeld ?? 0n),
       createAssociatedTokenAccountIdempotentInstruction(
         input.trader,
         base,
@@ -283,15 +330,6 @@ export function quoteDevBuy(
   return quoteBuy(openingCurve(config, input), quote);
 }
 
-/** Whether the creator already holds a wrapped COOK account, which decides if one is closed later. */
-export async function hasWrappedAccount(
-  connection: Connection,
-  owner: PublicKey,
-): Promise<boolean> {
-  const account = getAssociatedTokenAddressSync(NATIVE_MINT, owner);
-  return (await connection.getAccountInfo(account)) !== null;
-}
-
 function devBuyInstructions(input: LaunchFormInput): TransactionInstruction[] {
   const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, input.creator);
   const base = getAssociatedTokenAddressSync(
@@ -308,12 +346,7 @@ function devBuyInstructions(input: LaunchFormInput): TransactionInstruction[] {
       input.creator,
       NATIVE_MINT,
     ),
-    SystemProgram.transfer({
-      fromPubkey: input.creator,
-      toPubkey: wrapped,
-      lamports: input.devBuyQuote,
-    }),
-    createSyncNativeInstruction(wrapped),
+    ...wrapForBuy(input.creator, wrapped, input.devBuyQuote, input.wrappedHeld ?? 0n),
     createAssociatedTokenAccountIdempotentInstruction(
       input.creator,
       base,

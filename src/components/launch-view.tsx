@@ -29,7 +29,7 @@ import {
   type CurveState,
   type LaunchConfigState,
 } from "@/lib/launch-program";
-import { hasWrappedAccount, planLaunch, quoteDevBuy } from "@/lib/launch-flow";
+import { cookHoldings, planLaunch, quoteDevBuy, spendableCook } from "@/lib/launch-flow";
 import { metadataMessage } from "@/lib/launch-metadata";
 import {
   clearUnrecorded,
@@ -209,6 +209,15 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
     );
   }, [config, devBuyRaw, publicKey, tax]);
 
+  /** What the creator can pay a dev buy with, plain and wrapped COOK together. */
+  const { data: holdings } = useSWR(
+    publicKey ? ["cook-holdings", publicKey.toBase58()] : null,
+    () => cookHoldings(connection, publicKey!),
+    { refreshInterval: 20_000 },
+  );
+  const spendable = holdings ? spendableCook(holdings) : undefined;
+  const short = preview != null && spendable !== undefined && preview.quoteTaken > spendable;
+
   const launch = useCallback(async () => {
     if (!publicKey || !signTransaction || !config) return;
     if (!signMessage) {
@@ -257,6 +266,7 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
         devBuyRaw > 0n
           ? quoteDevBuy(config, { mint: mint.publicKey, creator: publicKey, taxBps: tax }, devBuyRaw)
           : null;
+      const held = await cookHoldings(connection, publicKey);
       const plan = planLaunch(
         {
           creator: publicKey,
@@ -265,11 +275,13 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
           symbol: symbol.toUpperCase(),
           uri: stored.uri,
           taxBps: tax,
-          devBuyQuote: devBuyRaw,
+          // What the curve will take, which is less than was typed when the buy alone fills it.
+          devBuyQuote: quote ? quote.quoteTaken : 0n,
           minBaseOut: quote
             ? (quote.baseOut * (10_000n - DEV_BUY_SLIPPAGE_BPS)) / 10_000n
             : 0n,
-          closeWrapped: !(await hasWrappedAccount(connection, publicKey)),
+          closeWrapped: held.wrapped === null,
+          wrappedHeld: held.wrapped ?? 0n,
         },
         (await connection.getLatestBlockhash("confirmed")).blockhash,
       );
@@ -488,10 +500,16 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
         ) : (
           <button
             className="btn btn-primary w-full"
-            disabled={!ready || !!step || !config || config.paused}
+            disabled={!ready || !!step || !config || config.paused || short}
             onClick={launch}
           >
-            {step ? "Working" : config?.paused ? "Launching is paused" : "Launch token"}
+            {step
+              ? "Working"
+              : config?.paused
+                ? "Launching is paused"
+                : short
+                  ? "Not enough COOK for this buy"
+                  : "Launch token"}
           </button>
         )}
 

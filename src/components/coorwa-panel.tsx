@@ -24,9 +24,10 @@ import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
 import { amount, rawToUi, shortAddr, uiToRaw, usd } from "@/lib/format";
 import { quoteBuy, quotePoolSwap, quoteSell } from "@/lib/launch-program";
 import {
+  cookHoldings,
   curveFromSerialised,
-  hasWrappedAccount,
   poolTradeInstructions,
+  spendableCook,
   tradeInstructions,
 } from "@/lib/launch-flow";
 import { explainError, signSendConfirm } from "@/lib/tx";
@@ -86,7 +87,15 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
     { refreshInterval: 20_000 },
   );
 
-  const raw = Number(input) > 0 ? BigInt(uiToRaw(Number(input), side === "buy" ? COOK_DECIMALS : decimals)) : 0n;
+  /** What this wallet can pay with, plain and wrapped COOK together, for the buy side. */
+  const { data: holdings, mutate: refreshHoldings } = useSWR(
+    publicKey ? ["cook-holdings", publicKey.toBase58()] : null,
+    () => cookHoldings(connection, publicKey!),
+    { refreshInterval: 20_000 },
+  );
+  const spendable = holdings ? spendableCook(holdings) : undefined;
+
+  const raw =Number(input) > 0 ? BigInt(uiToRaw(Number(input), side === "buy" ? COOK_DECIMALS : decimals)) : 0n;
 
   const quote = useMemo((): Quote | null => {
     if (raw <= 0n) return null;
@@ -138,7 +147,10 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
     setFilled(null);
     setBusy(true);
     try {
-      const closeWrapped = !(await hasWrappedAccount(connection, publicKey));
+      // Read fresh rather than from the panel's copy: this decides what gets wrapped and closed.
+      const held = await cookHoldings(connection, publicKey);
+      const closeWrapped = held.wrapped === null;
+      const wrappedHeld = held.wrapped ?? 0n;
       const mint = new PublicKey(pair.base.mint);
       let instructions;
       if (pool) {
@@ -152,6 +164,7 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
           // compare against, so the bound never refuses a trade that was quoted fairly.
           minOut: (quote.received * (10_000n - SLIPPAGE_BPS)) / 10_000n,
           closeWrapped,
+          wrappedHeld,
         });
       } else {
         // The curve checks what it sends too: for a buy, the tokens before the tax.
@@ -160,9 +173,12 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
           trader: publicKey,
           mint,
           side,
-          amount: raw,
+          // A buy near the threshold takes less than was typed; offering only that much keeps the
+          // rest out of the wrapped account, where it would stay when the account is not closed.
+          amount: side === "buy" ? quote.spent : raw,
           minOut: (sent * (10_000n - SLIPPAGE_BPS)) / 10_000n,
           closeWrapped,
+          wrappedHeld,
         });
       }
       const tx = new Transaction().add(...instructions);
@@ -173,14 +189,43 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
       setFilled({ signature: sent.signature, side });
       setInput("");
       void refreshBalance();
+      void refreshHoldings();
     } catch (e) {
       setError(explainError(e));
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, raw, quote, side, connection, pair.base.mint, pool, refreshBalance]);
+  }, [
+    publicKey,
+    signTransaction,
+    raw,
+    quote,
+    side,
+    connection,
+    pair.base.mint,
+    pool,
+    refreshBalance,
+    refreshHoldings,
+  ]);
 
   const cookSide = quote ? (side === "buy" ? quote.spent : quote.received) : 0n;
+
+  // Refused here rather than by the chain, whose answer is a failed transfer in the logs.
+  const short =
+    quote != null &&
+    (side === "buy"
+      ? spendable !== undefined && quote.spent > spendable
+      : balance !== undefined && quote.spent > balance);
+
+  /** The Max figure for the side in play, in whole units, or null while it is still loading. */
+  const max =
+    side === "buy"
+      ? spendable !== undefined
+        ? { raw: spendable, decimals: COOK_DECIMALS, digits: 4 }
+        : null
+      : balance !== undefined
+        ? { raw: balance, decimals, digits: 2 }
+        : null;
 
   return (
     <div className="card p-5 sm:p-6">
@@ -196,12 +241,12 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
       <label className="mt-4 block">
         <span className="label mb-1.5 flex items-baseline justify-between text-[12px]">
           <span>{side === "buy" ? "You pay (COOK)" : `You sell (${symbol})`}</span>
-          {side === "sell" && balance !== undefined && (
+          {max && (
             <button
               className="text-[12px] text-muted underline underline-offset-4"
-              onClick={() => setInput(String(rawToUi(balance.toString(), decimals)))}
+              onClick={() => setInput(String(rawToUi(max.raw.toString(), max.decimals)))}
             >
-              Max {amount(rawToUi(balance.toString(), decimals), 2)}
+              Max {amount(rawToUi(max.raw.toString(), max.decimals), max.digits)}
             </button>
           )}
         </span>
@@ -276,10 +321,16 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
         ) : (
           <button
             className="btn btn-primary w-full"
-            disabled={busy || raw <= 0n || !tradable}
+            disabled={busy || raw <= 0n || !tradable || short}
             onClick={trade}
           >
-            {busy ? "Working" : side === "buy" ? "Buy" : "Sell"}
+            {busy
+              ? "Working"
+              : short
+                ? `Not enough ${side === "buy" ? "COOK" : symbol}`
+                : side === "buy"
+                  ? "Buy"
+                  : "Sell"}
           </button>
         )}
       </div>

@@ -9,9 +9,18 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { openingCurve, planLaunch, quoteDevBuy, transactionSize } from "../src/lib/launch-flow";
+import {
+  COOK_RESERVE,
+  openingCurve,
+  planLaunch,
+  poolTradeInstructions,
+  quoteDevBuy,
+  spendableCook,
+  tradeInstructions,
+  transactionSize,
+} from "../src/lib/launch-flow";
 import { LAUNCH_PROGRAM_ID, type LaunchConfigState } from "../src/lib/launch-program";
 import {
   CREATOR_LP_SHARE_BPS,
@@ -135,6 +144,50 @@ test("a dev buy big enough to graduate says so before it is signed", () => {
     (GRADUATION_QUOTE * 10_000n) / 9_900n + 1n,
   );
   assert.equal(quote.graduates, true);
+});
+
+/** The lamports a set of instructions moves into the wrapped account, or null when none do. */
+function wrappedBy(instructions: { programId: PublicKey; data: Buffer }[]): bigint | null {
+  const transfer = instructions.find((ix) => ix.programId.equals(SystemProgram.programId));
+  // A system transfer is a u32 tag (2) then the u64 amount.
+  return transfer ? transfer.data.readBigUInt64LE(4) : null;
+}
+
+test("a buy wraps only what the wrapped account does not already hold", () => {
+  const trade = { trader: creator, mint, side: "buy" as const, amount: 5_000n, minOut: 1n };
+  assert.equal(wrappedBy(tradeInstructions({ ...trade, closeWrapped: true })), 5_000n);
+  assert.equal(
+    wrappedBy(tradeInstructions({ ...trade, closeWrapped: false, wrappedHeld: 1_200n })),
+    3_800n,
+  );
+  assert.equal(
+    wrappedBy(
+      poolTradeInstructions({ ...trade, baseIsA: true, closeWrapped: false, wrappedHeld: 1_200n }),
+    ),
+    3_800n,
+  );
+});
+
+test("a buy the wrapped account already covers wraps nothing more", () => {
+  const trade = { trader: creator, mint, side: "buy" as const, amount: 5_000n, minOut: 1n };
+  const covered = tradeInstructions({ ...trade, closeWrapped: false, wrappedHeld: 9_000n });
+  assert.equal(wrappedBy(covered), null);
+  // Still synced, so COOK sent to the account by hand counts too.
+  assert.equal(covered.length, 4, "open wrapped, sync, open token account, buy");
+});
+
+test("a dev buy spends wrapped COOK the creator already holds", () => {
+  const plan = planLaunch(
+    input({ devBuyQuote: 5_000_000_000n, minBaseOut: 1n, closeWrapped: false, wrappedHeld: 2_000_000_000n }),
+    BLOCKHASH,
+  );
+  assert.equal(wrappedBy(plan.transactions[0].instructions), 3_000_000_000n);
+});
+
+test("what a buy can spend counts wrapped COOK and keeps a reserve of plain COOK", () => {
+  assert.equal(spendableCook({ native: COOK_RESERVE + 100n, wrapped: null }), 100n);
+  assert.equal(spendableCook({ native: COOK_RESERVE + 100n, wrapped: 50n }), 150n);
+  assert.equal(spendableCook({ native: 1n, wrapped: 945n }), 945n, "never below the wrapped part");
 });
 
 test("the mint is never the fee payer", () => {
