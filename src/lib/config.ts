@@ -231,6 +231,18 @@ export const LAUNCH_PROGRAM_ADDRESS =
   "DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq";
 
 /**
+ * Whether the launch form is open to whoever opens the page.
+ *
+ * The program works, but a token it mints promises its holders a daily payout and its buyers a
+ * pool at the end, and both of those still run by hand. Until they run by themselves, a stranger's
+ * launch would be a promise Coorwa keeps manually, so the page says so instead. Closed in
+ * production, open everywhere else, and `NEXT_PUBLIC_LAUNCH_OPEN` decides it either way.
+ */
+export const LAUNCH_OPEN = process.env.NEXT_PUBLIC_LAUNCH_OPEN
+  ? process.env.NEXT_PUBLIC_LAUNCH_OPEN.trim() === "true"
+  : process.env.NODE_ENV !== "production";
+
+/**
  * The Cookiebox pool config a graduated curve opens its pool against, and the pool program itself.
  *
  * The config fixes the pool's fee and its price range, so it is part of what a launch promises
