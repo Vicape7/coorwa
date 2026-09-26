@@ -4,7 +4,7 @@ import { LAUNCH_PROGRAM_ADDRESS } from "@/lib/config";
 const REPO = "https://github.com/Vicape7/coorwa";
 
 /** The day the page below was last edited by hand. */
-const UPDATED = "26 September 2026";
+const UPDATED = "27 September 2026";
 
 interface Milestone {
   sha: string;
@@ -109,18 +109,39 @@ const BUILT: Milestone[] = [
     ),
     note: "57.43 COOK from the first sweep",
   },
+  {
+    sha: "1688efb",
+    date: "26 September 2026",
+    title: "Graduation, driven on a schedule",
+    body: (
+      <>
+        A scheduled run looks for curves that have reached their target and graduates each one: it
+        measures the exact rent the pool needs, opens and locks the pool through the program, and
+        waits rather than fails if somebody opened that pool first. The token then trades in its
+        own pool on the same page, with the same panel. The first real graduation was done this way,
+        with nobody pressing a button.
+      </>
+    ),
+    note: "14 seconds from the last buy to a locked pool",
+  },
+  {
+    sha: "4f09580",
+    date: "27 September 2026",
+    title: "The fees claimed, and split on chain",
+    body: (
+      <>
+        The same hourly run now claims what each token owes: the 1% its curve took, and the fees its
+        locked pool has earned. The pool&apos;s fees are split by the program in the instruction
+        that collects them, 40% to the creator and the rest to Coorwa, so neither can be paid without
+        the other.
+      </>
+    ),
+    note: "measured by simulation before anything is sent",
+  },
 ];
 
 /** Still to do, in the order it will be done. */
 const LEFT: { title: string; body: string }[] = [
-  {
-    title: "Graduation, watched and driven",
-    body: "The program opens and locks the pool, but something has to call it the moment a curve fills. That job runs on a schedule, and the first graduation will be watched by hand.",
-  },
-  {
-    title: "The curve's fees claimed",
-    body: "What the 1% has earned sits on each curve until Coorwa claims it. One more scheduled run, into the same wallet the payout spends from.",
-  },
   {
     title: "The upgrade authority given up",
     body: "Once the program has run quietly for a while, the key that can change it is thrown away and this page says so on the day it happens.",
