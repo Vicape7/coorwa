@@ -14,7 +14,7 @@
  * for the next one to check what landed instead of paying twice. Called every few minutes by the
  * scheduler through the sample endpoint; most calls find nothing due and return at once.
  *
- * Custodial by design, like StonkFun's payouts: the day's fees sit in the operator wallet until the
+ * Custodial by design: the day's fees sit in the operator wallet until the
  * run pays them out. A run pays its own costs: the operator's spare SOL covers them first, and what
  * that does not cover comes out of the run's own payouts, never out of COOK that other tokens'
  * holders are still waiting for. Server only.

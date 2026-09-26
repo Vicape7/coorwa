@@ -17,7 +17,8 @@ import { fetchCookPriceUsd } from "./cookiescan";
 import { fetchRwaPrices } from "./jupiter";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
-import { rwaByTicker } from "./rwa";
+import { ratioChange, rwaByTicker } from "./rwa";
+import { coorwaDayStats } from "./chain-fills";
 import {
   dammPoolPda,
   dammTokenVault,
@@ -72,6 +73,12 @@ export interface CoorwaPair {
   /** How many tokens buy one whole share. */
   inverse: number | null;
   raisedUsd: number | null;
+  /** Dollars traded in the last day, curve and pool together. Null when the fills could not be read. */
+  volume24h: number | null;
+  /** The token's own dollar move over the day, in percent. */
+  change24h: number | null;
+  /** That move with the stock's divided out: how the pair itself moved. */
+  vsStock24h: number | null;
   /** The graduated pool, once there is one. Its price is the token's price from then on. */
   pool: CoorwaPool | null;
 }
@@ -196,10 +203,11 @@ export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
   const [pinned, listed] = await Promise.all([benchmarks(), listedByMint()]);
   if ((pinned.get(mint) ?? listed.get(mint)) !== asset.ticker) return null;
 
-  const [cookPriceUsd, prices, meta] = await Promise.all([
+  const [cookPriceUsd, prices, meta, day] = await Promise.all([
     fetchCookPriceUsd(),
     fetchRwaPrices(),
     hostedMetadata(mint),
+    coorwaDayStats(mint).catch(() => null),
   ]);
   const stock = prices[asset.ticker];
   if (!stock || !(stock.priceUsd > 0)) return null;
@@ -214,6 +222,7 @@ export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
     : coorwaPriceCook(serialised);
   const priceUsd = cookPriceUsd && priceCook > 0 ? priceCook * cookPriceUsd : null;
   const raisedCook = Number(curve.quoteRaised) / 10 ** COOK_DECIMALS;
+  const change24h = priceUsd && day?.openUsd ? (priceUsd / day.openUsd - 1) * 100 : null;
 
   return {
     slug: curveSlug(mint, asset.ticker),
@@ -238,6 +247,9 @@ export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
     price: priceUsd ? priceUsd / stock.priceUsd : null,
     inverse: priceUsd ? stock.priceUsd / priceUsd : null,
     raisedUsd: cookPriceUsd ? raisedCook * cookPriceUsd : null,
+    volume24h: day?.volumeUsd ?? null,
+    change24h,
+    vsStock24h: ratioChange(change24h, stock.change24h),
     pool,
   };
 }

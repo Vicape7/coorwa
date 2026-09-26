@@ -34,7 +34,7 @@ const SLIPPAGE_CHOICES = [50, 100, 500, 1000];
  */
 const COOKIE_COSTS_ALLOWANCE = 5_000_000n;
 
-export function SwapPanel({ pair }: { pair: CoorwaPair }) {
+export function SwapPanel({ pair, header }: { pair: CoorwaPair; header?: React.ReactNode }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -257,11 +257,10 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
 
   return (
     <div className="card overflow-hidden">
-      <div className="grid grid-cols-2 border-b border-hair">
-        {(["buy", "sell"] as Side[]).map((s) => {
-          const active = side === s;
-          const tone = s === "buy" ? "var(--color-up)" : "var(--color-down)";
-          return (
+      <div className="space-y-4 px-4 pt-5 sm:px-5">
+        {header}
+        <div className="segmented w-full">
+          {(["buy", "sell"] as Side[]).map((s) => (
             <button
               key={s}
               onClick={() => {
@@ -271,18 +270,16 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
                 setResult(null);
                 setError(null);
               }}
-              style={active ? { color: tone, boxShadow: `inset 0 -2px 0 0 ${tone}` } : undefined}
-              className={`py-3.5 text-[13px] transition-colors ${
-                active ? "" : "text-muted hover:text-[color:var(--text-primary)]"
-              }`}
+              data-active={side === s}
+              className="flex-1"
             >
-              {s === "buy" ? "Buy" : "Sell"} {pair.base.symbol}
+              {s === "buy" ? "Buy" : "Sell"}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-3 p-4">
+      <div className="space-y-3 p-4 sm:px-5 sm:pb-5">
         <div className="panel-raised p-4">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="label">You pay</span>
@@ -362,12 +359,12 @@ export function SwapPanel({ pair }: { pair: CoorwaPair }) {
         {activeQuoteError && <Notice tone="down">{activeQuoteError}</Notice>}
 
         {!publicKey ? (
-          <button className="btn btn-primary w-full" onClick={() => setVisible(true)}>
+          <button className="btn btn-primary w-full py-4 text-[16px]" onClick={() => setVisible(true)}>
             Connect wallet
           </button>
         ) : (
           <button
-            className="btn btn-primary w-full"
+            className="btn btn-primary w-full py-4 text-[16px]"
             disabled={!activeQuote || busy || insufficient || quoting}
             onClick={execute}
           >

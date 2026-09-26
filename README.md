@@ -226,7 +226,7 @@ checked against the chain on the next call instead of paying twice.
   a token account on Solana. Anything smaller carries over to the next run.
 - **Open books.** Fees wait in one operator wallet,
   [`3y5zHNgQ…Pt8R`](https://cookiescan.io/address/3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R),
-  between collection and the daily run, the same model StonkFun uses, because buying a stock on
+  between collection and the daily run, because buying a stock on
   Solana needs a key to sign it. Every run, with its total, its costs, how many wallets it paid and
   its bridge transaction, is published at [`/api/rewards`](https://coorwa.fun/api/rewards), and each payout
   on the rewards page links its Solana transaction.

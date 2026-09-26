@@ -73,3 +73,12 @@ export function rwaByMint(mint: string): RwaAsset | undefined {
 
 /** The default quote asset a pair falls back to when none is named. */
 export const DEFAULT_RWA = rwaByTicker("NVDA")!;
+
+/** Ratio return: how the pair moved once the RWA's own move is divided out. */
+export function ratioChange(tokenPct: number | null, rwaPct: number | null): number | null {
+  if (tokenPct == null || !Number.isFinite(tokenPct)) return null;
+  const r = rwaPct ?? 0;
+  const denom = 1 + r / 100;
+  if (denom <= 0) return null;
+  return ((1 + tokenPct / 100) / denom - 1) * 100;
+}

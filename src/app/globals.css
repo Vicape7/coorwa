@@ -3,24 +3,20 @@
 /*
  * Coorwa design system.
  *
- * It comes from two sources, kept separate on purpose.
- *
  * COLOUR comes from the logo, measured out of the file instead of picked by eye. The cookie C in
  * public/coorwa.png is 12% #f0b860 by pixel count, runs #e8a850 to #f8d080 through its highlights,
  * and has chocolate chips at #784018. So the product uses one hue, amber at 37°, with cocoa as its
  * only dark. There is no navy and no second accent.
  *
- * LAYOUT AND TYPE come from ponsfamily.com/launchpad, checked with the browser inspector:
+ * LAYOUT AND TYPE:
  *
  *   - One typeface. Inter for headings, stat numbers and addresses alike. Weights 400 and 500 only.
- *     Their site uses no third weight, and neither does this one.
- *   - Pills. They use border-radius 999px 209 times against 62 for the next most common value.
+ *   - Pills. Controls use border-radius 999px.
  *   - Fills instead of borders. A border appears only between two dense regions, at 0.08 opacity.
  *   - One easing curve, cubic-bezier(.22, 1, .36, 1), at .18s.
  *
- * MATERIAL is glass, and it is the one part that is not from Pons. Glass only looks like glass when
- * there is something behind it, so glass surfaces sit over the amber field (.aurora-field) and not
- * over flat paper. The Glass section below explains how the layers stack.
+ * MATERIAL is glass. Glass only looks like glass when there is something behind it, so glass
+ * surfaces sit over the amber field (.aurora-field) and not over flat paper. The Glass section below explains how the layers stack.
  *
  * What makes this feel expensive is restraint. Emphasis comes from spacing and hierarchy, never
  * from heavier type or stronger lines. Nothing here uses a font weight above 500.
@@ -391,6 +387,12 @@ body {
   border-radius: var(--radius-panel);
 }
 
+/* The pay and receive boxes of a trade card: a tinted tile, no rim. */
+.panel-raised {
+  background: var(--panel-fill);
+  border-radius: var(--radius-card);
+}
+
 /* --- Glass -------------------------------------------------------------------------------------
  *
  * Four layers, and the order matters:
@@ -728,7 +730,7 @@ body {
   box-shadow: var(--chip-edge);
 }
 
-/* The big pill input, the way Pons treats search. */
+/* The big pill input. */
 .field {
   background: var(--surface);
   border: 1px solid transparent;
@@ -816,7 +818,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Segmented control - the Pons/Apple pattern for switching views. */
+/* Segmented control, for switching views. */
 .segmented {
   display: inline-flex;
   gap: 2px;

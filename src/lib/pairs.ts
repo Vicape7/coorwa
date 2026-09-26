@@ -32,14 +32,13 @@ import {
   type CookiescanMarket,
 } from "./cookiescan";
 import { fetchRwaPrices, type RwaQuote } from "./jupiter";
-import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA } from "./rwa";
+import { RWA_ASSETS, rwaByTicker, DEFAULT_RWA, ratioChange } from "./rwa";
 import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
 import { fetchPools } from "./launchpad";
 import { logosByMint } from "./token-logos";
 import { cachedStale } from "./http";
 import { coorwaPairs, type CoorwaPair as CoorwaCurvePair } from "./coorwa-pairs";
-import { coorwaDayStats } from "./chain-fills";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -141,15 +140,6 @@ export function uniqueSlugs<
       ? { ...p, slug: `${p.base.mint}-${p.quote.ticker.toLowerCase()}` }
       : p,
   );
-}
-
-/** Ratio return: how the pair moved once the RWA's own move is divided out. */
-function ratioChange(tokenPct: number | null, rwaPct: number | null): number | null {
-  if (tokenPct == null || !Number.isFinite(tokenPct)) return null;
-  const r = rwaPct ?? 0;
-  const denom = 1 + r / 100;
-  if (denom <= 0) return null;
-  return ((1 + tokenPct / 100) / denom - 1) * 100;
 }
 
 function tokenUsd(t: CookiescanToken, cookUsd: number | null): number | null {
@@ -274,18 +264,14 @@ export async function buildUniverse(opts?: {
       (p.pool.liquidityUsd ?? 0) >= minLiq
     );
   });
-  // Read from the chain, since no feed indexes these pools; a failed read shows as no figures.
-  const days = await Promise.all(
-    listedHere.map((p) => coorwaDayStats(p.base.mint).catch(() => null)),
-  );
-  for (const [i, p] of listedHere.entries()) {
+  // Each pair read its own day from the chain, since no feed indexes these pools.
+  for (const p of listedHere) {
     // Every one of these was checked by the filter above.
     const asset = rwaByTicker(p.quote.ticker)!;
     const pool = p.pool!;
     const priceUsd = p.priceUsd!;
     const liquidityUsd = pool.liquidityUsd ?? 0;
-    const day = days[i];
-    const tokenChange = day?.openUsd ? (priceUsd / day.openUsd - 1) * 100 : null;
+    const tokenChange = p.change24h;
     pairs.push({
       slug: p.slug,
       base: {
@@ -298,7 +284,7 @@ export async function buildUniverse(opts?: {
         priceCook: cookUsd ? priceUsd / cookUsd : null,
         change24h: tokenChange,
         liquidityUsd,
-        volume24h: day?.volumeUsd ?? null,
+        volume24h: p.volume24h,
         marketCap: null,
         holders: null,
         stale: false,

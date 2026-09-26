@@ -6,7 +6,7 @@ import { useTheme } from "@/lib/use-theme";
 import { MoonGlyph, SunGlyph } from "./ui/glyphs";
 
 /**
- * The light and dark switch, left of Connect, where Pons puts theirs.
+ * The light and dark switch, left of Connect.
  *
  * Which icon shows is decided by CSS off the `data-theme` attribute, not by React state. The head
  * script may already have set dark before hydration, and an icon picked in render would show the

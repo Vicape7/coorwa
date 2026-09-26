@@ -140,7 +140,7 @@ export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuE
 /**
  * The operator wallet: every fee Coorwa collects lands here, and holder rewards are paid out of it.
  *
- * This is custodial on purpose, the way StonkFun's own payout wallets are. Rewards are paid in the
+ * This is custodial on purpose. Rewards are paid in the
  * pair's asset on Solana, and buying that asset on Jupiter needs a key to sign it, so the day's fees
  * sit here between collection and payout. The key is `COORWA_OPERATOR_KEY`, a server secret; this
  * is only its public address, needed in the browser to build a pair payment.

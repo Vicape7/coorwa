@@ -51,7 +51,7 @@ interface Quote {
   graduates: boolean;
 }
 
-export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
+export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React.ReactNode }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -208,8 +208,6 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
     refreshHoldings,
   ]);
 
-  const cookSide = quote ? (side === "buy" ? quote.spent : quote.received) : 0n;
-
   // Refused here rather than by the chain, whose answer is a failed transfer in the logs.
   const short =
     quote != null &&
@@ -227,70 +225,129 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
         ? { raw: balance, decimals, digits: 2 }
         : null;
 
+  const switchSide = (next: Side) => {
+    // The typed number is COOK on one side and the token on the other, so it cannot carry over.
+    setSide(next);
+    setInput("");
+  };
+  const inSymbol = side === "buy" ? "COOK" : symbol;
+  const outSymbol = side === "buy" ? symbol : "COOK";
+  const cookUsd = (units: bigint) =>
+    pair.cookPriceUsd != null ? usd((Number(units) / 10 ** COOK_DECIMALS) * pair.cookPriceUsd) : null;
+  const payUsd = side === "buy" ? cookUsd(raw) : null;
+  const getUsd = quote && side === "sell" ? cookUsd(quote.received) : null;
+
   return (
-    <div className="card p-5 sm:p-6">
+    <div className="card p-4 sm:p-5">
+      {header && <div className="mb-4">{header}</div>}
+
       <div className="segmented w-full">
-        <button onClick={() => setSide("buy")} data-active={side === "buy"} className="flex-1">
+        <button onClick={() => switchSide("buy")} data-active={side === "buy"} className="flex-1">
           Buy
         </button>
-        <button onClick={() => setSide("sell")} data-active={side === "sell"} className="flex-1">
+        <button onClick={() => switchSide("sell")} data-active={side === "sell"} className="flex-1">
           Sell
         </button>
       </div>
 
-      <label className="mt-4 block">
-        <span className="label mb-1.5 flex items-baseline justify-between text-[12px]">
-          <span>{side === "buy" ? "You pay (COOK)" : `You sell (${symbol})`}</span>
+      <label className="panel-raised mt-4 block p-4">
+        <span className="label flex items-baseline justify-between text-[12px]">
+          <span>{side === "buy" ? "You pay" : "You sell"}</span>
           {max && (
-            <button
-              className="text-[12px] text-muted underline underline-offset-4"
-              onClick={() => setInput(String(rawToUi(max.raw.toString(), max.decimals)))}
-            >
-              Max {amount(rawToUi(max.raw.toString(), max.decimals), max.digits)}
-            </button>
+            <span className="num text-subtle">
+              {amount(rawToUi(max.raw.toString(), max.decimals), max.digits)} {inSymbol}
+            </span>
           )}
         </span>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value.replace(/[^0-9.]/g, ""))}
-          inputMode="decimal"
-          placeholder="0"
-          className="field num w-full"
-        />
+        <span className="mt-2 flex items-center gap-3">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value.replace(/[^0-9.]/g, ""))}
+            inputMode="decimal"
+            placeholder="0"
+            className="num w-full min-w-0 bg-transparent text-[30px] leading-none text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
+          />
+          <span className="pill pill-active shrink-0 text-[13px]">{inSymbol}</span>
+        </span>
+        <span className="num mt-2 block text-[12px] text-subtle">{payUsd ?? " "}</span>
       </label>
 
-      {quote && (
-        <dl className="mt-4 space-y-2 text-[13px]">
-          <Row
-            label="You receive"
-            value={
-              side === "buy"
-                ? `${amount(Number(quote.received) / 10 ** decimals, 2)} ${symbol}`
-                : `${amount(Number(quote.received) / 10 ** COOK_DECIMALS, 4)} COOK`
-            }
-            strong
-          />
-          {quote.tax > 0n && (
-            <Row
-              label={`Token tax (${pair.curve.taxBps / 100}%)`}
-              value={`${amount(Number(quote.tax) / 10 ** decimals, 2)} ${symbol} to holders`}
+      {/* Turns the trade round: what was paid is now received. */}
+      <div className="relative z-10 -my-2.5 flex justify-center">
+        <button
+          type="button"
+          onClick={() => switchSide(side === "buy" ? "sell" : "buy")}
+          aria-label="Switch between buying and selling"
+          className="nav-round h-9 w-9 text-muted"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden>
+            <path
+              d="M5 2.5v11M5 13.5 2.5 11M5 13.5 7.5 11M11 13.5v-11M11 2.5 8.5 5M11 2.5 13.5 5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-          )}
+          </svg>
+        </button>
+      </div>
+
+      <div className="panel-raised p-4">
+        <div className="label text-[12px]">You receive</div>
+        <div className="mt-2 flex items-center gap-3">
+          <div className="num w-full min-w-0 truncate text-[30px] leading-none text-primary">
+            {quote ? (
+              side === "buy" ? (
+                amount(Number(quote.received) / 10 ** decimals, 2)
+              ) : (
+                amount(Number(quote.received) / 10 ** COOK_DECIMALS, 4)
+              )
+            ) : (
+              <span className="text-subtle">0</span>
+            )}
+          </div>
+          <span className="pill pill-active shrink-0 text-[13px]">{outSymbol}</span>
+        </div>
+        <div className="num mt-2 text-[12px] text-subtle">{getUsd ?? " "}</div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {[25, 50, 75, 100].map((p) => (
+          <button
+            key={p}
+            type="button"
+            disabled={!max || max.raw <= 0n}
+            onClick={() => {
+              if (!max) return;
+              // At 100% the raw figure is used whole, so a rounded share cannot leave dust behind.
+              const part = p === 100 ? max.raw : (max.raw * BigInt(p)) / 100n;
+              setInput(String(rawToUi(part.toString(), max.decimals)));
+            }}
+            className="btn btn-quiet btn-sm num px-0 disabled:opacity-40"
+          >
+            {p}%
+          </button>
+        ))}
+      </div>
+
+      <dl className="mt-4 space-y-2 text-[13px]">
+        <Row label="Slippage" value={`${Number(SLIPPAGE_BPS) / 100}%`} />
+        {quote && quote.tax > 0n && (
+          <Row
+            label={`Token tax (${pair.curve.taxBps / 100}%)`}
+            value={`${amount(Number(quote.tax) / 10 ** decimals, 2)} ${symbol} to holders`}
+          />
+        )}
+        {quote && (
           <Row
             label={quote.fee.label}
             value={`${amount(Number(quote.fee.raw) / 10 ** quote.fee.decimals, 4)} ${quote.fee.symbol}`}
           />
-          {pair.cookPriceUsd != null && (
-            <Row
-              label="Value"
-              value={usd((Number(cookSide) / 10 ** COOK_DECIMALS) * pair.cookPriceUsd)}
-            />
-          )}
-          {quote.graduates && (
-            <Row label="This buy graduates the curve" value="a pool opens and locks" strong />
-          )}
-        </dl>
-      )}
+        )}
+        {quote?.graduates && (
+          <Row label="This buy graduates the curve" value="a pool opens and locks" strong />
+        )}
+      </dl>
 
       {!tradable && (
         <Notice tone="note">
@@ -315,12 +372,12 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
 
       <div className="mt-4">
         {!publicKey ? (
-          <button className="btn btn-primary w-full" onClick={() => setVisible(true)}>
+          <button className="btn btn-primary w-full py-4 text-[16px]" onClick={() => setVisible(true)}>
             Connect wallet
           </button>
         ) : (
           <button
-            className="btn btn-primary w-full"
+            className="btn btn-primary w-full py-4 text-[16px]"
             disabled={busy || raw <= 0n || !tradable || short}
             onClick={trade}
           >

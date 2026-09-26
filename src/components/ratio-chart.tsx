@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   createChart,
+  AreaSeries,
   CandlestickSeries,
   HistogramSeries,
   type IChartApi,
@@ -18,9 +19,28 @@ import {
 import type { Candle, Interval } from "@/lib/candles";
 import type { Theme } from "@/lib/theme";
 import { useTheme } from "@/lib/use-theme";
-import { tinyNumber } from "@/lib/format";
+import { pct, tinyNumber } from "@/lib/format";
 
 const INTERVALS: Interval[] = ["5m", "15m", "1h", "4h", "1d"];
+
+/** A figure in the row above the chart. */
+export interface ChartStat {
+  label: string;
+  value: string;
+  tone?: "up" | "down";
+}
+
+/** The big number under that row: what the token is worth in the stock. */
+export interface ChartHeadline {
+  value: string;
+  unit?: string;
+  /** Percent. */
+  change?: number | null;
+  changeLabel?: string;
+}
+
+/** The logo's amber, for the line and the fill under it. */
+const LINE = { line: "#e8a850", top: "rgba(240,184,96,0.32)", bottom: "rgba(240,184,96,0.02)" };
 
 /*
  * The chart draws on a canvas, which cannot read CSS custom properties, so its chrome is written
@@ -54,6 +74,8 @@ export function RatioChart({
   baseSymbol,
   pool,
   venue,
+  stats = [],
+  headline,
 }: {
   mint: string;
   ticker: string;
@@ -62,14 +84,18 @@ export function RatioChart({
   pool?: string;
   /** Which curve that is: the launchpad indexes its own, Coorwa reads its program's events. */
   venue?: "momoswap" | "coorwa";
+  stats?: ChartStat[];
+  headline?: ChartHeadline;
 }) {
   const theme = useTheme();
   const holder = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lineRef = useRef<ISeriesApi<"Area"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
   const [interval, setInterval] = useState<Interval>("1h");
+  const [mode, setMode] = useState<"line" | "candles">("line");
   /**
    * What was loaded, and which request it answers. "Loading" is then a comparison against what is
    * being asked for now, rather than a flag written from inside the effect.
@@ -116,6 +142,15 @@ export function RatioChart({
       wickDownColor: "rgba(255,59,48,0.6)",
       borderVisible: false,
       priceFormat: { type: "custom", formatter: formatRatio, minMove: 1e-12 },
+      visible: false,
+    });
+
+    const line = chart.addSeries(AreaSeries, {
+      lineColor: LINE.line,
+      topColor: LINE.top,
+      bottomColor: LINE.bottom,
+      lineWidth: 2,
+      priceFormat: { type: "custom", formatter: formatRatio, minMove: 1e-12 },
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -133,15 +168,24 @@ export function RatioChart({
 
     chartRef.current = chart;
     candleRef.current = candles;
+    lineRef.current = line;
     volRef.current = volume;
 
     return () => {
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
+      lineRef.current = null;
       volRef.current = null;
     };
   }, []);
+
+  // Both series hold the same data; the switch only shows one. Volume goes with the candles.
+  useEffect(() => {
+    candleRef.current?.applyOptions({ visible: mode === "candles" });
+    volRef.current?.applyOptions({ visible: mode === "candles" });
+    lineRef.current?.applyOptions({ visible: mode === "line" });
+  }, [mode]);
 
   useEffect(() => {
     const c = CHART_THEME[theme];
@@ -186,6 +230,7 @@ export function RatioChart({
             close: c.close,
           })),
         );
+        lineRef.current?.setData(data.map((c) => ({ time: c.time as Time, value: c.close })));
         volRef.current?.setData(
           data.map((c) => ({
             time: c.time as Time,
@@ -226,21 +271,80 @@ export function RatioChart({
   }, [mint, ticker, interval, key, pool, venue]);
 
   return (
-    <div className="card flex h-full min-h-[420px] flex-col overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-hair px-5 py-3">
-        <div className="text-[13px] text-muted">
-          {baseSymbol} <span className="text-subtle">/</span> {ticker}
-        </div>
-        <div className="segmented ml-auto">
-          {INTERVALS.map((i) => (
-            <button key={i} onClick={() => setInterval(i)} data-active={i === interval}>
-              {i}
-            </button>
+    <div className="card flex w-full min-w-0 flex-col overflow-hidden p-4 sm:p-5">
+      {stats.length > 0 && (
+        <dl className="grid grid-cols-2 gap-y-4 sm:grid-cols-4">
+          {stats.map((s, i) => (
+            <div
+              key={s.label}
+              className={`min-w-0 border-[color:var(--divider)] px-3 ${i % 2 === 1 ? "border-l" : ""} ${
+                i > 0 ? "sm:border-l" : ""
+              }`}
+            >
+              <dt className="truncate text-[12px] text-subtle">{s.label}</dt>
+              <dd
+                className={`num mt-1 truncate text-[15px] ${
+                  s.tone === "up"
+                    ? "text-[color:var(--color-up)]"
+                    : s.tone === "down"
+                      ? "text-[color:var(--color-down)]"
+                      : "text-primary"
+                }`}
+              >
+                {s.value}
+              </dd>
+            </div>
           ))}
+        </dl>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-3 px-1">
+        {headline ? (
+          <div className="min-w-0">
+            <div className="num truncate text-[30px] font-medium leading-none tracking-[-0.03em] text-primary sm:text-[34px]">
+              {headline.value}
+              {headline.unit && <span className="text-[18px] text-subtle"> {headline.unit}</span>}
+            </div>
+            {headline.change != null && (
+              <div
+                className="num mt-1.5 text-[13px]"
+                style={{ color: headline.change >= 0 ? "var(--color-up)" : "var(--color-down)" }}
+              >
+                {pct(headline.change)}{" "}
+                {headline.changeLabel && <span className="text-subtle">{headline.changeLabel}</span>}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-[13px] text-muted">
+            {baseSymbol} <span className="text-subtle">/</span> {ticker}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segmented">
+            <button onClick={() => setMode("line")} data-active={mode === "line"}>
+              Line
+            </button>
+            <button onClick={() => setMode("candles")} data-active={mode === "candles"}>
+              Candles
+            </button>
+          </div>
+          <div className="segmented">
+            {INTERVALS.map((i) => (
+              <button
+                key={i}
+                onClick={() => setInterval(i)}
+                data-active={i === interval}
+                className="uppercase"
+              >
+                {i}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="relative flex-1">
+      <div className="panel-raised relative mt-4 min-h-[340px] flex-1 overflow-hidden">
         <div ref={holder} className="absolute inset-0" />
 
         {loading && count === 0 && (
@@ -270,7 +374,7 @@ export function RatioChart({
       </div>
 
       {count > 0 && (
-        <div className="border-t border-hair px-5 py-2.5 text-[12px] text-subtle">
+        <div className="mt-3 px-1 text-[12px] text-subtle">
           {count} candles from {trades} executed fills · ratio = USD({baseSymbol}) ÷
           USD({ticker}x)
         </div>

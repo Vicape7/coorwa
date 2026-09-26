@@ -14,8 +14,8 @@ const LINKS = [
 ];
 
 /**
- * A floating island rather than a full-width bar - the arrangement Pons uses, and the one that
- * lets the page tint run behind the header instead of stopping at it.
+ * A floating island rather than a full-width bar, which lets the page tint run behind the header
+ * instead of stopping at it.
  *
  * `.glass` plus `.glass-bar` rather than `.glass-pane`: the pane's pseudo-element machinery buys
  * nothing on a pill this shallow, but the bar lens does. This is the one surface with a whole page
