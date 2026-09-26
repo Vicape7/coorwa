@@ -45,10 +45,11 @@ export function CreatorLaunches({
 
   return (
     <div className="card p-5 sm:p-7">
-      <h2 className="title text-primary">Your launches</h2>
+      <h2 className="title text-primary">Your older launches</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-        MomoSwap pays you 0.35% of every trade on your curve. It accrues on the pool and is claimed
-        with your own key, so nobody can move it but you.
+        Tokens this wallet launched on the MomoSwap curve, before Coorwa ran its own. They keep
+        trading and keep paying: MomoSwap pays you 0.35% of every trade on your curve, it accrues on
+        the pool, and it is claimed with your own key, so nobody can move it but you.
       </p>
 
       <ul className="mt-5 space-y-2.5">

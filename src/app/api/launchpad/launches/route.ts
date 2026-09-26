@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { recordLaunch, launchesByCreator } from "@/lib/launches";
-import { createsLaunchpadToken, isProven, proveTransaction } from "@/lib/onchain";
+import {
+  createsCoorwaToken,
+  createsLaunchpadToken,
+  isProven,
+  proveTransaction,
+} from "@/lib/onchain";
+import { curvePda } from "@/lib/launch-program";
 import { ADDRESS_RE } from "@/lib/config";
+import { PublicKey } from "@solana/web3.js";
 import { rwaByTicker } from "@/lib/rwa";
 import { listedFor } from "@/lib/listings";
 import { rememberLaunchLogo } from "@/lib/token-logos";
@@ -16,6 +23,11 @@ const Body = z.object({
   creator: z.string().regex(ADDRESS_RE, "not an address"),
   /** The RWA the creator picked. Checked against the assets Coorwa actually prices. */
   ticker: z.string().min(1).max(12),
+  /**
+   * Which program the launch happened on. Coorwa's own is the one /launch builds now; the
+   * launchpad stays for the tokens that were created there and for a client that has not caught up.
+   */
+  venue: z.enum(["momoswap", "coorwa"]).default("momoswap"),
   symbol: z.string().max(32).optional(),
   name: z.string().max(64).optional(),
   /**
@@ -56,11 +68,25 @@ export async function POST(req: Request) {
     if (!isProven(proof)) {
       return NextResponse.json({ error: proof.error, recorded: false }, { status: proof.status });
     }
-    if (!createsLaunchpadToken(proof, b.mint, b.pool)) {
+    // Coorwa's program has no pool at launch, so the curve account stands in for one, and it is
+    // derived rather than taken on trust: a record whose curve did not belong to its mint would
+    // point the rest of the app at the wrong account for the token's whole life.
+    if (b.venue === "coorwa" && b.pool !== curvePda(new PublicKey(b.mint)).toBase58()) {
+      return NextResponse.json(
+        { error: "that is not this token's curve", recorded: false },
+        { status: 400 },
+      );
+    }
+
+    const created =
+      b.venue === "coorwa"
+        ? createsCoorwaToken(proof, b.mint)
+        : createsLaunchpadToken(proof, b.mint, b.pool);
+    if (!created) {
       return NextResponse.json(
         {
           error: "that transaction did not create this token",
-          hint: "the launch transaction itself has to create the mint and its pool on the launchpad, and a trade on the token is not that transaction",
+          hint: "the launch transaction itself has to create the mint, and a trade on the token is not that transaction",
           recorded: false,
         },
         { status: 403 },
@@ -77,8 +103,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const { logo, ...launch } = b;
-    const res = await recordLaunch({ ...launch, ticker: asset.ticker });
+    const { logo } = b;
+    const res = await recordLaunch({
+      mint: b.mint,
+      // For a Coorwa launch this is the curve account, checked above to be the mint's own.
+      pool: b.pool,
+      creator: b.creator,
+      ticker: asset.ticker,
+      symbol: b.symbol,
+      name: b.name,
+      signature: b.signature,
+    });
     // Only for a launch proved above, so nobody can put a picture on someone else's token.
     if (
       logo &&

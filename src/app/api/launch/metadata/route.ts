@@ -13,11 +13,10 @@ import {
   isImageType,
   metadataDocument,
   metadataKey,
-  metadataStore,
   metadataUri,
   sniffImageType,
-  verifyMetadataSignature,
 } from "@/lib/launch-metadata";
+import { metadataStore, verifyMetadataSignature } from "@/lib/launch-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

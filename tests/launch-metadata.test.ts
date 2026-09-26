@@ -20,8 +20,8 @@ import {
   metadataMessage,
   metadataUri,
   sniffImageType,
-  verifyMetadataSignature,
 } from "../src/lib/launch-metadata";
+import { verifyMetadataSignature } from "../src/lib/launch-store";
 
 /** A stand-in wallet: a raw ed25519 key, addressed the way Solana addresses one. */
 function wallet() {

@@ -11,6 +11,7 @@
  * out the pool's opening price and liquidity, which the program deliberately does not compute
  * itself: it checks the result instead, so these numbers have to land inside its tolerances.
  */
+import bs58 from "bs58";
 import {
   PublicKey,
   SystemProgram,
@@ -50,6 +51,14 @@ const IX = {
   claimCurveFees: [67, 48, 233, 11, 25, 119, 172, 15],
   claimPoolFees: [33, 187, 125, 186, 41, 247, 236, 89],
 } as const;
+
+/**
+ * The same discriminators as hex, which is how a transaction read back off the chain reads. Used to
+ * tell a launch from any other transaction that merely names the same mint.
+ */
+export const LAUNCH_IX_HEX = Object.fromEntries(
+  Object.entries(IX).map(([name, bytes]) => [name, Buffer.from(bytes).toString("hex")]),
+) as Record<keyof typeof IX, string>;
 
 /** sha256("account:<Struct>")[0..8]. */
 export const ACCOUNT_DISCRIMINATOR = {
@@ -223,41 +232,50 @@ export interface CurveState {
   positionNftMint: PublicKey;
 }
 
+/**
+ * Reads an account back, field by field.
+ *
+ * Through a DataView rather than Buffer's own readers: this runs in the page as well as on the
+ * server, and the Buffer a bundler gives the browser is a polyfill that does not carry the 64-bit
+ * readers. Reading a config in the browser threw on the first `u64` until this stopped using them.
+ */
 class Reader {
   private at = 8; // past the account discriminator
-  private readonly data: Buffer;
-  constructor(data: Buffer) {
-    this.data = data;
+  private readonly bytes: Uint8Array;
+  private readonly view: DataView;
+  constructor(data: Uint8Array) {
+    this.bytes = data;
+    this.view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   }
   pubkey(): PublicKey {
-    const key = new PublicKey(this.data.subarray(this.at, this.at + 32));
+    const key = new PublicKey(this.bytes.subarray(this.at, this.at + 32));
     this.at += 32;
     return key;
   }
   u8(): number {
-    return this.data[this.at++];
+    return this.bytes[this.at++];
   }
   bool(): boolean {
     return this.u8() === 1;
   }
   u16(): number {
-    const v = this.data.readUInt16LE(this.at);
+    const v = this.view.getUint16(this.at, true);
     this.at += 2;
     return v;
   }
   u64(): bigint {
-    const v = this.data.readBigUInt64LE(this.at);
+    const v = this.view.getBigUint64(this.at, true);
     this.at += 8;
     return v;
   }
   i64(): bigint {
-    const v = this.data.readBigInt64LE(this.at);
+    const v = this.view.getBigInt64(this.at, true);
     this.at += 8;
     return v;
   }
 }
 
-export function decodeLaunchConfig(data: Buffer): LaunchConfigState {
+export function decodeLaunchConfig(data: Uint8Array): LaunchConfigState {
   const r = new Reader(data);
   return {
     authority: r.pubkey(),
@@ -282,7 +300,7 @@ export function decodeLaunchConfig(data: Buffer): LaunchConfigState {
 
 const STATES = ["live", "graduated", "pooled"] as const;
 
-export function decodeCurve(address: PublicKey, data: Buffer): CurveState {
+export function decodeCurve(address: PublicKey, data: Uint8Array): CurveState {
   const r = new Reader(data);
   const out = {
     address,
@@ -323,6 +341,28 @@ export async function fetchLaunchConfig(
 ): Promise<LaunchConfigState | null> {
   const info = await connection.getAccountInfo(configPda());
   return info ? decodeLaunchConfig(Buffer.from(info.data)) : null;
+}
+
+/**
+ * Every curve, or every curve one wallet created.
+ *
+ * Read straight off the program rather than out of a database, so a creator sees their launches
+ * even on a deployment that stores nothing. The creator sits right after the discriminator and the
+ * config in the account, which is what the offset below is.
+ */
+export async function fetchCurves(
+  connection: Connection,
+  creator?: PublicKey,
+): Promise<CurveState[]> {
+  const filters: { memcmp: { offset: number; bytes: string } }[] = [
+    { memcmp: { offset: 0, bytes: bs58.encode(Uint8Array.from(ACCOUNT_DISCRIMINATOR.curve)) } },
+  ];
+  if (creator) filters.push({ memcmp: { offset: 8 + 32, bytes: creator.toBase58() } });
+
+  const accounts = await connection.getProgramAccounts(LAUNCH_PROGRAM_ID, { filters });
+  return accounts
+    .map((a) => decodeCurve(a.pubkey, Buffer.from(a.account.data)))
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 // --- the curve, off chain ------------------------------------------------------------------------

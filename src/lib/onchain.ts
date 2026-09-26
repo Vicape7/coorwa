@@ -11,8 +11,9 @@
  */
 import bs58 from "bs58";
 import { Connection, type VersionedTransactionResponse } from "@solana/web3.js";
-import { COOKIE_RPC_URL, PROGRAM_IDS, serverSolanaRpcUrl } from "./config";
+import { COOKIE_RPC_URL, LAUNCH_PROGRAM_ADDRESS, PROGRAM_IDS, serverSolanaRpcUrl } from "./config";
 import { LAUNCHPAD_IX } from "./expectation";
+import { LAUNCH_IX_HEX } from "./launch-program";
 
 export type Chain = "cookie" | "solana";
 
@@ -178,6 +179,24 @@ export function createsLaunchpadToken(
       ix.data.startsWith(LAUNCHPAD_IX.create_pool) &&
       ix.accounts.includes(mint) &&
       ix.accounts.includes(pool),
+  );
+  return created && signersOf(proof).has(mint);
+}
+
+/**
+ * Whether this transaction is the one that launched this token on Coorwa's own program.
+ *
+ * The same reasoning as the launchpad's check above, against our own program: the transaction has
+ * to carry the `launch` instruction over this mint, and the mint has to have signed it. Our program
+ * creates the mint inside that instruction, so a mint that signed a launch cannot have existed
+ * before it, and nobody can claim a token they did not create.
+ */
+export function createsCoorwaToken(proof: ProvenTransaction, mint: string): boolean {
+  const created = instructionsOf(proof).some(
+    (ix) =>
+      ix.programId === LAUNCH_PROGRAM_ADDRESS &&
+      ix.data.startsWith(LAUNCH_IX_HEX.launch) &&
+      ix.accounts.includes(mint),
   );
   return created && signersOf(proof).has(mint);
 }

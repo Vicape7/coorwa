@@ -10,6 +10,7 @@
  * text, and a new launch calling itself after an existing pair would otherwise take over its link.
  */
 import { COOK_DECIMALS, CURVE_TOKEN_DECIMALS } from "./config";
+import { curveSlug } from "./pair-slug";
 import { fetchCookPriceUsd } from "./cookiescan";
 import { curvePrice } from "./curve";
 import { fetchRwaPrices } from "./jupiter";
@@ -45,9 +46,7 @@ export interface CurvePair {
   raisedUsd: number | null;
 }
 
-export function curveSlug(mint: string, ticker: string): string {
-  return `${mint}-${ticker.toLowerCase()}`;
-}
+export { curveSlug };
 
 /** COOK per whole token at the curve's current reserves. */
 export function curvePriceCook(pool: LaunchpadPool): number {

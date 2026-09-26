@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isAddress, imageKey, metadataStore } from "@/lib/launch-metadata";
+import { isAddress, imageKey } from "@/lib/launch-metadata";
+import { metadataStore } from "@/lib/launch-store";
 
 export const dynamic = "force-dynamic";
 

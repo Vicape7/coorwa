@@ -1,20 +1,36 @@
 "use client";
 
 /**
- * Launchpad. Creating a pool is signature-gated by MomoSwap, so the flow is:
- * sign a login message (no chain fee, nothing submitted) -> build -> wallet signs the transaction.
+ * Launch a token on Coorwa's own curve.
+ *
+ * Nothing here is built by a server. The mint is a keypair made in this page, the instructions come
+ * from `launch-program.ts`, and the only request that leaves before the wallet is asked is the one
+ * that stores the token's metadata. So there is no build to verify against an expectation the way
+ * the launchpad's flow needed: what the wallet signs is what this page assembled, in the open.
+ *
+ * What a creator picks here is permanent. The tax is written into the mint and cannot be changed by
+ * anyone afterwards, the pair is the token's only pair, and the metadata freezes the moment the
+ * launch lands. The copy says so at every step rather than once at the bottom.
  */
-import { TokenMark } from "./token-mark";
-import { useCallback, useState } from "react";
-import useSWR, { mutate } from "swr";
+import { useCallback, useMemo, useState } from "react";
+import useSWR from "swr";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
-import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
-import { verifyLaunchpadBuild } from "@/lib/expectation";
-import { cookieTxUrl, COOK_DECIMALS, MOMOSWAP_SITE } from "@/lib/config";
-import { shortAddr, amount, usd, uiToRaw } from "@/lib/format";
+import { signSendConfirm, explainError } from "@/lib/tx";
+import { cookieTxUrl, COOK_DECIMALS } from "@/lib/config";
+import { shortAddr, amount, uiToRaw } from "@/lib/format";
 import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
+import {
+  curvePda,
+  fetchCurves,
+  fetchLaunchConfig,
+  type CurveState,
+  type LaunchConfigState,
+} from "@/lib/launch-program";
+import { hasWrappedAccount, planLaunch, quoteDevBuy } from "@/lib/launch-flow";
+import { metadataMessage } from "@/lib/launch-metadata";
 import {
   clearUnrecorded,
   postRecord,
@@ -22,79 +38,66 @@ import {
   useUnrecorded,
 } from "@/lib/unrecorded";
 import { Notice } from "./notice";
-import { CurvePanel } from "./curve-panel";
+import { TokenMark } from "./token-mark";
 import { CreatorLaunches } from "./creator-launches";
-import type { LaunchpadConfig, LaunchpadPool } from "@/lib/launchpad";
+import type { LaunchpadPool } from "@/lib/launchpad";
 
-const fetcher = (u: string) => fetch(u).then((r) => r.json());
-
-/** What POST /api/launchpad/launches takes: the launch transaction and the pair picked for it. */
+/** What POST /api/launchpad/launches takes for a launch on Coorwa's own program. */
 interface LaunchReport {
   signature: string;
   mint: string;
   pool: string;
   creator: string;
   ticker: string;
+  venue: "coorwa";
   symbol: string;
   name: string;
   logo?: string;
 }
 
-interface FeeBreakdown {
-  totalPct: number;
-  creatorPct: number;
-  referralPct: number;
-  treasuryPct: number;
-  buybackPct: number;
-}
+/** A dev buy is quoted off a curve nobody has traded yet, so only the creator's own buy moves it. */
+const DEV_BUY_SLIPPAGE_BPS = 100n;
 
 export function LaunchView() {
-  const { data: cfg } = useSWR<{ config: LaunchpadConfig; fees: FeeBreakdown; error?: string }>(
-    "/api/launchpad/config",
-    fetcher,
+  const { connection } = useConnection();
+  const { data: config, error } = useSWR(
+    "launch/config",
+    () => fetchLaunchConfig(connection),
     { refreshInterval: 60_000 },
   );
-  const { data: poolsData } = useSWR<{
-    pools: (LaunchpadPool & { progress: number })[];
-    cookPriceUsd: number | null;
-  }>("/api/launchpad/pools?status=all", fetcher, { refreshInterval: 20_000 });
-
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const pools = poolsData?.pools ?? [];
-  const trading = pools.find((p) => p.pubkey === selected) ?? null;
 
   return (
     <div className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:py-14">
       <div className="max-w-2xl">
         <span className="label text-[12px]">Launchpad</span>
         <h1 className="display mt-3 text-[clamp(2rem,4.5vw,3.25rem)] text-primary">
-          Launch a token on a COOK curve.
+          Launch a token that pays its holders.
         </h1>
         <p className="mt-4 text-[15px] leading-[1.7] text-muted">
-          Coorwa builds on MomoSwap, Cookie Chain&apos;s bonding-curve launchpad. Your token trades
-          on the curve until it hits the graduation target, then moves to a real DEX pool. It is a
-          Coorwa pair from the start, priced in the stock you pick below.
+          Your token carries a tax on every transfer, and all of it goes to the people holding it,
+          paid in the stock you pair it with. It trades on a COOK curve here from the first block
+          and opens a locked pool when it graduates. Nothing about it can be changed afterwards,
+          including by Coorwa.
         </p>
       </div>
 
+      {config === null && (
+        <Notice tone="down">
+          The launch program is not configured on this chain yet, so launching is closed. Nothing
+          else in the app is affected.
+        </Notice>
+      )}
+      {error && <Notice tone="down">Could not read the launch program: {explainError(error)}</Notice>}
+
       <div className="mt-10 grid gap-4 lg:grid-cols-[1fr_400px]">
         <div className="space-y-4">
-          <CreateForm config={cfg?.config} />
-          <CreatorLaunches pools={pools} cookPriceUsd={poolsData?.cookPriceUsd ?? null} />
-          {cfg?.config && <Economics config={cfg.config} fees={cfg.fees} />}
+          <CreateForm config={config ?? null} />
+          <YourLaunches config={config ?? null} />
+          <OlderLaunches />
         </div>
 
         <div className="space-y-4">
-          {trading && (
-            <CurvePanel
-              pool={trading}
-              decimals={cfg?.config.defaultTokenDecimals ?? 6}
-              cookPriceUsd={poolsData?.cookPriceUsd ?? null}
-              onClose={() => setSelected(null)}
-            />
-          )}
-          <LivePools pools={pools} selected={selected} onSelect={setSelected} />
+          <Terms config={config ?? null} />
         </div>
       </div>
     </div>
@@ -103,7 +106,7 @@ export function LaunchView() {
 
 // --- Create ---------------------------------------------------------------------------------------
 
-function CreateForm({ config }: { config?: LaunchpadConfig }) {
+function CreateForm({ config }: { config: LaunchConfigState | null }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
@@ -114,29 +117,33 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imageType, setImageType] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [durationHours, setDurationHours] = useState(72);
-  const [devBuy, setDevBuy] = useState("");
   const [benchmark, setBenchmark] = useState(DEFAULT_RWA.ticker);
+  const [taxBps, setTaxBps] = useState(100);
+  const [devBuy, setDevBuy] = useState("");
 
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{
     signature: string;
-    mint?: string;
+    mint: string;
     ticker: string;
-    /** False when the benchmark could not be stored, which quietly changes what the token is. */
+    /** False when the pair could not be stored, which quietly changes what the token is. */
     pinned: boolean;
-    /** Why the buy at launch did not go through, when it had to be sent after the launch. */
-    buyFailed?: string;
   } | null>(null);
-  // Launches that landed on chain but whose pair was not saved, kept across a reload. The server
-  // answers the same launch reported again as recorded, so the retry is safe.
+
   const waiting = useUnrecorded<LaunchReport>("launch");
   const wallet = publicKey?.toBase58() ?? null;
   const unrecorded = Object.values(waiting).filter((u) => u.body.creator === wallet);
   const [retrying, setRetrying] = useState(false);
 
-  /** Report a launch's pair. True once it is recorded. */
+  const tiers = useMemo(
+    () => (config?.taxTiers ?? [100, 200, 300]).filter((t) => t > 0),
+    [config],
+  );
+  // A config that drops a tier must not leave the form on one nobody can launch with, so the tier
+  // in play is derived rather than stored: the picked one when it still exists, the first otherwise.
+  const tax = tiers.includes(taxBps) ? taxBps : (tiers[0] ?? 100);
+
   const report = useCallback(async (body: LaunchReport): Promise<boolean> => {
     const res = await postRecord("/api/launchpad/launches", body);
     if (res.ok && res.data.recorded === true) {
@@ -147,7 +154,6 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
       saveUnrecorded("launch", body.mint, { body, error: res.error });
       return false;
     }
-    // Refused for good (the token already has another pair), or a deployment with no database.
     clearUnrecorded("launch", body.mint);
     setError(res.ok ? "This deployment does not store pairs." : res.error);
     return false;
@@ -173,8 +179,6 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
       setError("Image must be under 2 MB.");
       return;
     }
-    // The same four the launchpad's pinning service is asked for, refused here so the message says
-    // what to do rather than arriving as a rejected launch.
     if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) {
       setError("Logo must be a PNG, JPEG, GIF or WebP.");
       return;
@@ -190,150 +194,116 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     reader.readAsDataURL(file);
   }, []);
 
+  const devBuyRaw = Number(devBuy) > 0 ? BigInt(uiToRaw(Number(devBuy), COOK_DECIMALS)) : 0n;
+
+  /** What the creator's own buy would get them, priced on the curve their launch is about to open. */
+  const preview = useMemo(() => {
+    if (!config || devBuyRaw <= 0n || !publicKey) return null;
+    return quoteDevBuy(
+      config,
+      { mint: PublicKey.default, creator: publicKey, taxBps: tax },
+      devBuyRaw,
+    );
+  }, [config, devBuyRaw, publicKey, tax]);
+
   const launch = useCallback(async () => {
-    if (!publicKey || !signTransaction) return;
+    if (!publicKey || !signTransaction || !config) return;
     if (!signMessage) {
-      setError(
-        "This wallet cannot sign messages, which the launchpad requires to authorise a launch.",
-      );
+      setError("This wallet cannot sign messages, which is how metadata is authorised.");
       return;
     }
     setError(null);
     setDone(null);
 
+    const mint = Keypair.generate();
+    const mintAddress = mint.publicKey.toBase58();
+
     try {
-      // 1. Session: sign a message. No chain fee, nothing submitted.
-      setStep("Requesting a login nonce");
-      const nonceRes = await fetch(`/api/launchpad/session?wallet=${publicKey.toBase58()}`).then(
-        (r) => r.json(),
+      // 1. Metadata. Signed for by the creator, named to this mint, and frozen once the launch
+      //    lands, because the uri goes inside the mint and cannot be edited afterwards.
+      setStep("Sign the metadata message in your wallet");
+      const ts = Math.floor(Date.now() / 1000);
+      const signature = await signMessage(
+        new TextEncoder().encode(metadataMessage(publicKey.toBase58(), mintAddress, ts)),
       );
-      if (nonceRes.error) throw new Error(nonceRes.error);
 
-      setStep("Sign the login message in your wallet");
-      const sig = await signMessage(new TextEncoder().encode(nonceRes.message));
-
-      setStep("Exchanging the signature for a session");
-      const session = await fetch("/api/launchpad/session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          wallet: publicKey.toBase58(),
-          ts: nonceRes.ts,
-          nonce: nonceRes.nonce,
-          signature: bs58.encode(sig),
-        }),
-      }).then((r) => r.json());
-      if (session.error) {
-        throw new Error(session.hint ? `${session.error} - ${session.hint}` : session.error);
-      }
-
-      // 2. Build. The launchpad pins the image, leases a `momo` mint and partial-signs.
-      setStep("Pinning metadata and building the launch");
-      const built = await fetch("/api/launchpad/create", {
+      setStep("Storing the metadata");
+      const stored = await fetch("/api/launch/metadata", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           creator: publicKey.toBase58(),
-          session: session.token,
+          mint: mintAddress,
+          ts,
+          signature: bs58.encode(signature),
           name,
-          symbol,
+          symbol: symbol.toUpperCase(),
           description: description || undefined,
           imageBase64: imageBase64 ?? undefined,
           imageContentType: imageType ?? undefined,
-          durationHours,
-          expiryMode: "fair",
-          devBuyCook: Number(devBuy) || 0,
+          pair: benchmark,
         }),
       }).then((r) => r.json());
-      if (built.error) throw new Error(built.hint ? `${built.error} - ${built.hint}` : built.error);
-
-      // 3. Check it is the launch asked for, with the same conversions the server made, then sign.
-      await verifyLaunchpadBuild(built, {
-        action: "create",
-        wallet: publicKey.toBase58(),
-        name,
-        symbol: symbol.toUpperCase(),
-        durationSecs: Math.round(durationHours * 3600),
-        expiryMode: "fair",
-        // A deferred dev buy is not in this transaction; it is bought on its own below.
-        devBuyRaw:
-          Number(devBuy) > 0 && !built.devBuyDeferred
-            ? uiToRaw(Number(devBuy), COOK_DECIMALS)
-            : null,
-      });
-
-      setStep("Confirm the launch in your wallet");
-      const sent = await signSendConfirm(
-        connection,
-        decodeTx(built.transactionBase64),
-        signTransaction,
-      );
-
-      // Record the pair. The server proves the launch on chain before it writes anything, so this
-      // can only ever record a token this wallet really created. If it fails the token still exists
-      // but has no pair yet, and the report is kept so it can be sent again.
-      let pinned = false;
-      if (built.mint && built.pool) {
-        pinned = await report({
-          signature: sent.signature,
-          mint: built.mint,
-          pool: built.pool,
-          creator: publicKey.toBase58(),
-          ticker: benchmark,
-          symbol: symbol.toUpperCase(),
-          name,
-          logo: typeof built.image === "string" ? built.image : undefined,
-        });
+      if (stored.error) {
+        throw new Error(stored.hint ? `${stored.error} - ${stored.hint}` : stored.error);
       }
 
-      // The launchpad could not fit the dev buy into the launch, so buy on the new curve now. The
-      // launch has landed whatever happens here, so a failed buy is reported, not thrown.
-      let buyFailed: string | undefined;
-      if (built.devBuyDeferred && built.pool && Number(devBuy) > 0) {
+      // 2. Build it here, in the page. A dev buy rides along when it fits.
+      setStep("Building the launch");
+      const quote =
+        devBuyRaw > 0n
+          ? quoteDevBuy(config, { mint: mint.publicKey, creator: publicKey, taxBps: tax }, devBuyRaw)
+          : null;
+      const plan = planLaunch(
+        {
+          creator: publicKey,
+          mint: mint.publicKey,
+          name,
+          symbol: symbol.toUpperCase(),
+          uri: stored.uri,
+          taxBps: tax,
+          devBuyQuote: devBuyRaw,
+          minBaseOut: quote
+            ? (quote.baseOut * (10_000n - DEV_BUY_SLIPPAGE_BPS)) / 10_000n
+            : 0n,
+          closeWrapped: !(await hasWrappedAccount(connection, publicKey)),
+        },
+        (await connection.getLatestBlockhash("confirmed")).blockhash,
+      );
+
+      // The mint signs the transaction that creates it, and never signs again.
+      plan.transactions[0].partialSign(mint);
+
+      setStep("Confirm the launch in your wallet");
+      const sent = await signSendConfirm(connection, plan.transactions[0], signTransaction);
+
+      // A dev buy that did not fit goes out on its own. The token is live either way, so a failure
+      // here is reported rather than thrown.
+      let buyFailed: string | null = null;
+      if (plan.split) {
         try {
-          setStep("Building your buy at launch");
-          const amount = Number(devBuy);
-          const buy = await fetch("/api/launchpad/trade", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ action: "buy", wallet: publicKey.toBase58(), pool: built.pool, amount }),
-          }).then((r) => r.json());
-          if (buy.error) throw new Error(buy.hint ? `${buy.error} - ${buy.hint}` : buy.error);
-          await verifyLaunchpadBuild(buy, {
-            action: "buy",
-            wallet: publicKey.toBase58(),
-            pool: built.pool,
-            paymentRaw: uiToRaw(amount, COOK_DECIMALS),
-            referrer: buy.referrer ?? null,
-          });
           setStep("Confirm your buy at launch in your wallet");
-          const bought = await signSendConfirm(
-            connection,
-            decodeTx(buy.transactionBase64),
-            signTransaction,
-          );
-          // Recorded like any curve buy, so its referral share joins the token's pool. The server
-          // re-reads it on chain; a failure here costs the record, never the buy.
-          void fetch("/api/rewards/record", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              signature: bought.signature,
-              wallet: publicKey.toBase58(),
-              source: "launchpad",
-              mint: built.mint,
-              pool: built.pool,
-              side: "buy",
-            }),
-          }).catch(() => {});
+          await signSendConfirm(connection, plan.transactions[1], signTransaction);
         } catch (e) {
           buyFailed = explainError(e);
         }
       }
 
-      setDone({ signature: sent.signature, mint: built.mint, ticker: benchmark, pinned, buyFailed });
-      // Show the new token, with the logo just stored, rather than at the list's next refresh.
-      void mutate("/api/launchpad/pools?status=all");
+      // 3. Record the pair. The server reads the launch back off the chain before it writes.
+      const pinned = await report({
+        signature: sent.signature,
+        mint: mintAddress,
+        pool: curvePda(mint.publicKey).toBase58(),
+        creator: publicKey.toBase58(),
+        ticker: benchmark,
+        venue: "coorwa",
+        symbol: symbol.toUpperCase(),
+        name,
+        logo: typeof stored.image === "string" ? stored.image : undefined,
+      });
+
+      setDone({ signature: sent.signature, mint: mintAddress, ticker: benchmark, pinned });
+      if (buyFailed) setError(`The token is live, but your buy at launch did not: ${buyFailed}`);
       setName("");
       setSymbol("");
       setDescription("");
@@ -349,26 +319,28 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
     publicKey,
     signTransaction,
     signMessage,
+    config,
+    connection,
     name,
     symbol,
     description,
     imageBase64,
     imageType,
-    durationHours,
-    devBuy,
     benchmark,
-    connection,
+    tax,
+    devBuyRaw,
     report,
   ]);
 
   const ready = name.trim().length > 0 && /^[A-Za-z0-9]{1,10}$/.test(symbol);
-  const unavailable = config?.paused || config?.momoReady === 0;
+  const supply = config ? config.saleBase + config.migrationBase : 0n;
 
   return (
     <div className="card p-5 sm:p-7">
       <h2 className="title text-primary">Create</h2>
       <p className="mt-1.5 text-[13px] text-muted">
-        Metadata is immutable once minted - the logo and name cannot be changed later.
+        Everything on this form is permanent. The name, the picture, the tax and the pair are
+        written into the token and nobody can edit them later.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -421,66 +393,59 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
           </select>
           <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
             Your token trades as {symbol ? symbol.toUpperCase() : "TOKEN"}/{benchmark}, and its
-            holders are paid their rewards in {benchmark}. It is the token&apos;s only pair and is
-            fixed at launch, like the name. Liquidity is still the COOK curve, the way it is
-            everywhere on this chain; the asset is what the price is quoted and charted in.
+            holders are paid in {benchmark}. It is the token&apos;s only pair, fixed at launch.
+            Liquidity is the COOK curve, the way it is everywhere on this chain; the stock is what
+            the price is quoted in and what the tax is paid out as.
           </p>
         </Labeled>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Labeled label="Curve open for">
-            <div className="segmented w-full">
-              {[24, 72, 168].map((h) => (
-                <button
-                  key={h}
-                  onClick={() => setDurationHours(h)}
-                  data-active={durationHours === h}
-                  className="flex-1"
-                >
-                  {h === 24 ? "1 day" : h === 72 ? "3 days" : "1 week"}
-                </button>
-              ))}
-            </div>
-          </Labeled>
-          <Labeled label="Buy at launch (COOK, optional)">
-            <input
-              value={devBuy}
-              onChange={(e) => setDevBuy(e.target.value.replace(/[^0-9.]/g, ""))}
-              inputMode="decimal"
-              placeholder="0"
-              className="field num w-full"
-            />
-          </Labeled>
-        </div>
+        <Labeled label="Tax on every transfer">
+          <div className="segmented w-full">
+            {tiers.map((bps) => (
+              <button
+                key={bps}
+                onClick={() => setTaxBps(bps)}
+                data-active={tax === bps}
+                className="flex-1"
+              >
+                {bps / 100}%
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
+            Taken on every transfer of your token, anywhere, and paid to the wallets holding it. A
+            higher tax pays holders more and costs traders more. It is set once, here: the mint is
+            created with no authority that could ever change it.
+          </p>
+        </Labeled>
 
-        {unavailable && (
-          <Notice tone="note">
-            {config?.paused
-              ? "The launchpad is paused right now."
-              : "The launchpad has run out of pre-ground mint addresses. It grinds more continuously - try again shortly."}
-          </Notice>
-        )}
+        <Labeled label="Buy at launch (COOK, optional)">
+          <input
+            value={devBuy}
+            onChange={(e) => setDevBuy(e.target.value.replace(/[^0-9.]/g, ""))}
+            inputMode="decimal"
+            placeholder="0"
+            className="field num w-full"
+          />
+          {preview && config && (
+            <p className="mt-1.5 text-[12px] leading-relaxed text-subtle">
+              About {amount(Number(preview.baseReceived) / 10 ** config.tokenDecimals, 0)}{" "}
+              {symbol ? symbol.toUpperCase() : "tokens"}, which is{" "}
+              {((Number(preview.baseOut) / Number(supply)) * 100).toFixed(1)}% of the supply. You pay
+              the tax on it like anyone else.
+              {preview.graduates && " This buy alone graduates the curve."}
+            </p>
+          )}
+        </Labeled>
 
         {step && <Notice tone="note">{step}</Notice>}
         {error && <Notice tone="down">{error}</Notice>}
 
         {done && (
           <Notice tone={done.pinned ? "up" : "note"}>
-            Launched{done.pinned ? ` as ${done.ticker}` : ", but its pair was not saved"}.{" "}
-            {done.mint && (
-              <>
-                Mint{" "}
-                <a
-                  href={`${MOMOSWAP_SITE}/token/${done.mint}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="num underline underline-offset-4"
-                >
-                  {shortAddr(done.mint, 6)}
-                </a>
-                {" · "}
-              </>
-            )}
+            Launched{done.pinned ? ` as ${done.ticker}` : ", but its pair was not saved"}. Mint{" "}
+            <span className="num">{shortAddr(done.mint, 6)}</span>
+            {" · "}
             <a
               href={cookieTxUrl(done.signature)}
               target="_blank"
@@ -489,12 +454,6 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             >
               {shortAddr(done.signature, 6)}
             </a>
-          </Notice>
-        )}
-        {done?.buyFailed && (
-          <Notice tone="down">
-            Your buy at launch did not go through, but the token is live, so you can buy it on its
-            curve. Reason: {done.buyFailed}
           </Notice>
         )}
 
@@ -509,14 +468,10 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
             >
               {shortAddr(u.body.signature, 6)}
             </a>
-            ), but its pair with {u.body.ticker} was not saved: {u.error}. Until it is, the token
-            is not a Coorwa pair. Try again reports the same launch; nothing is signed or paid.
+            ), but its pair with {u.body.ticker} was not saved: {u.error}. Until it is, the token is
+            not a Coorwa pair. Try again reports the same launch; nothing is signed or paid.
             <span className="mt-3 flex flex-wrap gap-2">
-              <button
-                className="btn btn-primary"
-                disabled={retrying}
-                onClick={() => retry(u.body)}
-              >
+              <button className="btn btn-primary" disabled={retrying} onClick={() => retry(u.body)}>
                 {retrying ? "Saving the pair" : "Try again"}
               </button>
             </span>
@@ -530,21 +485,188 @@ function CreateForm({ config }: { config?: LaunchpadConfig }) {
         ) : (
           <button
             className="btn btn-primary w-full"
-            disabled={!ready || !!step || unavailable}
+            disabled={!ready || !!step || !config || config.paused}
             onClick={launch}
           >
-            {step ? "Working" : "Launch token"}
+            {step ? "Working" : config?.paused ? "Launching is paused" : "Launch token"}
           </button>
         )}
 
         <p className="text-[12px] leading-relaxed text-subtle">
-          Two signatures: one message to prove the wallet consented, one transaction to create the
-          pool. Coorwa never holds your key and never co-signs.
+          Two signatures: a message that authorises your metadata, then the launch itself. The
+          transaction is built in this page, not on a server, and Coorwa never holds your key.
         </p>
       </div>
     </div>
   );
 }
+
+// --- Your launches --------------------------------------------------------------------------------
+
+function YourLaunches({ config }: { config: LaunchConfigState | null }) {
+  const { connection } = useConnection();
+  const { publicKey } = useWallet();
+
+  const { data: curves } = useSWR(
+    publicKey ? ["launch/curves", publicKey.toBase58()] : null,
+    () => fetchCurves(connection, publicKey!),
+    { refreshInterval: 30_000 },
+  );
+
+  if (!publicKey) return null;
+
+  return (
+    <div className="card p-5 sm:p-7">
+      <h2 className="title text-primary">Your launches</h2>
+      <p className="mt-1.5 text-[13px] text-muted">
+        Tokens this wallet created on Coorwa&apos;s curve, read straight off the chain.
+      </p>
+
+      {!curves ? (
+        <div className="skeleton mt-5 h-20 rounded-2xl" />
+      ) : curves.length === 0 ? (
+        <div className="panel mt-5 p-6 text-[13px] leading-relaxed text-muted">
+          Nothing yet. A token you launch here shows up in this list as soon as it lands, with how
+          far its curve has come.
+        </div>
+      ) : (
+        <ul className="mt-5 space-y-2.5">
+          {curves.map((c) => (
+            <CurveRow key={c.mint.toBase58()} curve={c} decimals={config?.tokenDecimals ?? 6} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function CurveRow({ curve, decimals }: { curve: CurveState; decimals: number }) {
+  const progress =
+    curve.graduationQuote > 0n
+      ? Number((curve.quoteRaised * 1000n) / curve.graduationQuote) / 1000
+      : 0;
+  const mint = curve.mint.toBase58();
+
+  return (
+    <li className="panel p-4">
+      <div className="flex items-center gap-3">
+        <TokenMark logo={null} symbol={mint.slice(0, 4)} size={36} />
+        <div className="min-w-0 flex-1">
+          <div className="num truncate text-[14px] text-primary">{shortAddr(mint, 6)}</div>
+          <div className="num mt-0.5 text-[12px] text-muted">
+            {amount(Number(curve.quoteRaised) / 10 ** COOK_DECIMALS, 0)} of{" "}
+            {amount(Number(curve.graduationQuote) / 10 ** COOK_DECIMALS, 0)} COOK ·{" "}
+            {curve.taxBps / 100}% tax
+          </div>
+        </div>
+        <span className="pill pill-quiet shrink-0">{curve.state}</span>
+      </div>
+      <div className="mt-3 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
+        <div
+          className="h-full rounded-full bg-[var(--color-cookie)]"
+          style={{ width: `${Math.min(100, Math.round(progress * 100))}%` }}
+        />
+      </div>
+      <div className="num mt-2 text-[12px] text-subtle">
+        {amount(Number(curve.baseSold) / 10 ** decimals, 0)} tokens sold
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Tokens this wallet launched on the MomoSwap curve, back when that was the only way.
+ *
+ * Launching there is closed now, but the fees those curves earned their creator are still theirs
+ * and are still claimed with their own key, so the panel stays. It renders nothing for a wallet
+ * that never launched one, which is nearly everyone.
+ */
+function OlderLaunches() {
+  const { publicKey } = useWallet();
+  const { data } = useSWR<{
+    pools: LaunchpadPool[];
+    cookPriceUsd: number | null;
+  }>(publicKey ? "/api/launchpad/pools?status=all" : null, (u: string) =>
+    fetch(u).then((r) => r.json()),
+  );
+
+  return (
+    <CreatorLaunches pools={data?.pools ?? []} cookPriceUsd={data?.cookPriceUsd ?? null} />
+  );
+}
+
+// --- Terms ----------------------------------------------------------------------------------------
+
+function Terms({ config }: { config: LaunchConfigState | null }) {
+  const supply = config ? config.saleBase + config.migrationBase : 0n;
+  const decimals = config?.tokenDecimals ?? 6;
+
+  return (
+    <div className="card p-5 sm:p-7">
+      <h2 className="title text-primary">What a launch promises</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+        Read from the program itself, not from this page. Every token launched here gets the same
+        deal.
+      </p>
+
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <Mini
+          label="Supply"
+          value={config ? amount(Number(supply) / 10 ** decimals, 0) : "—"}
+        />
+        <Mini
+          label="Graduates at"
+          value={
+            config
+              ? `${amount(Number(config.graduationQuote) / 10 ** COOK_DECIMALS, 0)} COOK`
+              : "—"
+          }
+        />
+        <Mini label="Launch cost" value="Free" />
+        <Mini
+          label="Curve fee"
+          value={config ? `${config.curveFeeBps / 100}%` : "—"}
+        />
+      </div>
+
+      <dl className="mt-5 divide-y divide-[color:var(--divider)]">
+        <Term label="The tax">
+          All of it goes to the wallets holding your token, paid daily in the stock you paired it
+          with. Coorwa keeps none of it and neither do you, unless you hold your own token.
+        </Term>
+        <Term label="On the curve">
+          {config ? `${config.curveFeeBps / 100}%` : "1%"} of each trade goes to Coorwa, and
+          Coorwa&apos;s own terminal fee is dropped for these tokens so no trade is charged twice.
+        </Term>
+        <Term label="At graduation">
+          The program opens a Cookiebox pool itself, locks the liquidity in it permanently and burns
+          whatever the curve did not sell. Nobody can pull that liquidity out, including Coorwa.
+        </Term>
+        <Term label="After that">
+          The locked position earns fees on every trade in the pool.{" "}
+          {config ? `${config.creatorLpShareBps / 100}%` : "40%"} of them are yours, for as long as
+          the pool exists.
+        </Term>
+        <Term label="What Coorwa can do">
+          It can pause new launches and it holds the authority to upgrade the program, which will be
+          given up once it has run quietly for a while. It can never touch a token that exists: no
+          mint authority, no freeze authority, no way to change a tax or unlock a pool.
+        </Term>
+      </dl>
+    </div>
+  );
+}
+
+function Term({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-3.5 first:pt-0 last:pb-0">
+      <dt className="text-[13px] text-primary">{label}</dt>
+      <dd className="mt-1 text-[13px] leading-[1.7] text-muted">{children}</dd>
+    </div>
+  );
+}
+
+// --- small pieces ---------------------------------------------------------------------------------
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -578,120 +700,11 @@ function ImagePicker({ preview, onFile }: { preview: string | null; onFile: (f: 
   );
 }
 
-// --- Economics ------------------------------------------------------------------------------------
-
-function Economics({ config, fees }: { config: LaunchpadConfig; fees: FeeBreakdown }) {
-  const rows: [string, string, string][] = [
-    ["Creator", `${fees.creatorPct.toFixed(2)}%`, "Yours, claimable at any time"],
-    [
-      "Coorwa rewards",
-      `${fees.referralPct.toFixed(2)}%`,
-      "Referral share, paid to the token's holders and creator",
-    ],
-    ["Treasury", `${fees.treasuryPct.toFixed(2)}%`, "MomoSwap protocol"],
-    ["Buyback", `${fees.buybackPct.toFixed(2)}%`, "COOK bought back and burned"],
-  ];
-
-  return (
-    <div className="card p-5 sm:p-7">
-      <h2 className="title text-primary">Where the {fees.totalPct.toFixed(0)}% trade fee goes</h2>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-        Percentages are of the trade, not of the fee. The referral slice is paid out of the same fee
-        whether or not anyone is named, and with no referrer MomoSwap keeps it. So routing through
-        Coorwa costs a trader nothing, and the slice goes to the token&apos;s holders and creator.
-      </p>
-
-      <dl className="mt-5 divide-y divide-[color:var(--divider)]">
-        {rows.map(([label, pct, note]) => (
-          <div key={label} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-3">
-            <dt className="flex-1 text-[14px] text-primary sm:w-36 sm:flex-none">{label}</dt>
-            <dd className="num shrink-0 text-[14px] text-primary sm:w-16">{pct}</dd>
-            <dd className="w-full text-[13px] text-muted sm:w-auto sm:flex-1">{note}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Mini label="Launch cost" value={Number(config.creationFeeLamports) === 0 ? "Free" : "—"} />
-        <Mini
-          label="Supply"
-          value={amount(Number(config.defaultTotalSupply) / 10 ** config.defaultTokenDecimals, 0)}
-        />
-        <Mini
-          label="Graduates at"
-          value={`${amount(Number(config.graduationTarget) / 1e9, 0)} COOK`}
-        />
-        <Mini label="Creator vest" value={`${config.creatorVestBps / 100}%`} />
-      </div>
-    </div>
-  );
-}
-
 function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="panel px-4 py-3">
       <div className="label text-[12px]">{label}</div>
       <div className="num mt-1 text-[15px] text-primary">{value}</div>
-    </div>
-  );
-}
-
-// --- Pools ----------------------------------------------------------------------------------------
-
-function LivePools({
-  pools,
-  selected,
-  onSelect,
-}: {
-  pools: (LaunchpadPool & { progress: number })[];
-  selected: string | null;
-  onSelect: (pubkey: string | null) => void;
-}) {
-  return (
-    <div className="card p-5 sm:p-7">
-      <h2 className="title text-primary">On the curve</h2>
-      <p className="mt-1.5 text-[13px] text-muted">
-        Pools climbing toward graduation. Pick one to trade it.
-      </p>
-
-      {pools.length === 0 ? (
-        <div className="panel mt-5 p-6 text-[13px] leading-relaxed text-muted">
-          No pools are open right now. Cookie Chain&apos;s launchpad is early - the reserve of
-          pre-ground mints is stocked and launching is free, so this is a page waiting for its first
-          token rather than a broken feed.
-        </div>
-      ) : (
-        <ul className="mt-5 space-y-2.5">
-          {pools.slice(0, 12).map((p) => (
-            <li key={p.pubkey}>
-              <button
-                onClick={() => onSelect(selected === p.pubkey ? null : p.pubkey)}
-                data-active={selected === p.pubkey}
-                className="panel w-full p-4 text-left transition-colors data-[active=true]:border-[color:var(--color-cookie)]"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <TokenMark logo={p.logo ?? null} symbol={p.symbol} size={36} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] text-primary">
-                      {p.name} <span className="text-subtle">{p.symbol}</span>
-                    </div>
-                    <div className="num mt-0.5 text-[12px] text-muted">
-                      {usd(Number(p.paymentRaisedNet) / 1e9)} raised · {p.participantCount} holders
-                    </div>
-                  </div>
-                  <span className="pill pill-quiet shrink-0">{p.status}</span>
-                </div>
-                <div className="mt-3 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-cookie)]"
-                    style={{ width: `${Math.round(p.progress * 100)}%` }}
-                  />
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
