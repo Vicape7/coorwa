@@ -21,6 +21,7 @@ import {
   claimPoolFeesIx,
   dammEventAuthority,
   graduateIx,
+  graduateIntoPoolIx,
   initializeConfigIx,
   isqrt,
   launchIx,
@@ -95,6 +96,16 @@ function built() {
         sqrtPrice: 2n ** 70n,
       }),
     ],
+    [
+      "graduate_into_pool",
+      graduateIntoPoolIx({
+        mint,
+        quoteMint,
+        positionNftMint: key(),
+        liquidity: 2n ** 100n,
+        swapIn: 1n,
+      }),
+    ],
     ["claim_curve_fees", claimCurveFeesIx(mint, quoteMint, key())],
     [
       "claim_pool_fees",
@@ -162,6 +173,15 @@ test("every instruction names its accounts in the order the program declares the
   assert.equal(graduate.keys[15].pubkey.toBase58(), dammEventAuthority().toBase58());
   assert.ok(graduate.keys[11].isSigner, "the position NFT mint is a fresh keypair");
   assert.equal(graduate.data.length, 8 + 16 + 16, "two u128 arguments");
+
+  // The same accounts as a fresh graduation: only what the program does with them differs.
+  const into = byName.get("graduate_into_pool");
+  assert.ok(into);
+  assert.deepEqual(
+    into.keys.map((k) => [k.isSigner, k.isWritable]),
+    graduate.keys.map((k) => [k.isSigner, k.isWritable]),
+  );
+  assert.equal(into.data.length, 8 + 8 + 16, "a u64 and a u128");
 
   const claim = byName.get("claim_pool_fees");
   assert.ok(claim);

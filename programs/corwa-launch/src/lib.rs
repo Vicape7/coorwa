@@ -103,14 +103,52 @@ pub mod damm {
     #[constant]
     pub const POOL_AUTHORITY: Pubkey = pubkey!("8WYfVSBcP3T1amRNmTnLfzYd44VDjGpw1jZxrEL8638o");
 
-    /// Anchor discriminators of the three instructions this program calls.
+    /// Anchor discriminators of the instructions this program calls.
     pub const IX_INITIALIZE_POOL: [u8; 8] = [0x5f, 0xb4, 0x0a, 0xac, 0x54, 0xae, 0xe8, 0x28];
     pub const IX_PERMANENT_LOCK: [u8; 8] = [0xa5, 0xb0, 0x7d, 0x06, 0xe7, 0xab, 0xba, 0xd5];
     pub const IX_CLAIM_POSITION_FEE: [u8; 8] = [0xb4, 0x26, 0x9a, 0x11, 0x85, 0x21, 0xa2, 0xd3];
+    pub const IX_SWAP: [u8; 8] = [0xf8, 0xc6, 0x9e, 0x91, 0xe1, 0x75, 0x87, 0xc8];
+    pub const IX_CREATE_POSITION: [u8; 8] = [0x30, 0xd7, 0xc5, 0x99, 0x60, 0xcb, 0xb4, 0x85];
+    pub const IX_ADD_LIQUIDITY: [u8; 8] = [0xb5, 0x9d, 0x59, 0x43, 0x8f, 0xb6, 0x34, 0x48];
 
     /// The bounds of a full-range position, in the same Q64.64 form the pool stores its price in.
     pub const MIN_SQRT_PRICE: u128 = 4_295_048_016;
     pub const MAX_SQRT_PRICE: u128 = 79_226_673_521_066_979_257_578_248_091;
+
+    /// Where the pool account keeps the two things this program reads, per the pool program's own
+    /// layout (discriminator included): which mint is its first token, and its price.
+    pub const POOL_TOKEN_A_MINT: usize = 168;
+    pub const POOL_TOKEN_B_MINT: usize = 200;
+    pub const POOL_SQRT_PRICE: usize = 456;
+
+    /// The pool a config opens for two mints. The pool program orders the mints by key in its seeds,
+    /// so the address does not depend on which one the pool calls its first.
+    pub fn pool_address(config: &Pubkey, a: &Pubkey, b: &Pubkey) -> Pubkey {
+        let (hi, lo) = if a > b { (a, b) } else { (b, a) };
+        Pubkey::find_program_address(&[b"pool", config.as_ref(), hi.as_ref(), lo.as_ref()], &PROGRAM_ID)
+            .0
+    }
+
+    /// Whether `base` is the pool's first token, and the pool's price as sqrt(second / first).
+    ///
+    /// Whoever opens a pool picks which of its two mints comes first, and a pool this program did
+    /// not open may have put the quote there. Everything that hands the pool accounts in its own
+    /// order asks this first.
+    pub fn read_pool(data: &[u8], base: &Pubkey, quote: &Pubkey) -> Result<(bool, u128)> {
+        require!(data.len() >= POOL_SQRT_PRICE + 16, super::LaunchError::WrongPool);
+        let key = |at: usize| Pubkey::try_from(&data[at..at + 32]).map_err(|_| super::LaunchError::WrongPool);
+        let (a, b) = (key(POOL_TOKEN_A_MINT)?, key(POOL_TOKEN_B_MINT)?);
+        let base_is_a = if a == *base && b == *quote {
+            true
+        } else if a == *quote && b == *base {
+            false
+        } else {
+            return err!(super::LaunchError::WrongPool);
+        };
+        let mut price = [0u8; 16];
+        price.copy_from_slice(&data[POOL_SQRT_PRICE..POOL_SQRT_PRICE + 16]);
+        Ok((base_is_a, u128::from_le_bytes(price)))
+    }
 }
 
 #[program]
@@ -460,6 +498,133 @@ pub mod corwa_launch {
         Ok(())
     }
 
+    /// Graduate into a pool somebody else opened first.
+    ///
+    /// The pool config this program graduates into lets anyone open a pool, and a pool's address is
+    /// fixed by its config and its two mints. So anyone holding a few of a token's units can open
+    /// that token's pool before its curve fills, at any price they like, and `graduate` then finds
+    /// the address taken. This is the way through: the curve moves into the pool that is there.
+    ///
+    /// First it trades against that pool until its price is the curve's closing price, then it opens
+    /// its own position, deposits what the curve raised and locks it forever, exactly as `graduate`
+    /// would have. The direction of the trade is decided here from the pool's own price, so a caller
+    /// only chooses how much, and the result is checked like `graduate` checks its own: the price
+    /// has to land within a percent of the curve's, and one side of what the curve holds has to go
+    /// into the pool nearly whole. Whatever the squatter mispriced is arbitraged back to the curve,
+    /// not to them.
+    ///
+    /// What cannot be fixed here is a pool whose first trade the squatter put in the future; the pool
+    /// program refuses to trade it before then, and allows no more than about a month. This fails
+    /// until that moment and works after it.
+    ///
+    /// Two leftovers are possible and neither is kept by anyone. Base the pool did not take is burned,
+    /// as in `graduate`. Quote the pool did not take can only exist because the squatter priced the
+    /// token too high and the correcting trade sold into that price; it is added to the curve's fees
+    /// rather than stranded in the vault, and the operator passes it on like any other fee.
+    pub fn graduate_into_pool(ctx: Context<Graduate>, swap_in: u64, liquidity: u128) -> Result<()> {
+        let curve = &ctx.accounts.curve;
+        require!(curve.state == STATE_GRADUATED, LaunchError::NotGraduated);
+        require!(liquidity > 0, LaunchError::ZeroAmount);
+
+        let mint_key = curve.mint;
+        let quote_key = ctx.accounts.quote_mint.key();
+        let fees_quote = curve.fees_quote;
+        let seeded_base = math::net_of_tax(curve.migration_base, curve.tax_bps)?;
+        let close = math::expected_sqrt_price(curve.quote_raised, seeded_base)?;
+
+        // Only this curve's own graduation pool: another pool over the same two mints could carry any
+        // fee and any range, and depositing into it would be a different product.
+        require_keys_eq!(
+            ctx.accounts.pool.key(),
+            damm::pool_address(&ctx.accounts.damm_config.key(), &mint_key, &quote_key),
+            LaunchError::WrongPool
+        );
+        require_keys_eq!(*ctx.accounts.pool.owner, damm::PROGRAM_ID, LaunchError::WrongPool);
+        let (base_is_a, before) =
+            damm::read_pool(&ctx.accounts.pool.try_borrow_data()?, &mint_key, &quote_key)?;
+        // The pool prices its second token in its first, so a pool that put the quote first holds
+        // the inverse of the curve's price.
+        let target = if base_is_a { close } else { math::invert_sqrt_price(close)? };
+
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[ctx.bumps.vault_authority]];
+
+        if swap_in > 0 {
+            // Raising the pool's price means paying in its second token; lowering it, its first.
+            let raise = before < target;
+            let input_is_base = raise != base_is_a;
+            let available = if input_is_base {
+                ctx.accounts.base_vault.amount
+            } else {
+                ctx.accounts
+                    .quote_vault
+                    .amount
+                    .checked_sub(fees_quote)
+                    .ok_or(LaunchError::MathOverflow)?
+            };
+            require!(swap_in <= available, LaunchError::SeedOutOfRange);
+            ctx.accounts.swap(swap_in, input_is_base, base_is_a, seeds)?;
+        }
+
+        let (_, after) =
+            damm::read_pool(&ctx.accounts.pool.try_borrow_data()?, &mint_key, &quote_key)?;
+        require!(math::within_one_percent(after, target), LaunchError::PriceMismatch);
+
+        ctx.accounts.create_position(seeds)?;
+
+        ctx.accounts.base_vault.reload()?;
+        ctx.accounts.quote_vault.reload()?;
+        let base_before = ctx.accounts.base_vault.amount;
+        let quote_before = ctx
+            .accounts
+            .quote_vault
+            .amount
+            .checked_sub(fees_quote)
+            .ok_or(LaunchError::MathOverflow)?;
+        ctx.accounts
+            .add_liquidity(liquidity, base_before, quote_before, base_is_a, seeds)?;
+
+        ctx.accounts.base_vault.reload()?;
+        ctx.accounts.quote_vault.reload()?;
+        let base_left = ctx.accounts.base_vault.amount;
+        let quote_left = ctx
+            .accounts
+            .quote_vault
+            .amount
+            .checked_sub(fees_quote)
+            .ok_or(LaunchError::MathOverflow)?;
+        // Whatever the caller asked for, one side of what the curve holds goes into the pool all but
+        // whole. A deposit of a sliver, with the rest burned or stranded, would take from holders as
+        // surely as a bad price.
+        require!(
+            (quote_left as u128) * 200 <= quote_before as u128
+                || (base_left as u128) * 200 <= base_before as u128,
+            LaunchError::SeedOutOfRange
+        );
+
+        ctx.accounts.lock_liquidity(liquidity, seeds)?;
+        if base_left > 0 {
+            ctx.accounts.burn_leftover(base_left, seeds)?;
+        }
+
+        let curve = &mut ctx.accounts.curve;
+        curve.fees_quote = curve.fees_quote.saturating_add(quote_left);
+        curve.state = STATE_POOLED;
+        curve.position_nft_mint = ctx.accounts.position_nft_mint.key();
+
+        emit!(Graduated {
+            curve: curve.key(),
+            mint: curve.mint,
+            pool: ctx.accounts.pool.key(),
+            position: ctx.accounts.position.key(),
+            position_nft_mint: curve.position_nft_mint,
+            quote_seeded: quote_before - quote_left,
+            base_seeded: base_before - base_left,
+            burned: base_left,
+            liquidity,
+        });
+        Ok(())
+    }
+
     /// Collect the graduated pool's fees and split them.
     ///
     /// The position is locked forever, so this is the only thing it will ever produce. The split is
@@ -483,8 +648,13 @@ pub mod corwa_launch {
         let base_before = ctx.accounts.base_vault.amount;
         let quote_before = ctx.accounts.quote_vault.amount;
 
+        let (base_is_a, _) = damm::read_pool(
+            &ctx.accounts.pool.try_borrow_data()?,
+            &mint_key,
+            &ctx.accounts.quote_mint.key(),
+        )?;
         let seeds: &[&[u8]] = &[AUTHORITY_SEED, mint_key.as_ref(), &[authority_bump]];
-        ctx.accounts.claim_position_fee(seeds)?;
+        ctx.accounts.claim_position_fee(seeds, base_is_a)?;
 
         ctx.accounts.base_vault.reload()?;
         ctx.accounts.quote_vault.reload()?;
@@ -601,6 +771,14 @@ pub mod math {
         require!(quote > 0 && base > 0, LaunchError::ZeroAmount);
         let scaled = ((quote as u128) << 64) / (base as u128);
         Ok(isqrt(scaled) << 32)
+    }
+
+    /// The same price seen from the other token: `2^128 / sqrt_price`, which is what a pool that
+    /// lists the two mints the other way round stores. `u128::MAX` stands in for `2^128`, which is
+    /// one unit short and changes nothing at the precision a pool price is checked to.
+    pub fn invert_sqrt_price(sqrt_price: u128) -> Result<u128> {
+        require!(sqrt_price > 0, LaunchError::ZeroAmount);
+        Ok(u128::MAX / sqrt_price)
     }
 
     /// Integer square root, by the usual bit-by-bit method. No floats in a program.
@@ -786,6 +964,20 @@ pub mod math {
             assert!(bps_of(u64::MAX, 10_000).is_ok());
             // Beyond that it has to fail loudly rather than wrap.
             assert!(swap_out(u128::MAX, 1, u128::MAX).is_err());
+        }
+
+        #[test]
+        fn a_price_seen_from_the_other_token_is_its_inverse() {
+            // 1.0 in Q64.64 is its own inverse, and 4.0 inverts to 0.25, give or take the one unit
+            // that u128::MAX stands short of 2^128.
+            let one = 1u128 << 64;
+            assert!(invert_sqrt_price(one).unwrap().abs_diff(one) <= 1);
+            assert!(invert_sqrt_price(one * 2).unwrap().abs_diff(one / 2) <= 1);
+            // Inverting twice lands back inside the percent the pool price is checked to.
+            let close = expected_sqrt_price(1_000_000_000_000_000, 194_000_000_000_000).unwrap();
+            let back = invert_sqrt_price(invert_sqrt_price(close).unwrap()).unwrap();
+            assert!(within_one_percent(back, close));
+            assert!(invert_sqrt_price(0).is_err());
         }
     }
 }
@@ -1510,6 +1702,178 @@ impl<'info> Graduate<'info> {
         Ok(())
     }
 
+    /// The curve's vaults, the pool's vaults, the mints and their token programs, in the pool's order:
+    /// first token, then second. A pool this program opened lists the base first; one somebody else
+    /// opened may not.
+    fn in_pool_order(&self, base_is_a: bool) -> [[AccountInfo<'info>; 2]; 4] {
+        let base = [
+            self.base_vault.to_account_info(),
+            self.pool_base_vault.to_account_info(),
+            self.mint.to_account_info(),
+            self.token_program.to_account_info(),
+        ];
+        let quote = [
+            self.quote_vault.to_account_info(),
+            self.pool_quote_vault.to_account_info(),
+            self.quote_mint.to_account_info(),
+            self.quote_token_program.to_account_info(),
+        ];
+        let (a, b) = if base_is_a { (base, quote) } else { (quote, base) };
+        let [a0, a1, a2, a3] = a;
+        let [b0, b1, b2, b3] = b;
+        [[a0, b0], [a1, b1], [a2, b2], [a3, b3]]
+    }
+
+    /// Sell `amount` of one side of the curve's reserve into the pool, exact in and at any price: the
+    /// caller checks where the price landed, which is the only thing that matters here.
+    fn swap(&self, amount: u64, input_is_base: bool, base_is_a: bool, seeds: &[&[u8]]) -> Result<()> {
+        let [_, vaults, mints, programs] = self.in_pool_order(base_is_a);
+        let (input, output) = if input_is_base {
+            (self.base_vault.to_account_info(), self.quote_vault.to_account_info())
+        } else {
+            (self.quote_vault.to_account_info(), self.base_vault.to_account_info())
+        };
+
+        let mut data = Vec::with_capacity(8 + 8 + 8);
+        data.extend_from_slice(&damm::IX_SWAP);
+        data.extend_from_slice(&amount.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+
+        let accounts = vec![
+            AccountMeta::new_readonly(self.damm_pool_authority.key(), false),
+            AccountMeta::new(self.pool.key(), false),
+            AccountMeta::new(input.key(), false),
+            AccountMeta::new(output.key(), false),
+            AccountMeta::new(vaults[0].key(), false),
+            AccountMeta::new(vaults[1].key(), false),
+            AccountMeta::new_readonly(mints[0].key(), false),
+            AccountMeta::new_readonly(mints[1].key(), false),
+            AccountMeta::new_readonly(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(programs[0].key(), false),
+            AccountMeta::new_readonly(programs[1].key(), false),
+            // No referral: an optional account is passed as the pool program's own id.
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+        invoke_signed(
+            &Instruction { program_id: self.damm_program.key(), accounts, data },
+            &[
+                self.damm_pool_authority.to_account_info(),
+                self.pool.to_account_info(),
+                input,
+                output,
+                vaults[0].clone(),
+                vaults[1].clone(),
+                mints[0].clone(),
+                mints[1].clone(),
+                self.vault_authority.to_account_info(),
+                programs[0].clone(),
+                programs[1].clone(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
+    /// Open the curve's own position in a pool that already exists, owned and paid for by the vault
+    /// authority, exactly as `initialize_pool` would have opened it.
+    fn create_position(&self, seeds: &[&[u8]]) -> Result<()> {
+        let accounts = vec![
+            AccountMeta::new_readonly(self.vault_authority.key(), false),
+            AccountMeta::new(self.position_nft_mint.key(), true),
+            AccountMeta::new(self.position_nft_account.key(), false),
+            AccountMeta::new(self.pool.key(), false),
+            AccountMeta::new(self.position.key(), false),
+            AccountMeta::new_readonly(self.damm_pool_authority.key(), false),
+            AccountMeta::new(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(self.token_2022_program.key(), false),
+            AccountMeta::new_readonly(self.system_program.key(), false),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+        invoke_signed(
+            &Instruction {
+                program_id: self.damm_program.key(),
+                accounts,
+                data: damm::IX_CREATE_POSITION.to_vec(),
+            },
+            &[
+                self.vault_authority.to_account_info(),
+                self.position_nft_mint.to_account_info(),
+                self.position_nft_account.to_account_info(),
+                self.pool.to_account_info(),
+                self.position.to_account_info(),
+                self.damm_pool_authority.to_account_info(),
+                self.token_2022_program.to_account_info(),
+                self.system_program.to_account_info(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
+    /// Deposit `liquidity` into the curve's position, spending at most what the vaults hold.
+    fn add_liquidity(
+        &self,
+        liquidity: u128,
+        max_base: u64,
+        max_quote: u64,
+        base_is_a: bool,
+        seeds: &[&[u8]],
+    ) -> Result<()> {
+        let [ours, vaults, mints, programs] = self.in_pool_order(base_is_a);
+        let (max_a, max_b) = if base_is_a { (max_base, max_quote) } else { (max_quote, max_base) };
+
+        let mut data = Vec::with_capacity(8 + 16 + 8 + 8);
+        data.extend_from_slice(&damm::IX_ADD_LIQUIDITY);
+        data.extend_from_slice(&liquidity.to_le_bytes());
+        data.extend_from_slice(&max_a.to_le_bytes());
+        data.extend_from_slice(&max_b.to_le_bytes());
+
+        let accounts = vec![
+            AccountMeta::new(self.pool.key(), false),
+            AccountMeta::new(self.position.key(), false),
+            AccountMeta::new(ours[0].key(), false),
+            AccountMeta::new(ours[1].key(), false),
+            AccountMeta::new(vaults[0].key(), false),
+            AccountMeta::new(vaults[1].key(), false),
+            AccountMeta::new_readonly(mints[0].key(), false),
+            AccountMeta::new_readonly(mints[1].key(), false),
+            AccountMeta::new_readonly(self.position_nft_account.key(), false),
+            AccountMeta::new_readonly(self.vault_authority.key(), true),
+            AccountMeta::new_readonly(programs[0].key(), false),
+            AccountMeta::new_readonly(programs[1].key(), false),
+            AccountMeta::new_readonly(self.damm_event_authority.key(), false),
+            AccountMeta::new_readonly(self.damm_program.key(), false),
+        ];
+        invoke_signed(
+            &Instruction { program_id: self.damm_program.key(), accounts, data },
+            &[
+                self.pool.to_account_info(),
+                self.position.to_account_info(),
+                ours[0].clone(),
+                ours[1].clone(),
+                vaults[0].clone(),
+                vaults[1].clone(),
+                mints[0].clone(),
+                mints[1].clone(),
+                self.position_nft_account.to_account_info(),
+                self.vault_authority.to_account_info(),
+                programs[0].clone(),
+                programs[1].clone(),
+                self.damm_event_authority.to_account_info(),
+                self.damm_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
+
     fn burn_leftover(&self, amount: u64, seeds: &[&[u8]]) -> Result<()> {
         token_interface::burn(
             CpiContext::new_with_signer(
@@ -1598,21 +1962,37 @@ pub struct ClaimPoolFees<'info> {
 }
 
 impl<'info> ClaimPoolFees<'info> {
-    fn claim_position_fee(&self, seeds: &[&[u8]]) -> Result<()> {
+    /// Collect the position's fees into the curve's vaults. The accounts go in the pool's own order,
+    /// which for a pool somebody else opened may list the quote first.
+    fn claim_position_fee(&self, seeds: &[&[u8]], base_is_a: bool) -> Result<()> {
+        let base = [
+            self.base_vault.to_account_info(),
+            self.pool_base_vault.to_account_info(),
+            self.mint.to_account_info(),
+            self.token_program.to_account_info(),
+        ];
+        let quote = [
+            self.quote_vault.to_account_info(),
+            self.pool_quote_vault.to_account_info(),
+            self.quote_mint.to_account_info(),
+            self.quote_token_program.to_account_info(),
+        ];
+        let (a, b) = if base_is_a { (base, quote) } else { (quote, base) };
+
         let accounts = vec![
             AccountMeta::new_readonly(self.damm_pool_authority.key(), false),
             AccountMeta::new_readonly(self.pool.key(), false),
             AccountMeta::new(self.position.key(), false),
-            AccountMeta::new(self.base_vault.key(), false),
-            AccountMeta::new(self.quote_vault.key(), false),
-            AccountMeta::new(self.pool_base_vault.key(), false),
-            AccountMeta::new(self.pool_quote_vault.key(), false),
-            AccountMeta::new_readonly(self.mint.key(), false),
-            AccountMeta::new_readonly(self.quote_mint.key(), false),
+            AccountMeta::new(a[0].key(), false),
+            AccountMeta::new(b[0].key(), false),
+            AccountMeta::new(a[1].key(), false),
+            AccountMeta::new(b[1].key(), false),
+            AccountMeta::new_readonly(a[2].key(), false),
+            AccountMeta::new_readonly(b[2].key(), false),
             AccountMeta::new_readonly(self.position_nft_account.key(), false),
             AccountMeta::new_readonly(self.vault_authority.key(), true),
-            AccountMeta::new_readonly(self.token_program.key(), false),
-            AccountMeta::new_readonly(self.quote_token_program.key(), false),
+            AccountMeta::new_readonly(a[3].key(), false),
+            AccountMeta::new_readonly(b[3].key(), false),
             AccountMeta::new_readonly(self.damm_event_authority.key(), false),
             AccountMeta::new_readonly(self.damm_program.key(), false),
         ];
@@ -1627,16 +2007,16 @@ impl<'info> ClaimPoolFees<'info> {
                 self.damm_pool_authority.to_account_info(),
                 self.pool.to_account_info(),
                 self.position.to_account_info(),
-                self.base_vault.to_account_info(),
-                self.quote_vault.to_account_info(),
-                self.pool_base_vault.to_account_info(),
-                self.pool_quote_vault.to_account_info(),
-                self.mint.to_account_info(),
-                self.quote_mint.to_account_info(),
+                a[0].clone(),
+                b[0].clone(),
+                a[1].clone(),
+                b[1].clone(),
+                a[2].clone(),
+                b[2].clone(),
                 self.position_nft_account.to_account_info(),
                 self.vault_authority.to_account_info(),
-                self.token_program.to_account_info(),
-                self.quote_token_program.to_account_info(),
+                a[3].clone(),
+                b[3].clone(),
                 self.damm_event_authority.to_account_info(),
                 self.damm_program.to_account_info(),
             ],
@@ -1810,4 +2190,6 @@ pub enum LaunchError {
     SeedOutOfRange,
     #[msg("that is not this curve's position")]
     WrongPosition,
+    #[msg("that is not this curve's graduation pool")]
+    WrongPool,
 }

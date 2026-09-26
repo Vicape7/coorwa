@@ -640,6 +640,212 @@
       ]
     },
     {
+      "name": "graduate_into_pool",
+      "docs": [
+        "Graduate into a pool somebody else opened first.",
+        "",
+        "The pool config this program graduates into lets anyone open a pool, and a pool's address is",
+        "fixed by its config and its two mints. So anyone holding a few of a token's units can open",
+        "that token's pool before its curve fills, at any price they like, and `graduate` then finds",
+        "the address taken. This is the way through: the curve moves into the pool that is there.",
+        "",
+        "First it trades against that pool until its price is the curve's closing price, then it opens",
+        "its own position, deposits what the curve raised and locks it forever, exactly as `graduate`",
+        "would have. The direction of the trade is decided here from the pool's own price, so a caller",
+        "only chooses how much, and the result is checked like `graduate` checks its own: the price",
+        "has to land within a percent of the curve's, and one side of what the curve holds has to go",
+        "into the pool nearly whole. Whatever the squatter mispriced is arbitraged back to the curve,",
+        "not to them.",
+        "",
+        "What cannot be fixed here is a pool whose first trade the squatter put in the future; the pool",
+        "program refuses to trade it before then, and allows no more than about a month. This fails",
+        "until that moment and works after it.",
+        "",
+        "Two leftovers are possible and neither is kept by anyone. Base the pool did not take is burned,",
+        "as in `graduate`. Quote the pool did not take can only exist because the squatter priced the",
+        "token too high and the correcting trade sold into that price; it is added to the curve's fees",
+        "rather than stranded in the vault, and the operator passes it on like any other fee."
+      ],
+      "discriminator": [
+        139,
+        117,
+        187,
+        237,
+        216,
+        124,
+        119,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "curve.mint",
+                "account": "Curve"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "curve.mint",
+                "account": "Curve"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "base_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "relations": [
+            "curve"
+          ]
+        },
+        {
+          "name": "damm_config"
+        },
+        {
+          "name": "damm_pool_authority",
+          "address": "8WYfVSBcP3T1amRNmTnLfzYd44VDjGpw1jZxrEL8638o"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "position_nft_mint",
+          "docs": [
+            "The position NFT. A fresh keypair, and the only thing that identifies the locked liquidity",
+            "afterwards, so it is written onto the curve."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "position_nft_account",
+          "writable": true
+        },
+        {
+          "name": "pool_base_vault",
+          "writable": true
+        },
+        {
+          "name": "pool_quote_vault",
+          "writable": true
+        },
+        {
+          "name": "damm_event_authority"
+        },
+        {
+          "name": "damm_program",
+          "address": "DAMMjDCEFTDkt7ywazZS8GoaLtjb3HaJo3pLbf64xrPY"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "quote_token_program"
+        },
+        {
+          "name": "token_2022_program",
+          "docs": [
+            "The pool program takes this separately from the two token programs above, because it creates",
+            "its position NFT with it whatever the pool's own tokens are."
+          ],
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "swap_in",
+          "type": "u64"
+        },
+        {
+          "name": "liquidity",
+          "type": "u128"
+        }
+      ]
+    },
+    {
       "name": "initialize_config",
       "docs": [
         "Create the one config every launch reads. Whoever signs this owns the platform settings."
@@ -1249,6 +1455,11 @@
       "code": 6016,
       "name": "WrongPosition",
       "msg": "that is not this curve's position"
+    },
+    {
+      "code": 6017,
+      "name": "WrongPool",
+      "msg": "that is not this curve's graduation pool"
     }
   ],
   "types": [

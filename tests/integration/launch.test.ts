@@ -65,8 +65,12 @@ const UNIT = 10n ** BigInt(DECIMALS);
 /** 800M on the curve and 200M for the pool, the same 80/20 the program defaults to. */
 const SALE_BASE = 800_000_000n * UNIT;
 const MIGRATION_BASE = 200_000_000n * UNIT;
-/** Small enough that one funded wallet can graduate a curve inside a test. */
-const GRADUATION_QUOTE = 10n * BigInt(LAMPORTS_PER_SOL);
+/**
+ * Small enough that one funded wallet can graduate a curve inside a test, and a multiple of three:
+ * the virtual quote is a third of it, and a third that rounds down leaves a curve whose last buy
+ * wants a few units more base than the sale holds. Production's target divides cleanly enough.
+ */
+const GRADUATION_QUOTE = 12n * BigInt(LAMPORTS_PER_SOL);
 const VIRTUAL_QUOTE = GRADUATION_QUOTE / 3n;
 const VIRTUAL_BASE = (SALE_BASE * 4n) / 3n;
 const TAX_BPS = 300;

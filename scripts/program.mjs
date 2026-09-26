@@ -315,7 +315,15 @@ async function integrationTest() {
 
     const res = spawnSync(
       process.execPath,
-      ["--import", "./tests/resolve.mjs", "--test", "tests/integration/*.test.ts"],
+      // One file at a time: the launch suites share the program's single config account, and two
+      // of them racing to write it would each find the other's.
+      [
+        "--import",
+        "./tests/resolve.mjs",
+        "--test",
+        "--test-concurrency=1",
+        "tests/integration/*.test.ts",
+      ],
       {
         stdio: "inherit",
         cwd: ROOT,

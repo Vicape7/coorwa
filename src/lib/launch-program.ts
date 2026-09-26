@@ -48,6 +48,7 @@ const IX = {
   buy: [102, 6, 61, 18, 1, 218, 235, 234],
   sell: [51, 230, 133, 164, 1, 127, 131, 173],
   graduate: [45, 235, 225, 181, 17, 218, 64, 130],
+  graduateIntoPool: [139, 117, 187, 237, 216, 124, 119, 169],
   claimCurveFees: [67, 48, 233, 11, 25, 119, 172, 15],
   claimPoolFees: [33, 187, 125, 186, 41, 247, 236, 89],
 } as const;
@@ -589,6 +590,148 @@ export function graduationParams(curve: CurveState, availableBase?: bigint): Gra
   return { sqrtPrice, liquidity, seededBase: deltaA, baseFromVault };
 }
 
+/** What `graduate_into_pool` needs to know about the pool that is already there. */
+export interface DammPoolState {
+  tokenAMint: PublicKey;
+  tokenBMint: PublicKey;
+  liquidity: bigint;
+  /** sqrt(B per A) in Q64.64. */
+  sqrtPrice: bigint;
+  /** When the pool's first trade is allowed, in unix seconds for this config. */
+  activationPoint: bigint;
+  status: number;
+}
+
+/** The pool program's own layout, discriminator included; the same offsets the program reads. */
+export function decodeDammPool(data: Uint8Array): DammPoolState {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const u64 = (at: number) => view.getBigUint64(at, true);
+  const u128 = (at: number) => u64(at) | (u64(at + 8) << 64n);
+  return {
+    tokenAMint: new PublicKey(data.subarray(168, 200)),
+    tokenBMint: new PublicKey(data.subarray(200, 232)),
+    liquidity: u128(360),
+    sqrtPrice: u128(456),
+    activationPoint: u64(472),
+    status: data[481],
+  };
+}
+
+/** The pool's trading fee, 1%, as the pool program counts it. Fixed by the config the pool is on. */
+const POOL_FEE_NUMERATOR = 10_000_000n;
+const POOL_FEE_DENOMINATOR = 1_000_000_000n;
+/**
+ * How much of the deposit's binding side is held back from the liquidity, so rounding in the pool's
+ * favour cannot ask the vault for a unit it does not have. The program wants 99.5% of that side in.
+ */
+const DEPOSIT_MARGIN_BPS = 10n;
+
+export interface ExistingPoolGraduation {
+  /** Whether the curve's base is the pool's first token. */
+  baseIsA: boolean;
+  /** The price the pool has to end at, in the pool's own orientation. */
+  targetSqrtPrice: bigint;
+  /** What the program sends into the pool to get it there, in the input token's raw units. */
+  swapIn: bigint;
+  /** Which way: true when the program sells base, false when it buys base with quote. */
+  sellsBase: boolean;
+  liquidity: bigint;
+}
+
+function ceilDiv(a: bigint, b: bigint): bigint {
+  return (a + b - 1n) / b;
+}
+
+/** An amount grossed up for the token's tax, so that `amount` arrives. */
+function withTax(amount: bigint, bps: number): bigint {
+  if (bps === 0 || amount === 0n) return amount;
+  let gross = ceilDiv(amount * BPS, BPS - BigInt(bps));
+  while (gross - taxOf(gross, bps) < amount) gross += 1n;
+  return gross;
+}
+
+/**
+ * The trade and the deposit that move a curve into a pool somebody else opened first.
+ *
+ * The pool is full range at a flat 1%, collecting its fee in its second token, so the trade that
+ * moves its price from where the squatter left it to the curve's closing price is exact arithmetic:
+ * raising the price takes `L * Δ√P` of the second token (plus the fee), lowering it takes
+ * `L * Δ(1/√P)` of the first. The tax is grossed up on whichever side is the base. The deposit is
+ * then as much liquidity as what the curve holds after that trade affords at the new price, less a
+ * thousandth for the pool's rounding.
+ *
+ * A pool already within a fifth of a percent of the price is left untraded: the program accepts a
+ * percent either way, and a trade that small would cost more in fees than it corrects.
+ */
+export function existingPoolGraduation(
+  curve: CurveState,
+  pool: DammPoolState,
+  held: { base: bigint; quote: bigint },
+): ExistingPoolGraduation {
+  const baseIsA = pool.tokenAMint.equals(curve.mint);
+  if (!baseIsA && !pool.tokenBMint.equals(curve.mint)) {
+    throw new Error("that pool does not trade this token");
+  }
+  const close = graduationParams(curve).sqrtPrice;
+  // The pool prices its second token in its first; a pool with the quote first holds the inverse.
+  const target = baseIsA ? close : ((1n << 128n) - 1n) / close;
+  const from = pool.sqrtPrice;
+  const L = pool.liquidity;
+  const tax = curve.taxBps;
+  const feeOn = (x: bigint) => ceilDiv(x * POOL_FEE_NUMERATOR, POOL_FEE_DENOMINATOR);
+
+  let base = held.base;
+  let quote = held.quote;
+  let swapIn = 0n;
+  let sellsBase = false;
+  const gap = from > target ? from - target : target - from;
+  if (gap * 500n > target && L > 0n) {
+    if (from < target) {
+      // Raise: pay in the second token, the fee taken off what goes in.
+      const net = ceilDiv(L * (target - from), 1n << 128n);
+      const gross = ceilDiv(net * POOL_FEE_DENOMINATOR, POOL_FEE_DENOMINATOR - POOL_FEE_NUMERATOR);
+      const out = (L * (target - from)) / (from * target);
+      if (baseIsA) {
+        // Second token is the quote: pay quote, receive base less its tax.
+        swapIn = gross;
+        quote -= gross;
+        base += out - taxOf(out, tax);
+      } else {
+        // Second token is the base: pay base, taxed on the way in.
+        swapIn = withTax(gross, tax);
+        sellsBase = true;
+        base -= swapIn;
+        quote += out;
+      }
+    } else {
+      // Lower: pay in the first token; the fee comes off the second token coming out.
+      const net = ceilDiv(L * (from - target), from * target);
+      const outGross = (L * (from - target)) >> 128n;
+      const out = outGross - feeOn(outGross);
+      if (baseIsA) {
+        swapIn = withTax(net, tax);
+        sellsBase = true;
+        base -= swapIn;
+        quote += out;
+      } else {
+        swapIn = net;
+        quote -= net;
+        base += out - taxOf(out, tax);
+      }
+    }
+  }
+  if (base < 0n || quote < 0n) throw new Error("the curve cannot afford to move that pool's price");
+
+  // What each side can deliver into the pool, the base's tax taken on the way.
+  const baseArrives = base - taxOf(base, tax);
+  const [a, b] = baseIsA ? [baseArrives, quote] : [quote, baseArrives];
+  const fromA = (a * target * MAX_SQRT_PRICE) / (MAX_SQRT_PRICE - target);
+  const fromB = (b << 128n) / (target - MIN_SQRT_PRICE);
+  const liquidity = ((fromA < fromB ? fromA : fromB) * (BPS - DEPOSIT_MARGIN_BPS)) / BPS;
+
+  return { baseIsA, targetSqrtPrice: target, swapIn, sellsBase, liquidity };
+}
+
 /** `Δa = L * (√upper - √lower) / (√upper * √lower)`, rounded up the way the pool rounds it. */
 function deltaAmountA(liquidity: bigint, sqrtPrice: bigint): bigint {
   const numerator = liquidity * (MAX_SQRT_PRICE - sqrtPrice);
@@ -779,34 +922,53 @@ export interface GraduateInput {
 }
 
 export function graduateIx(input: GraduateInput): TransactionInstruction {
-  const pool = dammPoolPda(input.mint, input.quoteMint);
   return new TransactionInstruction({
     programId: LAUNCH_PROGRAM_ID,
-    keys: [
-      meta(configPda()),
-      meta(curvePda(input.mint), false, true),
-      meta(vaultAuthorityPda(input.mint), false, true),
-      meta(input.mint, false, true),
-      meta(input.quoteMint),
-      meta(baseVault(input.mint), false, true),
-      meta(quoteVault(input.mint, input.quoteMint), false, true),
-      meta(DAMM_CONFIG),
-      meta(DAMM_POOL_AUTHORITY),
-      meta(pool, false, true),
-      meta(dammPositionPda(input.positionNftMint), false, true),
-      meta(input.positionNftMint, true, true),
-      meta(dammPositionNftAccount(input.positionNftMint), false, true),
-      meta(dammTokenVault(input.mint, pool), false, true),
-      meta(dammTokenVault(input.quoteMint, pool), false, true),
-      meta(dammEventAuthority()),
-      meta(DAMM_PROGRAM_ID),
-      meta(TOKEN_2022_PROGRAM_ID),
-      meta(TOKEN_PROGRAM_ID),
-      meta(TOKEN_2022_PROGRAM_ID),
-      meta(SystemProgram.programId),
-    ],
+    keys: graduateKeys(input),
     data: concat(IX.graduate, u128le(input.liquidity), u128le(input.sqrtPrice)),
   });
+}
+
+/**
+ * Graduate into a pool somebody else opened on the curve's graduation address first. The program
+ * trades `swapIn` against that pool to bring its price to the curve's, then deposits `liquidity`;
+ * `existingPoolGraduation` works both out.
+ */
+export function graduateIntoPoolIx(
+  input: Omit<GraduateInput, "sqrtPrice"> & { swapIn: bigint },
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: LAUNCH_PROGRAM_ID,
+    keys: graduateKeys(input),
+    data: concat(IX.graduateIntoPool, u64le(input.swapIn), u128le(input.liquidity)),
+  });
+}
+
+function graduateKeys(input: { mint: PublicKey; quoteMint: PublicKey; positionNftMint: PublicKey }) {
+  const pool = dammPoolPda(input.mint, input.quoteMint);
+  return [
+    meta(configPda()),
+    meta(curvePda(input.mint), false, true),
+    meta(vaultAuthorityPda(input.mint), false, true),
+    meta(input.mint, false, true),
+    meta(input.quoteMint),
+    meta(baseVault(input.mint), false, true),
+    meta(quoteVault(input.mint, input.quoteMint), false, true),
+    meta(DAMM_CONFIG),
+    meta(DAMM_POOL_AUTHORITY),
+    meta(pool, false, true),
+    meta(dammPositionPda(input.positionNftMint), false, true),
+    meta(input.positionNftMint, true, true),
+    meta(dammPositionNftAccount(input.positionNftMint), false, true),
+    meta(dammTokenVault(input.mint, pool), false, true),
+    meta(dammTokenVault(input.quoteMint, pool), false, true),
+    meta(dammEventAuthority()),
+    meta(DAMM_PROGRAM_ID),
+    meta(TOKEN_2022_PROGRAM_ID),
+    meta(TOKEN_PROGRAM_ID),
+    meta(TOKEN_2022_PROGRAM_ID),
+    meta(SystemProgram.programId),
+  ];
 }
 
 export interface ClaimPoolFeesInput {
