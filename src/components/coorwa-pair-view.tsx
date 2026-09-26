@@ -52,7 +52,11 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
             </h1>
             <p className="mt-1.5 text-[13px] text-muted">
               {pair.base.name} priced in {pair.quote.name} shares ·{" "}
-              {curve.state === "live" ? "on Coorwa's curve" : "graduated, its pool is opening"}
+              {curve.state === "live"
+                ? "on Coorwa's curve"
+                : pair.pool
+                  ? "graduated, trading in its locked pool"
+                  : "graduated, its pool is opening"}
             </p>
           </div>
         </div>
@@ -73,24 +77,37 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
         </div>
       </div>
 
-      {/* Progress to graduation, the one number a curve is really about. */}
-      <div className="card mt-5 p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+      {/* Progress to graduation, the one number a curve is really about; after it, the pool. */}
+      {pair.pool ? (
+        <div className="card mt-5 flex flex-wrap items-baseline justify-between gap-2 p-5">
           <span className="text-[13px] text-muted">
-            {amount(raisedCook, 0)} of {amount(targetCook, 0)} COOK raised
-            {pair.raisedUsd != null && <span className="text-subtle"> · {usd(pair.raisedUsd)}</span>}
+            Graduated with {amount(raisedCook, 0)} COOK. The pool holds{" "}
+            {amount(pair.pool.cookHeld, 0)} COOK
+            {pair.pool.liquidityUsd != null && (
+              <span className="text-subtle"> · {usd(pair.pool.liquidityUsd)} of liquidity</span>
+            )}
           </span>
-          <span className="num text-[13px] text-primary">
-            {Math.round(curve.progress * 100)}% to graduation
-          </span>
+          <span className="text-[13px] text-primary">Locked for good</span>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-          <div
-            className="h-full rounded-full bg-[var(--color-cookie)]"
-            style={{ width: `${Math.min(100, Math.round(curve.progress * 100))}%` }}
-          />
+      ) : (
+        <div className="card mt-5 p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-[13px] text-muted">
+              {amount(raisedCook, 0)} of {amount(targetCook, 0)} COOK raised
+              {pair.raisedUsd != null && <span className="text-subtle"> · {usd(pair.raisedUsd)}</span>}
+            </span>
+            <span className="num text-[13px] text-primary">
+              {Math.round(curve.progress * 100)}% to graduation
+            </span>
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
+            <div
+              className="h-full rounded-full bg-[var(--color-cookie)]"
+              style={{ width: `${Math.min(100, Math.round(curve.progress * 100))}%` }}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="space-y-4">
@@ -113,13 +130,20 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
 
         <div className="space-y-4">
           <CoorwaPanel pair={pair} />
-          <HolderRewards mint={pair.base.mint} symbol={pair.base.symbol} stock={pair.quote.ticker} />
+          <HolderRewards
+            mint={pair.base.mint}
+            symbol={pair.base.symbol}
+            stock={pair.quote.ticker}
+            taxBps={curve.taxBps}
+          />
 
           <div className="card p-5 sm:p-6">
             <h2 className="title text-primary">Facts</h2>
             <dl className="mt-4 space-y-3 text-[13px]">
               <Fact label="Tax on every transfer">{curve.taxBps / 100}% to holders</Fact>
-              <Fact label="Curve fee">{curve.curveFeeBps / 100}% to Coorwa</Fact>
+              <Fact label={pair.pool ? "Curve fee, while it ran" : "Curve fee"}>
+                {curve.curveFeeBps / 100}% to Coorwa
+              </Fact>
               <Fact label="Creator&apos;s share after graduation">
                 {curve.creatorLpShareBps / 100}% of the pool&apos;s fees
               </Fact>
@@ -133,6 +157,13 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
                   {shortAddr(curve.address, 6)}
                 </ExtLink>
               </Fact>
+              {pair.pool && (
+                <Fact label="Pool">
+                  <ExtLink href={cookieAccountUrl(pair.pool.address)}>
+                    {shortAddr(pair.pool.address, 6)}
+                  </ExtLink>
+                </Fact>
+              )}
               <Fact label="Creator">
                 <ExtLink href={cookieAccountUrl(curve.creator)}>
                   {shortAddr(curve.creator, 6)}

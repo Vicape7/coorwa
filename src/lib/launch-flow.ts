@@ -30,6 +30,7 @@ import {
 import {
   buyIx,
   launchIx,
+  poolSwapIx,
   quoteBuy,
   sellIx,
   type CurveState,
@@ -201,6 +202,72 @@ export function tradeInstructions(input: {
     instructions.push(sellIx(accounts, input.amount, input.minOut));
   }
 
+  if (input.closeWrapped) {
+    instructions.push(createCloseAccountInstruction(wrapped, input.trader, input.trader));
+  }
+  return instructions;
+}
+
+/**
+ * The instructions for a trade on a graduated token's pool, wrapped the same way as a curve trade:
+ * COOK is wrapped for a buy and unwrapped again when this trade opened the account, and a buy opens
+ * the trader's token account if it has none.
+ */
+export function poolTradeInstructions(input: {
+  trader: PublicKey;
+  mint: PublicKey;
+  baseIsA: boolean;
+  side: "buy" | "sell";
+  /** Quote in for a buy, base in for a sell, in raw units. */
+  amount: bigint;
+  minOut: bigint;
+  closeWrapped: boolean;
+}): TransactionInstruction[] {
+  const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, input.trader);
+  const base = getAssociatedTokenAddressSync(
+    input.mint,
+    input.trader,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+  );
+
+  const instructions: TransactionInstruction[] = [
+    createAssociatedTokenAccountIdempotentInstruction(
+      input.trader,
+      wrapped,
+      input.trader,
+      NATIVE_MINT,
+    ),
+  ];
+  if (input.side === "buy") {
+    instructions.push(
+      SystemProgram.transfer({
+        fromPubkey: input.trader,
+        toPubkey: wrapped,
+        lamports: input.amount,
+      }),
+      createSyncNativeInstruction(wrapped),
+      createAssociatedTokenAccountIdempotentInstruction(
+        input.trader,
+        base,
+        input.trader,
+        input.mint,
+        TOKEN_2022_PROGRAM_ID,
+      ),
+    );
+  }
+  instructions.push(
+    poolSwapIx({
+      mint: input.mint,
+      quoteMint: NATIVE_MINT,
+      baseIsA: input.baseIsA,
+      payer: input.trader,
+      inputAccount: input.side === "buy" ? wrapped : base,
+      outputAccount: input.side === "buy" ? base : wrapped,
+      amountIn: input.amount,
+      minOut: input.minOut,
+    }),
+  );
   if (input.closeWrapped) {
     instructions.push(createCloseAccountInstruction(wrapped, input.trader, input.trader));
   }

@@ -53,6 +53,11 @@ const IX = {
   claimPoolFees: [33, 187, 125, 186, 41, 247, 236, 89],
 } as const;
 
+/** The pool program's own instructions this client builds directly, for trading a graduated pool. */
+const DAMM_IX = {
+  swap: [248, 198, 158, 145, 225, 117, 135, 200],
+} as const;
+
 /**
  * The same discriminators as hex, which is how a transaction read back off the chain reads. Used to
  * tell a launch from any other transaction that merely names the same mint.
@@ -730,6 +735,108 @@ export function existingPoolGraduation(
   const liquidity = ((fromA < fromB ? fromA : fromB) * (BPS - DEPOSIT_MARGIN_BPS)) / BPS;
 
   return { baseIsA, targetSqrtPrice: target, swapIn, sellsBase, liquidity };
+}
+
+// --- trading a graduated pool --------------------------------------------------------------------
+
+export interface PoolSwapQuote {
+  /** What leaves the trader. */
+  amountIn: bigint;
+  /** What the pool is credited with, the token's tax taken off when the input is the base. */
+  arrives: bigint;
+  /** The pool's 1%, in its second token: taken off the input when that is what goes in, else off the output. */
+  fee: bigint;
+  /** What the pool sends. */
+  out: bigint;
+  /** What the trader receives, the token's tax taken off when the output is the base. */
+  received: bigint;
+}
+
+/**
+ * A swap on a Coorwa token's graduated pool, priced as the pool program prices it.
+ *
+ * The pool is full range at a flat 1% and collects its fee in its second token, so a trade paying
+ * in the second token loses the fee on the way in and a trade paying in the first loses it on the way
+ * out. Between those, one constant-liquidity step: the price moves along `L`, rounded the way the
+ * pool rounds, in its own favour. The token's tax sits outside all of it, on whichever side is the
+ * base.
+ */
+export function quotePoolSwap(
+  pool: Pick<DammPoolState, "liquidity" | "sqrtPrice">,
+  args: { amountIn: bigint; inputIsBase: boolean; baseIsA: boolean; taxBps: number },
+): PoolSwapQuote {
+  const { amountIn, inputIsBase, baseIsA, taxBps } = args;
+  const L = pool.liquidity;
+  const P = pool.sqrtPrice;
+  const arrives = inputIsBase ? amountIn - taxOf(amountIn, taxBps) : amountIn;
+  const feeOf = (x: bigint) => ceilDiv(x * POOL_FEE_NUMERATOR, POOL_FEE_DENOMINATOR);
+  const inputIsA = inputIsBase === baseIsA;
+
+  let fee = 0n;
+  let out = 0n;
+  if (arrives > 0n && L > 0n) {
+    if (inputIsA) {
+      // First token in: the price falls, and the fee comes off the second token going out.
+      const next = ceilDiv(L * P, L + arrives * P);
+      const gross = (L * (P - next)) >> 128n;
+      fee = feeOf(gross);
+      out = gross - fee;
+    } else {
+      // Second token in: the fee comes off first, then the price rises.
+      fee = feeOf(arrives);
+      const net = arrives - fee;
+      const next = P + (net << 128n) / L;
+      out = (L * (next - P)) / (P * next);
+    }
+  }
+  const received = inputIsBase ? out : out - taxOf(out, taxBps);
+  return { amountIn, arrives, fee, out, received };
+}
+
+/** COOK per whole token at a graduated pool's price. */
+export function poolPriceCook(sqrtPrice: bigint, baseIsA: boolean, baseDecimals: number): number {
+  const root = Number(sqrtPrice) / 2 ** 64;
+  // The pool's price is its second token per its first, in raw units.
+  const bPerA = root * root;
+  const quotePerBase = baseIsA ? bPerA : bPerA > 0 ? 1 / bPerA : 0;
+  return quotePerBase * 10 ** (baseDecimals - 9);
+}
+
+/** A swap on a graduated pool, straight on the pool program, with no referral. */
+export function poolSwapIx(input: {
+  mint: PublicKey;
+  quoteMint: PublicKey;
+  baseIsA: boolean;
+  payer: PublicKey;
+  inputAccount: PublicKey;
+  outputAccount: PublicKey;
+  amountIn: bigint;
+  minOut: bigint;
+}): TransactionInstruction {
+  const pool = dammPoolPda(input.mint, input.quoteMint);
+  const [a, b] = input.baseIsA ? [input.mint, input.quoteMint] : [input.quoteMint, input.mint];
+  const programOf = (m: PublicKey) => (m.equals(input.mint) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID);
+  return new TransactionInstruction({
+    programId: DAMM_PROGRAM_ID,
+    keys: [
+      meta(DAMM_POOL_AUTHORITY),
+      meta(pool, false, true),
+      meta(input.inputAccount, false, true),
+      meta(input.outputAccount, false, true),
+      meta(dammTokenVault(a, pool), false, true),
+      meta(dammTokenVault(b, pool), false, true),
+      meta(a),
+      meta(b),
+      meta(input.payer, true),
+      meta(programOf(a)),
+      meta(programOf(b)),
+      // An optional account the pool program reads as absent when it is the program itself.
+      meta(DAMM_PROGRAM_ID),
+      meta(dammEventAuthority()),
+      meta(DAMM_PROGRAM_ID),
+    ],
+    data: concat(DAMM_IX.swap, u64le(input.amountIn), u64le(input.minOut)),
+  });
 }
 
 /** `Δa = L * (√upper - √lower) / (√upper * √lower)`, rounded up the way the pool rounds it. */

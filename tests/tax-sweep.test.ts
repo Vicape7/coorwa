@@ -11,11 +11,17 @@ import assert from "node:assert/strict";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { NATIVE_MINT } from "@solana/spl-token";
 import { openingCurve } from "../src/lib/launch-flow";
-import { EVENT_DISCRIMINATOR, quoteSell, type LaunchConfigState } from "../src/lib/launch-program";
+import {
+  EVENT_DISCRIMINATOR,
+  quotePoolSwap,
+  quoteSell,
+  type LaunchConfigState,
+} from "../src/lib/launch-program";
 import {
   HARVEST_BATCH,
   SWEEP_MIN_COOK,
   harvestBatches,
+  poolSalePlan,
   salePlan,
   saleProceeds,
   withheldIn,
@@ -148,4 +154,36 @@ test("the proceeds are the operator's own sale of this token, and nothing else i
   ];
   assert.equal(saleProceeds(logs, mint.toBase58(), operator.toBase58()), 55n * COOK);
   assert.equal(saleProceeds(null, mint.toBase58(), operator.toBase58()), 0n);
+});
+
+test("after graduation the tax is priced as the pool will price it", () => {
+  // A pool holding the first token's close price: sqrt(quote per base) in Q64.64, deep enough.
+  const sqrtPrice = 1n << 57n; // price 2^-14 quote per base, raw
+  // About 420,000 COOK of quote behind it: reserve = L * sqrtPrice >> 128.
+  const pool = { sqrtPrice, liquidity: 10n ** 36n };
+  const amount = 191_327_072_561n;
+  const plan = poolSalePlan(pool, { amount, baseIsA: true, taxBps: 300 }, 1n);
+  assert.ok(plan);
+  const quote = quotePoolSwap(pool, { amountIn: amount, inputIsBase: true, baseIsA: true, taxBps: 300 });
+  assert.equal(plan.expected, quote.received);
+  assert.equal(plan.minOut, (plan.expected * 9_800n) / 10_000n);
+  // And the same minimum as on the curve keeps a trickle of tax waiting.
+  assert.equal(poolSalePlan(pool, { amount: 1_000n, baseIsA: true, taxBps: 300 }), null);
+});
+
+test("a pool sale's proceeds are what the operator's wrapped COOK gained", () => {
+  const wsol = "So11111111111111111111111111111111111111112";
+  const op = operator.toBase58();
+  const balances = {
+    pre: [{ mint: wsol, owner: op, uiTokenAmount: { amount: "1000" } }],
+    post: [
+      { mint: wsol, owner: op, uiTokenAmount: { amount: "58000" } },
+      // Somebody else's COOK in the same transaction is not the operator's.
+      { mint: wsol, owner: Keypair.generate().publicKey.toBase58(), uiTokenAmount: { amount: "9" } },
+    ],
+  };
+  assert.equal(saleProceeds([], mint.toBase58(), op, balances), 57_000n);
+  // A curve sale still reads its own event, whatever the balances say.
+  const logs = [tradedLog({ mint, trader: operator, isBuy: false, quote: 55n * COOK })];
+  assert.equal(saleProceeds(logs, mint.toBase58(), op, balances), 55n * COOK);
 });

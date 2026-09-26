@@ -1,36 +1,54 @@
 "use client";
 
 /**
- * Buying and selling on a Coorwa curve.
+ * Buying and selling a token launched on Coorwa's curve, on the curve and then in its pool.
  *
- * Built in the page, like the launch it came from: the quote functions mirror the program's own
+ * Built in the page, like the launch it came from: the quote functions mirror the programs' own
  * arithmetic, so the number shown is the number the chain will compute, and the transaction is
- * assembled here rather than fetched from a server.
+ * assembled here rather than fetched from a server. Until the curve fills that means the curve;
+ * once it has graduated, the pool the program opened and locked, traded directly on the pool
+ * program with the same page and the same panel.
  *
  * Two things a trader should see before signing, and does. The token's tax is taken by the mint on
- * every transfer, so a buy delivers less than the curve sends and a sell reaches the curve lighter
- * than it left the wallet; both are shown as their own line. And Coorwa's 1% is part of what a buy
- * spends rather than something added to it.
+ * every transfer, so a buy delivers less than was sent and a sell arrives lighter than it left the
+ * wallet; both are shown as their own line. And the fee is part of what a trade spends or returns
+ * rather than something added to it: Coorwa's 1% on the curve, the pool's 1% after.
  */
 import { useCallback, useMemo, useState } from "react";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import useSWR from "swr";
 import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
 import { amount, rawToUi, shortAddr, uiToRaw, usd } from "@/lib/format";
-import { quoteBuy, quoteSell } from "@/lib/launch-program";
-import { curveFromSerialised, hasWrappedAccount, tradeInstructions } from "@/lib/launch-flow";
+import { quoteBuy, quotePoolSwap, quoteSell } from "@/lib/launch-program";
+import {
+  curveFromSerialised,
+  hasWrappedAccount,
+  poolTradeInstructions,
+  tradeInstructions,
+} from "@/lib/launch-flow";
 import { explainError, signSendConfirm } from "@/lib/tx";
-import { Transaction } from "@solana/web3.js";
 import { Notice } from "./notice";
 import type { CoorwaPair } from "@/lib/coorwa-pairs";
 
 type Side = "buy" | "sell";
 
-/** What a trade may lose to a curve that moved between quoting and landing. */
+/** What a trade may lose to a price that moved between quoting and landing. */
 const SLIPPAGE_BPS = 100n;
+
+/** One quote, whichever venue priced it, in the terms the panel shows. */
+interface Quote {
+  /** What leaves the wallet, raw. */
+  spent: bigint;
+  /** What arrives in the wallet, raw, and the least the transaction may accept. */
+  received: bigint;
+  /** The tax the mint withholds, in raw base units. */
+  tax: bigint;
+  fee: { label: string; raw: bigint; decimals: number; symbol: string };
+  graduates: boolean;
+}
 
 export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
   const { connection } = useConnection();
@@ -44,11 +62,13 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
   const [filled, setFilled] = useState<{ signature: string; side: Side } | null>(null);
 
   const decimals = pair.base.decimals;
+  const symbol = pair.base.symbol;
   const curve = useMemo(
     () => curveFromSerialised(pair.curve, pair.base.mint),
     [pair.curve, pair.base.mint],
   );
-  const live = pair.curve.state === "live";
+  const pool = pair.curve.state === "pooled" ? pair.pool : null;
+  const tradable = pair.curve.state === "live" || pool != null;
 
   /** What this wallet holds of the token, for the sell side and its Max button. */
   const { data: balance, mutate: refreshBalance } = useSWR(
@@ -68,10 +88,49 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
 
   const raw = Number(input) > 0 ? BigInt(uiToRaw(Number(input), side === "buy" ? COOK_DECIMALS : decimals)) : 0n;
 
-  const quote = useMemo(() => {
+  const quote = useMemo((): Quote | null => {
     if (raw <= 0n) return null;
-    return side === "buy" ? quoteBuy(curve, raw) : quoteSell(curve, raw);
-  }, [curve, raw, side]);
+    if (pool) {
+      const q = quotePoolSwap(
+        { liquidity: BigInt(pool.liquidity), sqrtPrice: BigInt(pool.sqrtPrice) },
+        { amountIn: raw, inputIsBase: side === "sell", baseIsA: pool.baseIsA, taxBps: pair.curve.taxBps },
+      );
+      // The pool keeps its fee in its second token, which is COOK unless the pool lists it first.
+      const feeInCook = pool.baseIsA;
+      return {
+        spent: raw,
+        received: q.received,
+        tax: side === "buy" ? q.out - q.received : q.amountIn - q.arrives,
+        fee: {
+          label: "Pool fee (1%)",
+          raw: q.fee,
+          decimals: feeInCook ? COOK_DECIMALS : decimals,
+          symbol: feeInCook ? "COOK" : symbol,
+        },
+        graduates: false,
+      };
+    }
+    const fee = { label: `Curve fee (${pair.curve.curveFeeBps / 100}%)`, decimals: COOK_DECIMALS, symbol: "COOK" };
+    if (side === "buy") {
+      const q = quoteBuy(curve, raw);
+      // Checked against what the curve sends, which is what the program's slippage bound is on.
+      return {
+        spent: q.quoteTaken,
+        received: q.baseReceived,
+        tax: q.baseOut - q.baseReceived,
+        fee: { ...fee, raw: q.fee },
+        graduates: q.graduates,
+      };
+    }
+    const q = quoteSell(curve, raw);
+    return {
+      spent: q.baseIn,
+      received: q.quoteOut,
+      tax: q.baseIn - q.baseReceived,
+      fee: { ...fee, raw: q.fee },
+      graduates: false,
+    };
+  }, [curve, pool, raw, side, pair.curve.taxBps, pair.curve.curveFeeBps, decimals, symbol]);
 
   const trade = useCallback(async () => {
     if (!publicKey || !signTransaction || raw <= 0n || !quote) return;
@@ -79,21 +138,34 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
     setFilled(null);
     setBusy(true);
     try {
-      const minOut =
-        side === "buy"
-          ? ((quote as ReturnType<typeof quoteBuy>).baseOut * (10_000n - SLIPPAGE_BPS)) / 10_000n
-          : ((quote as ReturnType<typeof quoteSell>).quoteOut * (10_000n - SLIPPAGE_BPS)) / 10_000n;
-
-      const tx = new Transaction().add(
-        ...tradeInstructions({
+      const closeWrapped = !(await hasWrappedAccount(connection, publicKey));
+      const mint = new PublicKey(pair.base.mint);
+      let instructions;
+      if (pool) {
+        instructions = poolTradeInstructions({
           trader: publicKey,
-          mint: new PublicKey(pair.base.mint),
+          mint,
+          baseIsA: pool.baseIsA,
           side,
           amount: raw,
-          minOut,
-          closeWrapped: !(await hasWrappedAccount(connection, publicKey)),
-        }),
-      );
+          // Bounded on what reaches the wallet, tax already off: the lowest figure the pool could
+          // compare against, so the bound never refuses a trade that was quoted fairly.
+          minOut: (quote.received * (10_000n - SLIPPAGE_BPS)) / 10_000n,
+          closeWrapped,
+        });
+      } else {
+        // The curve checks what it sends too: for a buy, the tokens before the tax.
+        const sent = side === "buy" ? quote.received + quote.tax : quote.received;
+        instructions = tradeInstructions({
+          trader: publicKey,
+          mint,
+          side,
+          amount: raw,
+          minOut: (sent * (10_000n - SLIPPAGE_BPS)) / 10_000n,
+          closeWrapped,
+        });
+      }
+      const tx = new Transaction().add(...instructions);
       tx.feePayer = publicKey;
       tx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
 
@@ -106,10 +178,9 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, raw, quote, side, connection, pair.base.mint, refreshBalance]);
+  }, [publicKey, signTransaction, raw, quote, side, connection, pair.base.mint, pool, refreshBalance]);
 
-  const buy = side === "buy" ? (quote as ReturnType<typeof quoteBuy> | null) : null;
-  const sell = side === "sell" ? (quote as ReturnType<typeof quoteSell> | null) : null;
+  const cookSide = quote ? (side === "buy" ? quote.spent : quote.received) : 0n;
 
   return (
     <div className="card p-5 sm:p-6">
@@ -124,7 +195,7 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
 
       <label className="mt-4 block">
         <span className="label mb-1.5 flex items-baseline justify-between text-[12px]">
-          <span>{side === "buy" ? "You pay (COOK)" : `You sell (${pair.base.symbol})`}</span>
+          <span>{side === "buy" ? "You pay (COOK)" : `You sell (${symbol})`}</span>
           {side === "sell" && balance !== undefined && (
             <button
               className="text-[12px] text-muted underline underline-offset-4"
@@ -148,46 +219,38 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
           <Row
             label="You receive"
             value={
-              buy
-                ? `${amount(Number(buy.baseReceived) / 10 ** decimals, 2)} ${pair.base.symbol}`
-                : `${amount(Number(sell!.quoteOut) / 10 ** COOK_DECIMALS, 4)} COOK`
+              side === "buy"
+                ? `${amount(Number(quote.received) / 10 ** decimals, 2)} ${symbol}`
+                : `${amount(Number(quote.received) / 10 ** COOK_DECIMALS, 4)} COOK`
             }
             strong
           />
-          {buy && buy.baseOut !== buy.baseReceived && (
+          {quote.tax > 0n && (
             <Row
               label={`Token tax (${pair.curve.taxBps / 100}%)`}
-              value={`${amount(Number(buy.baseOut - buy.baseReceived) / 10 ** decimals, 2)} ${pair.base.symbol} to holders`}
-            />
-          )}
-          {sell && sell.baseIn !== sell.baseReceived && (
-            <Row
-              label={`Token tax (${pair.curve.taxBps / 100}%)`}
-              value={`${amount(Number(sell.baseIn - sell.baseReceived) / 10 ** decimals, 2)} ${pair.base.symbol} to holders`}
+              value={`${amount(Number(quote.tax) / 10 ** decimals, 2)} ${symbol} to holders`}
             />
           )}
           <Row
-            label={`Curve fee (${pair.curve.curveFeeBps / 100}%)`}
-            value={`${amount(Number((buy ?? sell)!.fee) / 10 ** COOK_DECIMALS, 4)} COOK`}
+            label={quote.fee.label}
+            value={`${amount(Number(quote.fee.raw) / 10 ** quote.fee.decimals, 4)} ${quote.fee.symbol}`}
           />
           {pair.cookPriceUsd != null && (
             <Row
               label="Value"
-              value={usd(
-                (Number(buy ? buy.quoteTaken : sell!.quoteOut) / 10 ** COOK_DECIMALS) *
-                  pair.cookPriceUsd,
-              )}
+              value={usd((Number(cookSide) / 10 ** COOK_DECIMALS) * pair.cookPriceUsd)}
             />
           )}
-          {buy?.graduates && (
+          {quote.graduates && (
             <Row label="This buy graduates the curve" value="a pool opens and locks" strong />
           )}
         </dl>
       )}
 
-      {!live && (
+      {!tradable && (
         <Notice tone="note">
-          This curve has finished. Its pool opens on Cookiebox and trading moves there.
+          This curve has filled. Its pool is being opened and locked, and trading continues there
+          within minutes.
         </Notice>
       )}
       {error && <Notice tone="down">{error}</Notice>}
@@ -213,7 +276,7 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
         ) : (
           <button
             className="btn btn-primary w-full"
-            disabled={busy || raw <= 0n || !live}
+            disabled={busy || raw <= 0n || !tradable}
             onClick={trade}
           >
             {busy ? "Working" : side === "buy" ? "Buy" : "Sell"}
@@ -222,8 +285,9 @@ export function CoorwaPanel({ pair }: { pair: CoorwaPair }) {
       </div>
 
       <p className="mt-3 text-[12px] leading-relaxed text-subtle">
-        Coorwa&apos;s terminal fee does not apply to a token on its own curve, so the curve fee above
-        is all you pay it. The token&apos;s tax goes to its holders, never to Coorwa.
+        {pool
+          ? `This trades in the token's own pool, which Coorwa's program opened and locked for good. The pool's 1% is the only fee: most of it goes to the locked position, ${pair.curve.creatorLpShareBps / 100}% of that to the creator and the rest to Coorwa. The token's tax goes to its holders.`
+          : "Coorwa's terminal fee does not apply to a token on its own curve, so the curve fee above is all you pay it. The token's tax goes to its holders, never to Coorwa."}
       </p>
     </div>
   );

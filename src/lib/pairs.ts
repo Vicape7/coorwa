@@ -37,6 +37,8 @@ import { benchmarks } from "./launches";
 import { listedByMint } from "./listings";
 import { fetchPools } from "./launchpad";
 import { logosByMint } from "./token-logos";
+import { cachedStale } from "./http";
+import { coorwaPairs, type CoorwaPair as CoorwaCurvePair } from "./coorwa-pairs";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -166,14 +168,17 @@ export async function buildUniverse(opts?: {
   quotes?: string[];
   minLiquidityUsd?: number;
 }): Promise<PairUniverse> {
-  const [tokens, markets, cookUsd, rwaPrices, pinned, listed] = await Promise.all([
+  const [tokens, markets, cookUsd, rwaPrices, pinned, listed, launchedHere] = await Promise.all([
     fetchTokens(),
     fetchMarkets(),
     fetchCookPriceUsd(),
     fetchRwaPrices(),
     benchmarks(),
     listedByMint(),
+    // The same cache the terminal's curve tabs read, so the two lists never disagree.
+    cachedStale("coorwa-curves", 10_000, coorwaPairs).catch(() => [] as CoorwaCurvePair[]),
   ]);
+  const onCoorwa = new Set(launchedHere.map((p) => p.base.mint));
 
   const minLiq = opts?.minLiquidityUsd ?? 1;
   const liqMap = liquidityByMint(markets);
@@ -190,6 +195,9 @@ export async function buildUniverse(opts?: {
   // Only mints that actually appear in a pool are tradeable, so the markets feed defines the set.
   for (const [mint, liquidityUsd] of liqMap) {
     if (liquidityUsd < minLiq) continue;
+    // A token launched on Coorwa's curve is listed from its own pool below, never from the feed, so
+    // its page stays the one that trades it directly and it is never listed twice.
+    if (onCoorwa.has(mint)) continue;
     const t = tokenByMint.get(mint);
     if (!t) {
       skipped++;
@@ -249,6 +257,49 @@ export async function buildUniverse(opts?: {
         poolId: deepest?.marketId ?? null,
       });
     }
+  }
+
+  // Coorwa's own tokens that have graduated, read from the pools the program opened, whether or not
+  // any feed has indexed them yet.
+  const wanted = new Set(quoteTickers.map((a) => a.ticker));
+  for (const p of launchedHere) {
+    const asset = rwaByTicker(p.quote.ticker);
+    if (!p.pool || !asset || !wanted.has(asset.ticker) || p.priceUsd == null || p.price == null) continue;
+    const liquidityUsd = p.pool.liquidityUsd ?? 0;
+    if (liquidityUsd < minLiq) continue;
+    pairs.push({
+      slug: p.slug,
+      base: {
+        mint: p.base.mint,
+        symbol: p.base.symbol,
+        name: p.base.name,
+        logo: p.base.logo,
+        decimals: p.base.decimals,
+        priceUsd: p.priceUsd,
+        priceCook: cookUsd ? p.priceUsd / cookUsd : null,
+        change24h: null,
+        liquidityUsd,
+        volume24h: null,
+        marketCap: null,
+        holders: null,
+        stale: false,
+      },
+      quote: {
+        ticker: asset.ticker,
+        symbol: asset.symbol,
+        mint: asset.mint,
+        name: asset.name,
+        logo: asset.logo,
+        priceUsd: p.quote.priceUsd,
+        change24h: p.quote.change24h,
+      },
+      pinned: true,
+      price: p.price,
+      inverse: p.inverse ?? 0,
+      change24h: null,
+      venue: "Coorwa pool",
+      poolId: p.pool.address,
+    });
   }
 
   pairs.sort((a, b) => b.base.liquidityUsd - a.base.liquidityUsd);

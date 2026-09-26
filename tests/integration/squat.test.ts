@@ -47,6 +47,8 @@ import {
   dammTokenVault,
   decodeDammPool,
   existingPoolGraduation,
+  poolSwapIx,
+  quotePoolSwap,
   fetchCurve,
   fetchLaunchConfig,
   graduateIntoPoolIx,
@@ -386,7 +388,7 @@ before(async () => {
   await fund(trader.publicKey, 200);
   await fund(stranger.publicKey, 10);
   await wrap(trader, 160);
-  await wrap(stranger, 2);
+  await wrap(stranger, 4);
 
   // The config is one per program. The launch suite may have written it already; if not, the same
   // numbers are written here, with a graduation small enough for a test wallet to reach.
@@ -577,4 +579,61 @@ test("the crank leaves a curve that has not filled alone", async () => {
   const mint = await launch();
   const done = await crank(mint);
   assert.equal(done.kind, "not-ready");
+});
+
+// --- trading after graduation ------------------------------------------------------------------
+
+/** Trade a graduated pool through `poolSwapIx`, returning what the quote said and what arrived. */
+async function tradeGraduated(who: Keypair, mint: PublicKey, side: "buy" | "sell", amountIn: bigint) {
+  const curve = await fetchCurve(connection, mint);
+  assert.ok(curve);
+  const pool = decodeDammPool((await connection.getAccountInfo(dammPoolPda(mint, NATIVE_MINT)))!.data);
+  const baseIsA = pool.tokenAMint.equals(mint);
+  const quote = quotePoolSwap(pool, { amountIn, inputIsBase: side === "sell", baseIsA, taxBps: curve.taxBps });
+  const base = baseAta(mint, who.publicKey);
+  const cook = quoteAta(who.publicKey);
+  const balance = async () =>
+    side === "buy"
+      ? (await getAccount(connection, base, "confirmed", TOKEN_2022_PROGRAM_ID)).amount
+      : (await getAccount(connection, cook)).amount;
+  await send(
+    [createAssociatedTokenAccountIdempotentInstruction(who.publicKey, base, who.publicKey, mint, TOKEN_2022_PROGRAM_ID)],
+    [who],
+  );
+  const before = await balance();
+  await send(
+    [
+      poolSwapIx({
+        mint,
+        quoteMint: NATIVE_MINT,
+        baseIsA,
+        payer: who.publicKey,
+        inputAccount: side === "buy" ? cook : base,
+        outputAccount: side === "buy" ? base : cook,
+        amountIn,
+        minOut: quote.received,
+      }),
+    ],
+    [who],
+  );
+  return { quote, got: (await balance()) - before };
+}
+
+test("a graduated pool pays exactly what the quote says, both ways, in either token order", async () => {
+  for (const reversed of [false, true]) {
+    const mint = await launch();
+    await buy(stranger, mint, BigInt(LAMPORTS_PER_SOL / 10));
+    if (reversed) {
+      const close = await closingSqrtPrice(mint);
+      await squat({ who: stranger, mint, sqrtPrice: close, quoteIn: 5_000_000n, baseIsA: false });
+    }
+    await fill(mint);
+    await crank(mint);
+    assert.equal((await fetchCurve(connection, mint))?.state, "pooled");
+
+    const bought = await tradeGraduated(stranger, mint, "buy", 200_000_000n);
+    assert.equal(bought.got, bought.quote.received, `buy, ${reversed ? "quote first" : "base first"}`);
+    const sold = await tradeGraduated(stranger, mint, "sell", bought.got / 2n);
+    assert.equal(sold.got, sold.quote.received, `sell, ${reversed ? "quote first" : "base first"}`);
+  }
 });

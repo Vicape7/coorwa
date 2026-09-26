@@ -4,11 +4,11 @@
  * A token launched on Coorwa's curve is a Token-2022 mint with a transfer fee, and the fee is not
  * paid to anyone when it is charged: it is withheld inside the account the transfer landed in. Only
  * the mint's withdraw authority, which the launch config makes the operator wallet, can take it out.
- * So once an hour, for every token still trading on its curve, this:
+ * So once an hour, for every token launched there, this:
  *
  *   1. harvests the withheld tax out of every holder's account into the mint, which anyone may do;
  *   2. withdraws it from the mint into the operator's own account for that token;
- *   3. sells all of it back to the curve for COOK, in the same transaction as the withdrawal;
+ *   3. sells all of it for COOK, to the curve or to the token's pool, in the same transaction;
  *   4. writes the COOK the sale paid, valued in dollars, as owed to that token's holders.
  *
  * From there the daily run (`payout-cycle.ts`) treats it like any other fee: shared over the holders
@@ -17,11 +17,12 @@
  * The sale is written down before it is sent and settled from the chain afterwards, so a call that
  * dies halfway leaves a row the next call checks rather than a sale nobody accounted for. A second
  * caller cannot sell the same token at the same time: only one unsettled sale per token fits in the
- * table. The sale pays the curve's fee and, because it is a transfer too, the token's own tax, which
- * stays withheld in the curve's vault and is swept on the next pass.
+ * table. The sale pays the curve's or the pool's fee and, being a transfer too, the token's own
+ * tax, which stays withheld in the vault it landed in and is swept on the next pass.
  *
- * A token whose curve has filled is left alone until its pool is open, since there is nothing to
- * sell into in between; selling into the pool comes with the graduation crank. Server only.
+ * Once a token has graduated, the tax is sold into the pool the program opened instead, straight on
+ * the pool program and priced the way it prices. In the minutes between the curve filling and the
+ * crank opening that pool there is nothing to sell into, and the token waits. Server only.
  */
 import bs58 from "bs58";
 import { Connection, PublicKey, Transaction, type Keypair } from "@solana/web3.js";
@@ -41,17 +42,29 @@ import { db, schema } from "./db";
 import { fetchCookPriceUsd } from "./cookiescan";
 import { operatorKeypair } from "./operator";
 import {
+  dammPoolPda,
+  decodeDammPool,
   fetchCurve,
   fetchCurves,
   fetchLaunchConfig,
+  poolSwapIx,
+  quotePoolSwap,
   quoteSell,
   tradedEvents,
   type CurveState,
+  type DammPoolState,
 } from "./launch-program";
 import { tradeInstructions } from "./launch-flow";
-import { COOKIE_RPC_URL, COOK_DECIMALS } from "./config";
+import { COOKIE_RPC_URL, COOK_DECIMALS, COOK_MINT } from "./config";
 
 type Sweep = typeof schema.taxSweeps.$inferSelect;
+
+/** A token balance as a confirmed transaction reports it. */
+interface TokenBalance {
+  mint: string;
+  owner?: string;
+  uiTokenAmount: { amount: string };
+}
 
 /** How often every curve is looked at. The daily run pays out whatever the passes before it sold. */
 export const SWEEP_EVERY_MS = 60 * 60 * 1000;
@@ -113,15 +126,53 @@ export function salePlan(
   return { amount, expected, minOut: (expected * BigInt(10_000 - slippageBps)) / 10_000n };
 }
 
-/** The COOK a confirmed transaction paid the operator for this token, from the program's own event. */
+/**
+ * The same for a token that has graduated: selling into the pool the program opened, priced exactly
+ * as the pool prices it, the tax on the way in included.
+ */
+export function poolSalePlan(
+  pool: Pick<DammPoolState, "liquidity" | "sqrtPrice">,
+  args: { amount: bigint; baseIsA: boolean; taxBps: number },
+  minCook = SWEEP_MIN_COOK,
+  slippageBps = SWEEP_SLIPPAGE_BPS,
+): { amount: bigint; expected: bigint; minOut: bigint } | null {
+  if (args.amount <= 0n) return null;
+  const expected = quotePoolSwap(pool, {
+    amountIn: args.amount,
+    inputIsBase: true,
+    baseIsA: args.baseIsA,
+    taxBps: args.taxBps,
+  }).received;
+  if (expected < minCook) return null;
+  return { amount: args.amount, expected, minOut: (expected * BigInt(10_000 - slippageBps)) / 10_000n };
+}
+
+/**
+ * The COOK a confirmed sale paid the operator for this token.
+ *
+ * A curve sale says so in the program's own event. A pool sale has no event of ours, so it is read as
+ * what the operator's wrapped COOK account gained in the transaction, which in a transaction that
+ * does nothing but withdraw the tax and sell it is the same number.
+ */
 export function saleProceeds(
   logs: string[] | null | undefined,
   mint: string,
   operator: string,
+  balances?: {
+    pre?: readonly TokenBalance[] | null;
+    post?: readonly TokenBalance[] | null;
+  },
 ): bigint {
-  return tradedEvents(logs)
+  const fromEvents = tradedEvents(logs)
     .filter((e) => !e.isBuy && e.mint.toBase58() === mint && e.trader.toBase58() === operator)
     .reduce((sum, e) => sum + e.quoteAmount, 0n);
+  if (fromEvents > 0n || !balances) return fromEvents;
+  const wrapped = (list: readonly TokenBalance[] | null | undefined) =>
+    (list ?? [])
+      .filter((b) => b.owner === operator && b.mint === COOK_MINT)
+      .reduce((sum, b) => sum + BigInt(b.uiTokenAmount.amount), 0n);
+  const gained = wrapped(balances.post) - wrapped(balances.pre);
+  return gained > 0n ? gained : 0n;
 }
 
 // --- settling a sale ------------------------------------------------------------------------------------
@@ -171,7 +222,10 @@ async function settle(
       .where(eq(taxSweeps.id, row.id));
     return "waiting";
   }
-  const cookRaw = saleProceeds(tx.meta?.logMessages, row.mint, operator);
+  const cookRaw = saleProceeds(tx.meta?.logMessages, row.mint, operator, {
+    pre: tx.meta?.preTokenBalances,
+    post: tx.meta?.postTokenBalances,
+  });
   await conn
     .update(taxSweeps)
     .set({
@@ -227,12 +281,34 @@ async function readTax(cookie: Connection, mint: PublicKey, operatorAccount: Pub
   return { feeConfig, own, accounts: withheldIn(withheld) };
 }
 
+/** Where a token's tax is sold: its curve while that trades, the pool it graduated into after. */
+type Market =
+  | { kind: "curve"; curve: CurveState }
+  | { kind: "pool"; pool: DammPoolState; baseIsA: boolean; taxBps: number };
+
+/** The market a token trades in right now, or null between its curve filling and its pool opening. */
+async function marketOf(cookie: Connection, curve: CurveState): Promise<Market | null> {
+  if (curve.state === "live") return { kind: "curve", curve };
+  if (curve.state !== "pooled") return null;
+  const info = await cookie.getAccountInfo(dammPoolPda(curve.mint, new PublicKey(COOK_MINT)), "confirmed");
+  if (!info) return null;
+  const pool = decodeDammPool(info.data);
+  return { kind: "pool", pool, baseIsA: pool.tokenAMint.equals(curve.mint), taxBps: curve.taxBps };
+}
+
+function planFor(market: Market, amount: bigint) {
+  return market.kind === "curve"
+    ? salePlan(market.curve, amount)
+    : poolSalePlan(market.pool, { amount, baseIsA: market.baseIsA, taxBps: market.taxBps });
+}
+
 /** Sweep one token, returning a line for the pass's report. */
 async function sweepCurve(cookie: Connection, signer: Keypair, curve: CurveState): Promise<string> {
   const conn = requireDb();
   const mint = curve.mint;
   const label = mint.toBase58().slice(0, 4);
-  if (curve.state !== "live") return `${label} waits for its pool`;
+  const market = await marketOf(cookie, curve);
+  if (!market) return `${label} waits for its pool`;
 
   const operator = signer.publicKey;
   const operatorAccount = getAssociatedTokenAddressSync(mint, operator, false, TOKEN_2022_PROGRAM_ID);
@@ -243,7 +319,7 @@ async function sweepCurve(cookie: Connection, signer: Keypair, curve: CurveState
 
   // Worth it at all? Counted before harvesting, so a quiet token costs one read and nothing else.
   const total = tax.own + tax.feeConfig.withheldAmount + tax.accounts.total;
-  if (!salePlan(curve, total)) return `${label} has too little tax yet`;
+  if (!planFor(market, total)) return `${label} has too little tax yet`;
 
   for (const batch of harvestBatches(tax.accounts.sources)) {
     await send(
@@ -255,10 +331,14 @@ async function sweepCurve(cookie: Connection, signer: Keypair, curve: CurveState
     );
   }
 
-  // Read again after the harvest: the mint's figure is now exact, and the curve may have moved.
-  const [after, fresh] = await Promise.all([readTax(cookie, mint, operatorAccount), fetchCurve(cookie, mint)]);
+  // Read again after the harvest: the mint's figure is now exact, and the price may have moved.
+  const [after, freshCurve] = await Promise.all([
+    readTax(cookie, mint, operatorAccount),
+    fetchCurve(cookie, mint),
+  ]);
   const inMint = after.feeConfig?.withheldAmount ?? 0n;
-  const plan = fresh ? salePlan(fresh, after.own + inMint) : null;
+  const fresh = freshCurve ? await marketOf(cookie, freshCurve) : null;
+  const plan = fresh ? planFor(fresh, after.own + inMint) : null;
   if (!plan) return `${label} could not be sold after the harvest`;
 
   const tx = new Transaction().add(
@@ -282,16 +362,33 @@ async function sweepCurve(cookie: Connection, signer: Keypair, curve: CurveState
     );
   }
   // The COOK stays wrapped: the payout run's bridge step unwraps the operator's account itself.
-  tx.add(
-    ...tradeInstructions({
-      trader: operator,
-      mint,
-      side: "sell",
-      amount: plan.amount,
-      minOut: plan.minOut,
-      closeWrapped: false,
-    }),
-  );
+  if (fresh!.kind === "curve") {
+    tx.add(
+      ...tradeInstructions({
+        trader: operator,
+        mint,
+        side: "sell",
+        amount: plan.amount,
+        minOut: plan.minOut,
+        closeWrapped: false,
+      }),
+    );
+  } else {
+    const wrapped = getAssociatedTokenAddressSync(new PublicKey(COOK_MINT), operator);
+    tx.add(
+      createAssociatedTokenAccountIdempotentInstruction(operator, wrapped, operator, new PublicKey(COOK_MINT)),
+      poolSwapIx({
+        mint,
+        quoteMint: new PublicKey(COOK_MINT),
+        baseIsA: fresh!.baseIsA,
+        payer: operator,
+        inputAccount: operatorAccount,
+        outputAccount: wrapped,
+        amountIn: plan.amount,
+        minOut: plan.minOut,
+      }),
+    );
+  }
   const latest = await cookie.getLatestBlockhash("confirmed");
   tx.recentBlockhash = latest.blockhash;
   tx.feePayer = operator;

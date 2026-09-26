@@ -23,7 +23,7 @@ import { closeAt, fetchRwaCandles, fetchTrades, type Candle, type Trade } from "
 import { fetchCookPriceUsd, fetchMarkets, marketsByMint } from "./cookiescan";
 import { cachedStale, fetchJson } from "./http";
 import { fetchPools, fetchPoolTrades } from "./launchpad";
-import { curvePda, tradedEvents } from "./launch-program";
+import { curvePda, dammPoolPda, tradedEvents } from "./launch-program";
 
 /** How many of a pool's latest transactions are read. */
 const SIGNATURE_LIMIT = 200;
@@ -197,9 +197,14 @@ export async function coorwaFills(mint: string): Promise<Trade[]> {
       .sort((a, b) => b.ts - a.ts);
   });
 
+  // After graduation the token trades in the pool the program opened, whose swaps read like any
+  // other DAMM pool's. Before it, that address holds nothing and the list comes back empty. The
+  // graduation itself only deposits, both sides in, so it is never mistaken for a trade.
+  const poolAddress = dammPoolPda(new PublicKey(mint), new PublicKey(COOK_MINT)).toBase58();
+  const inPool = await poolSwaps(poolAddress, mint).catch(() => [] as PoolSwap[]);
+
   const cookUsd = await cookValuer();
-  return swaps.map((s, i) => ({
-    id: i,
+  const fill = (s: PoolSwap, pool: string, venue: string) => ({
     mint,
     ts: s.ts,
     price: s.tokens > 0 ? s.cook / s.tokens : 0,
@@ -209,10 +214,16 @@ export async function coorwaFills(mint: string): Promise<Trade[]> {
     side: s.side,
     tx: s.sig,
     maker: s.trader,
-    pool: curve,
-    venue: "Coorwa curve",
+    pool,
+    venue,
     value_usd: s.cook * cookUsd(s.ts),
-  }));
+  });
+  return [
+    ...inPool.map((s) => fill(s, poolAddress, "Coorwa pool")),
+    ...swaps.map((s) => fill(s, curve, "Coorwa curve")),
+  ]
+    .sort((a, b) => b.ts - a.ts)
+    .map((f, id) => ({ id, ...f }));
 }
 
 /**

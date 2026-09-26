@@ -8,12 +8,16 @@ import { CoorwaPairView } from "@/components/coorwa-pair-view";
 
 export const dynamic = "force-dynamic";
 
-/** A pair with a pool first; a token still on its launchpad curve has no pool pair yet. */
+/**
+ * A token launched on Coorwa's curve first, graduated or not: its page trades it directly, curve or
+ * pool, and the terminal lists it under its own slug. Then a pair with a pool; a token still on its
+ * launchpad curve has no pool pair yet.
+ */
 async function resolve(slug: string) {
-  const pair = await findPair(slug).catch(() => null);
-  if (pair) return { pair, curve: null, coorwa: null };
   const coorwa = await findCoorwaPair(slug).catch(() => null);
   if (coorwa) return { pair: null, curve: null, coorwa };
+  const pair = await findPair(slug).catch(() => null);
+  if (pair) return { pair, curve: null, coorwa: null };
   const curve = await findCurvePair(slug).catch(() => null);
   return curve ? { pair: null, curve, coorwa: null } : null;
 }

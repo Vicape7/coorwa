@@ -173,11 +173,14 @@ export function HolderRewards({
   mint,
   symbol,
   stock,
+  taxBps,
 }: {
   mint: string;
   symbol: string;
   /** The xStock holders are paid in, e.g. "NVDAx". */
   stock: string;
+  /** Set for a token launched on Coorwa's curve, whose holders are paid its transfer tax. */
+  taxBps?: number;
 }) {
   const { data } = useSWR<{ configured: boolean; pool: RewardPool | null; nextRunAt: string | null }>(
     `/api/rewards/token?mint=${mint}`,
@@ -190,7 +193,10 @@ export function HolderRewards({
     <div className="card p-5">
       <div className="label">Holder rewards</div>
       <p className="mt-2.5 text-[13px] leading-[1.7] text-muted">
-        Every fee Coorwa earns on {symbol} is paid once a day to wallets holding at least{" "}
+        {taxBps != null
+          ? `The ${taxBps / 100}% tax on every ${symbol} transfer, wherever it trades,`
+          : `Every fee Coorwa earns on ${symbol}`}{" "}
+        is paid once a day to wallets holding at least{" "}
         {usd(HOLDER_MIN_USD)} of it, in {stock} sent to the same address on Solana. Nothing to
         claim. Its creator is paid the same way, for what they hold, and takes no share of their own.
       </p>
