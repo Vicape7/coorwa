@@ -57,6 +57,7 @@ import {
   quoteVault,
   vaultAuthorityPda,
 } from "../../src/lib/launch-program";
+import { planGraduation, sendGraduation } from "../../src/lib/graduation-crank";
 
 const RPC = process.env.COORWA_TEST_RPC ?? "http://127.0.0.1:8899";
 const UNIT = 10n ** 6n;
@@ -382,9 +383,9 @@ async function assertGraduated(mint: PublicKey, plan: { targetSqrtPrice: bigint;
 
 before(async () => {
   await fund(creator.publicKey, 10);
-  await fund(trader.publicKey, 100);
+  await fund(trader.publicKey, 200);
   await fund(stranger.publicKey, 10);
-  await wrap(trader, 80);
+  await wrap(trader, 160);
   await wrap(stranger, 2);
 
   // The config is one per program. The launch suite may have written it already; if not, the same
@@ -524,4 +525,56 @@ test("a squatter can delay the first trade by a month at most, and graduation wa
   // The pool program will not trade a pool before its first trade is due, so neither can we.
   await assert.rejects(graduateInto(mint), (e) => /PoolDisabled/.test(logsOf(e)));
   assert.equal((await fetchCurve(connection, mint))?.state, "graduated", "still waiting, nothing lost");
+});
+
+// --- the crank's own plan ----------------------------------------------------------------------
+
+/** Graduate the way the scheduler does: measure, then send exactly what was measured. */
+async function crank(mint: PublicKey) {
+  const curve = await fetchCurve(connection, mint);
+  assert.ok(curve);
+  const plan = await planGraduation(connection, curve, trader.publicKey);
+  if (!("instructions" in plan)) return plan;
+  const signature = await sendGraduation(connection, plan, trader);
+  return { ...plan, signature };
+}
+
+test("the crank graduates a clean curve and leaves nothing in the vault authority", async () => {
+  const mint = await launch();
+  await fill(mint);
+  const done = await crank(mint);
+  assert.equal(done.kind, "fresh");
+  assert.equal((await fetchCurve(connection, mint))?.state, "pooled");
+  assert.equal(await connection.getBalance(vaultAuthorityPda(mint)), 0, "the rent sent was the rent used");
+});
+
+test("the crank finds a squatted pool and graduates into it", async () => {
+  const mint = await launch();
+  await buy(stranger, mint, BigInt(LAMPORTS_PER_SOL / 10));
+  const close = await closingSqrtPrice(mint);
+  await squat({ who: stranger, mint, sqrtPrice: close * 4n, quoteIn: 10_000_000n, baseIsA: false });
+  await fill(mint);
+  const done = await crank(mint);
+  assert.equal(done.kind, "into");
+  assert.equal((await fetchCurve(connection, mint))?.state, "pooled");
+  assert.equal(await connection.getBalance(vaultAuthorityPda(mint)), 0);
+});
+
+test("the crank waits, and says until when, for a pool whose first trade is not due", async () => {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const mint = await launch();
+  await buy(stranger, mint, BigInt(LAMPORTS_PER_SOL / 20));
+  const close = await closingSqrtPrice(mint);
+  await squat({ who: stranger, mint, sqrtPrice: close, quoteIn: 5_000_000n, baseIsA: true, activationPoint: now + 7n * 86_400n });
+  await fill(mint);
+  const done = await crank(mint);
+  assert.equal(done.kind, "wait");
+  assert.ok("until" in done && done.until && done.until.getTime() > Date.now() + 6 * 86_400_000);
+  assert.equal((await fetchCurve(connection, mint))?.state, "graduated");
+});
+
+test("the crank leaves a curve that has not filled alone", async () => {
+  const mint = await launch();
+  const done = await crank(mint);
+  assert.equal(done.kind, "not-ready");
 });
