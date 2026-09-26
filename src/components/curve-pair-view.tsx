@@ -45,6 +45,7 @@ export function CurvePairView({ initial }: { initial: CurvePair }) {
       }
       stats={[
         { label: "Paid to holders", value: usd(rewards?.holdersPaidUsd ?? 0) },
+        { label: "Waiting to distribute", value: usd(rewards?.holdersWaitingUsd ?? 0) },
         {
           label: pool.status === "graduated" ? "Graduated" : "Graduation",
           value: `${Math.floor(pool.progress * 100)}% of ${amount(targetCook, 0)} COOK`,

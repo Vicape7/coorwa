@@ -31,7 +31,10 @@ export function PairView({ initial }: { initial: CoorwaPair }) {
           shares.
         </>
       }
-      stats={[{ label: "Paid to holders", value: usd(pool?.holdersPaidUsd ?? 0) }]}
+      stats={[
+        { label: "Paid to holders", value: usd(pool?.holdersPaidUsd ?? 0) },
+        { label: "Waiting to distribute", value: usd(pool?.holdersWaitingUsd ?? 0) },
+      ]}
       links={[
         { label: "Explorer", href: cookieAccountUrl(pair.base.mint), icon: "explorer" },
         { label: "Contract", copy: pair.base.mint, icon: "copy" },

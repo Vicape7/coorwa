@@ -64,3 +64,13 @@ export function TokenMark({
     </span>
   );
 }
+
+/** A token in a trade box: its picture and its symbol in one pill. */
+export function TokenPill({ logo, symbol }: { logo: string | null; symbol: string }) {
+  return (
+    <span className="pill pill-active shrink-0 py-1 pl-1 pr-3 text-[13px]">
+      <TokenMark logo={logo} symbol={symbol} size={22} />
+      {symbol}
+    </span>
+  );
+}

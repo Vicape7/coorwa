@@ -20,7 +20,13 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import useSWR from "swr";
-import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
+import {
+  COOK_DECIMALS,
+  COOK_LOGO,
+  TRADE_SLIPPAGE_BPS,
+  TRADE_SLIPPAGE_CHOICES,
+  cookieTxUrl,
+} from "@/lib/config";
 import { amount, rawToUi, shortAddr, uiToRaw, usd } from "@/lib/format";
 import { quoteBuy, quotePoolSwap, quoteSell } from "@/lib/launch-program";
 import {
@@ -32,12 +38,10 @@ import {
 } from "@/lib/launch-flow";
 import { explainError, signSendConfirm } from "@/lib/tx";
 import { Notice } from "./notice";
+import { TokenPill } from "./token-mark";
 import type { CoorwaPair } from "@/lib/coorwa-pairs";
 
 type Side = "buy" | "sell";
-
-/** What a trade may lose to a price that moved between quoting and landing. */
-const SLIPPAGE_BPS = 100n;
 
 /** One quote, whichever venue priced it, in the terms the panel shows. */
 interface Quote {
@@ -58,6 +62,8 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
 
   const [side, setSide] = useState<Side>("buy");
   const [input, setInput] = useState("");
+  /** What a trade may lose to a price that moved between quoting and landing. */
+  const [slippageBps, setSlippageBps] = useState(TRADE_SLIPPAGE_BPS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filled, setFilled] = useState<{ signature: string; side: Side } | null>(null);
@@ -148,6 +154,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
     setBusy(true);
     try {
       // Read fresh rather than from the panel's copy: this decides what gets wrapped and closed.
+      const keep = 10_000n - BigInt(slippageBps);
       const held = await cookHoldings(connection, publicKey);
       const closeWrapped = held.wrapped === null;
       const wrappedHeld = held.wrapped ?? 0n;
@@ -162,7 +169,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
           amount: raw,
           // Bounded on what reaches the wallet, tax already off: the lowest figure the pool could
           // compare against, so the bound never refuses a trade that was quoted fairly.
-          minOut: (quote.received * (10_000n - SLIPPAGE_BPS)) / 10_000n,
+          minOut: (quote.received * keep) / 10_000n,
           closeWrapped,
           wrappedHeld,
         });
@@ -176,7 +183,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
           // A buy near the threshold takes less than was typed; offering only that much keeps the
           // rest out of the wrapped account, where it would stay when the account is not closed.
           amount: side === "buy" ? quote.spent : raw,
-          minOut: (sent * (10_000n - SLIPPAGE_BPS)) / 10_000n,
+          minOut: (sent * keep) / 10_000n,
           closeWrapped,
           wrappedHeld,
         });
@@ -201,6 +208,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
     raw,
     quote,
     side,
+    slippageBps,
     connection,
     pair.base.mint,
     pool,
@@ -267,7 +275,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
             placeholder="0"
             className="num w-full min-w-0 bg-transparent text-[30px] leading-none text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
           />
-          <span className="pill pill-active shrink-0 text-[13px]">{inSymbol}</span>
+          <TokenPill logo={side === "buy" ? COOK_LOGO : pair.base.logo} symbol={inSymbol} />
         </span>
         <span className="num mt-2 block text-[12px] text-subtle">{payUsd ?? " "}</span>
       </label>
@@ -306,7 +314,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
               <span className="text-subtle">0</span>
             )}
           </div>
-          <span className="pill pill-active shrink-0 text-[13px]">{outSymbol}</span>
+          <TokenPill logo={side === "buy" ? pair.base.logo : COOK_LOGO} symbol={outSymbol} />
         </div>
         <div className="num mt-2 text-[12px] text-subtle">{getUsd ?? " "}</div>
       </div>
@@ -330,8 +338,23 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
         ))}
       </div>
 
-      <dl className="mt-4 space-y-2 text-[13px]">
-        <Row label="Slippage" value={`${Number(SLIPPAGE_BPS) / 100}%`} />
+      <div className="mt-4 flex items-center gap-2">
+        <span className="label">Slippage</span>
+        <div className="segmented ml-auto">
+          {TRADE_SLIPPAGE_CHOICES.map((bps) => (
+            <button
+              key={bps}
+              onClick={() => setSlippageBps(bps)}
+              data-active={slippageBps === bps}
+              className="num"
+            >
+              {bps / 100}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <dl className="mt-4 space-y-2 text-[13px] empty:hidden">
         {quote && quote.tax > 0n && (
           <Row
             label={`Token tax (${pair.curve.taxBps / 100}%)`}

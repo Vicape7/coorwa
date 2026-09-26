@@ -14,19 +14,20 @@ import {
   COOK_MINT,
   COOK_DECIMALS,
   COORWA_SWAP_FEE_BPS,
+  COOK_LOGO,
   cookieTxUrl,
-  DEFAULT_SLIPPAGE_BPS,
+  TRADE_SLIPPAGE_BPS,
+  TRADE_SLIPPAGE_CHOICES,
 } from "@/lib/config";
 import { rawToUi, uiToRaw, amount, pct, shortAddr, tinyNumber } from "@/lib/format";
 import { checkSwapBuild, decodeTx, signSendConfirm, explainError } from "@/lib/tx";
 import { walletBalance } from "@/lib/swap-check";
 import { Notice } from "./notice";
+import { TokenPill } from "./token-mark";
 import type { SwapRoute } from "@/lib/swap";
 import type { CoorwaPair } from "@/lib/pairs";
 
 type Side = "buy" | "sell";
-
-const SLIPPAGE_CHOICES = [50, 100, 500, 1000];
 
 /**
  * What a swap may cost the wallet beyond the trade itself, in raw COOK: the transaction fee, and the
@@ -41,7 +42,7 @@ export function SwapPanel({ pair, header }: { pair: CoorwaPair; header?: React.R
 
   const [side, setSide] = useState<Side>("buy");
   const [input, setInput] = useState("");
-  const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
+  const [slippageBps, setSlippageBps] = useState(TRADE_SLIPPAGE_BPS);
   /**
    * The quote and the request it answers, stored together - so "still quoting" is a comparison
    * against what is being asked for now rather than a flag written from inside the effect.
@@ -302,7 +303,7 @@ export function SwapPanel({ pair, header }: { pair: CoorwaPair; header?: React.R
               placeholder="0"
               className="num w-full bg-transparent text-[26px] text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
             />
-            <span className="pill shrink-0 bg-surface text-primary">{inSymbol}</span>
+            <TokenPill logo={side === "buy" ? COOK_LOGO : pair.base.logo} symbol={inSymbol} />
           </div>
         </div>
 
@@ -318,7 +319,7 @@ export function SwapPanel({ pair, header }: { pair: CoorwaPair; header?: React.R
                 <span className="text-subtle">0</span>
               )}
             </div>
-            <span className="pill shrink-0 bg-surface text-primary">{outSymbol}</span>
+            <TokenPill logo={side === "buy" ? pair.base.logo : COOK_LOGO} symbol={outSymbol} />
           </div>
           {shares != null && shares > 0 && (
             <div className="mt-2 text-[12px] text-muted">
@@ -334,7 +335,7 @@ export function SwapPanel({ pair, header }: { pair: CoorwaPair; header?: React.R
         <div className="flex items-center gap-2">
           <span className="label">Slippage</span>
           <div className="segmented ml-auto">
-            {SLIPPAGE_CHOICES.map((bps) => (
+            {TRADE_SLIPPAGE_CHOICES.map((bps) => (
               <button
                 key={bps}
                 onClick={() => setSlippageBps(bps)}

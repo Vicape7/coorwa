@@ -10,12 +10,12 @@
  * MomoSwap builds the transaction and the user's own wallet signs it. Coorwa quotes the curve
  * locally beforehand, because the launchpad has no quote endpoint - see `src/lib/curve.ts`.
  */
-import { TokenMark } from "./token-mark";
+import { TokenMark, TokenPill } from "./token-mark";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { COOK_DECIMALS, cookieTxUrl } from "@/lib/config";
+import { COOK_DECIMALS, COOK_LOGO, cookieTxUrl } from "@/lib/config";
 import { quoteBuy, quoteSell, curvePrice } from "@/lib/curve";
 import { rawToUi, uiToRaw, amount, usd, shortAddr, pct } from "@/lib/format";
 import { decodeTx, signSendConfirm, explainError } from "@/lib/tx";
@@ -272,9 +272,11 @@ export function CurvePanel({
               placeholder="0"
               className="num w-full bg-transparent text-[24px] text-primary outline-none placeholder:text-[color:var(--text-subtle)]"
             />
-            <span className="pill shrink-0 bg-surface text-primary">
-              {side === "buy" ? "COOK" : pool.symbol}
-            </span>
+            {side === "buy" ? (
+              <TokenPill logo={COOK_LOGO} symbol="COOK" />
+            ) : (
+              <TokenPill logo={pool.logo ?? null} symbol={pool.symbol} />
+            )}
           </div>
           {side === "sell" && heldTokens > 0 && (
             <div className="segmented mt-3">
@@ -300,9 +302,11 @@ export function CurvePanel({
             <div className="num w-full truncate text-[24px] text-primary">
               {outAmount != null ? amount(outAmount) : <span className="text-subtle">0</span>}
             </div>
-            <span className="pill shrink-0 bg-surface text-primary">
-              {side === "buy" ? pool.symbol : "COOK"}
-            </span>
+            {side === "buy" ? (
+              <TokenPill logo={pool.logo ?? null} symbol={pool.symbol} />
+            ) : (
+              <TokenPill logo={COOK_LOGO} symbol="COOK" />
+            )}
           </div>
           {legUsd != null && legUsd > 0 && (
             <div className="num mt-2 text-[12px] text-muted">{usd(legUsd)}</div>

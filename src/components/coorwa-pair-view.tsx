@@ -51,6 +51,7 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
       }
       stats={[
         { label: "Paid to holders", value: usd(rewards?.holdersPaidUsd ?? 0) },
+        { label: "Waiting to distribute", value: usd(rewards?.holdersWaitingUsd ?? 0) },
         pair.pool
           ? { label: "Pool, locked for good", value: `${amount(pair.pool.cookHeld, 0)} COOK` }
           : {

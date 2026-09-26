@@ -205,6 +205,13 @@ export const OPERATOR_SOL_FLOOR = 0.02;
 
 export const DEFAULT_SLIPPAGE_BPS = 500;
 
+/** The slippage a trade panel starts on, and the choices it offers next to it. */
+export const TRADE_SLIPPAGE_BPS = 100;
+export const TRADE_SLIPPAGE_CHOICES = [50, 100, 200, 500];
+
+/** COOK's picture, kept in the app at icon size. */
+export const COOK_LOGO = "/cook.webp";
+
 // --- The vault program ---------------------------------------------------------------------------
 
 /**
