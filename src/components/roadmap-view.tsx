@@ -4,7 +4,7 @@ import { LAUNCH_PROGRAM_ADDRESS } from "@/lib/config";
 const REPO = "https://github.com/Vicape7/coorwa";
 
 /** The day the page below was last edited by hand. */
-const UPDATED = "22 September 2026";
+const UPDATED = "26 September 2026";
 
 interface Milestone {
   sha: string;
@@ -65,29 +65,54 @@ const BUILT: Milestone[] = [
     ),
     note: "734 lines added",
   },
+  {
+    sha: "8b7e341",
+    date: "26 September 2026",
+    title: "Launching moved onto it",
+    body: (
+      <>
+        The launch page builds its own transaction now: the mint is made in the browser, the
+        creator signs for their metadata, and the wallet signs what the page assembled rather than
+        something a server handed back. A creator picks the tax there, and a buy at launch rides in
+        the same transaction. Launching on the old launchpad is closed; the tokens created there
+        keep trading and their creators keep what those curves earned them.
+      </>
+    ),
+    note: "the program went live on Cookie Chain the same day",
+  },
+  {
+    sha: "e2bbdf0",
+    date: "26 September 2026",
+    title: "Trading and charts, from the program's own events",
+    body: (
+      <>
+        A launch appears in the terminal as soon as it lands, with a pair page priced from the curve
+        account, a chart and a fill list built from the trades the program itself reports, and a
+        panel that buys and sells against the curve. The first real token was launched, bought and
+        sold through all of it.
+      </>
+    ),
+    note: "3 fills, read from the chain",
+  },
 ];
 
 /** Still to do, in the order it will be done. */
 const LEFT: { title: string; body: string }[] = [
   {
-    title: "Launch page rewritten",
-    body: "A creator picks the tax tier there, and the page says plainly what it pays, what it costs and what happens at graduation.",
-  },
-  {
-    title: "Trading against the new curve",
-    body: "Buy and sell in the terminal and on a pair page, the same panels the curve tokens already use.",
-  },
-  {
-    title: "Charts from the program's own events",
-    body: "Every fill and candle read straight from the chain, with no feed in between.",
-  },
-  {
     title: "The tax collected and paid out",
-    body: "A scheduled run sweeps what the mint withheld and hands it to the payout that already buys the stock and sends it to holders every day.",
+    body: "A scheduled run sweeps what the mints withheld and hands it to the payout that already buys the stock and sends it to holders every day.",
   },
   {
-    title: "A launch on the real chain, then the switch",
-    body: "One token taken all the way through graduation, watched, before the launch page starts using it.",
+    title: "Graduation, watched and driven",
+    body: "The program opens and locks the pool, but something has to call it the moment a curve fills. That job runs on a schedule, and the first graduation will be watched by hand.",
+  },
+  {
+    title: "The curve's fees claimed",
+    body: "What the 1% has earned sits on each curve until Coorwa claims it. One more scheduled run, into the same wallet the payout spends from.",
+  },
+  {
+    title: "The upgrade authority given up",
+    body: "Once the program has run quietly for a while, the key that can change it is thrown away and this page says so on the day it happens.",
   },
 ];
 
@@ -106,20 +131,19 @@ export function RoadmapView() {
           A launch program of Coorwa&apos;s own.
         </h1>
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <span className="pill pill-active">Written and rehearsed</span>
-          <span className="pill pill-quiet">Not deployed yet</span>
+          <span className="pill pill-active">Live on Cookie Chain</span>
+          <span className="pill pill-quiet">Upgrade authority still held</span>
           <span className="text-[13px] text-subtle">Updated {UPDATED}</span>
         </div>
         <p className="mt-5 text-[15px] leading-[1.7] text-muted">
-          Coorwa now has its own launch program: it mints the token, sells it on its own curve, and
-          at the target opens a pool and locks the liquidity in it forever. The token carries its
-          reward tax on the mint, so it pays its holders wherever it trades, from the first trade
-          onwards. The program is written and it has been rehearsed end to end against Cookie
-          Chain&apos;s real pool program. Putting it on the chain, and moving{" "}
+          Coorwa has its own launch program, and it is running. It mints the token, sells it on its
+          own curve, and at the target opens a pool and locks the liquidity in it forever. The token
+          carries its reward tax on the mint, so it pays its holders wherever it trades, from the
+          first trade onwards. Every launch on{" "}
           <Link href="/launch" className="underline underline-offset-4">
             Launch
           </Link>{" "}
-          over to it, is the work below.
+          goes through it, and the first token has already been launched, bought and sold on it.
         </p>
       </div>
 
@@ -168,7 +192,7 @@ export function RoadmapView() {
         </ol>
 
         <p className="mt-8 border-t border-hair pt-5 text-[13px] text-muted">
-          The program will live at{" "}
+          The program runs at{" "}
           <span className="num break-all text-subtle">{LAUNCH_PROGRAM_ADDRESS}</span>, and the pool
           it graduates into is Cookiebox&apos;s, the same one every migrated token on this chain
           uses.
