@@ -4,6 +4,8 @@
  *   npm run launch:config            read what is on chain and print what would change
  *   npm run launch:config -- --send  sign and send it
  *
+ * CORWA_GRADUATION_COOK sets a smaller graduation target for a test launch; see below.
+ *
  * The config account is created once and then edited, and it is what every launch after it
  * promises: the curve's shape, the graduation target, the tax tiers a creator picks between, and
  * where the fees go. The numbers come from `src/lib/launch-params.ts` so the app and the chain
@@ -48,7 +50,13 @@ if (send && (!walletPath || !existsSync(walletPath))) {
 const authority = walletPath && existsSync(walletPath)
   ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath, "utf8"))))
   : null;
-const params = launchConfigParams(operator);
+// A test raise on a smaller target, e.g. CORWA_GRADUATION_COOK=12000. Curves copy the target when
+// they open, so running the script again without it puts later launches back on 1M COOK and leaves
+// the test curve as it was.
+const testTarget = process.env.CORWA_GRADUATION_COOK?.trim();
+const params = testTarget
+  ? launchConfigParams(operator, BigInt(testTarget) * 10n ** 9n)
+  : launchConfigParams(operator);
 const connection = new Connection(rpc, "confirmed");
 
 /** The instruction builders take keys and bigints; the parameters are written as plain values. */

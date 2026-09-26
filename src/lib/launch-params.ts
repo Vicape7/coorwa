@@ -46,18 +46,30 @@ export const CREATOR_LP_SHARE_BPS = 4000;
  *
  * `feeRecipient` and `withholdAuthority` are both the operator wallet: curve fees land where every
  * other fee lands, and the tax is swept by the same key that runs the daily payout.
+ *
+ * `graduationQuote` is there for a test raise on a smaller target. The virtual quote follows it so
+ * the curve keeps its shape. Rounding decides which targets work: at some (10,000 COOK is one) a
+ * single buy of the whole raise asks for a few units more than the sale holds, and the program
+ * refuses that buy, so such a target is refused here instead.
  */
-export function launchConfigParams(operator: string = COORWA_OPERATOR) {
+export function launchConfigParams(
+  operator: string = COORWA_OPERATOR,
+  graduationQuote: bigint = GRADUATION_QUOTE,
+) {
+  const virtualQuote = graduationQuote / 3n;
+  if (virtualQuote <= 0n || (VIRTUAL_BASE * graduationQuote) / (virtualQuote + graduationQuote) > SALE_BASE) {
+    throw new Error(`a graduation target of ${graduationQuote} units would sell more than the curve holds`);
+  }
   return {
     feeRecipient: operator,
     withholdAuthority: operator,
     curveFeeBps: CURVE_FEE_BPS,
     creatorLpShareBps: CREATOR_LP_SHARE_BPS,
     taxTiers: TAX_TIERS,
-    graduationQuote: GRADUATION_QUOTE,
+    graduationQuote,
     saleBase: SALE_BASE,
     migrationBase: MIGRATION_BASE,
-    virtualQuote: VIRTUAL_QUOTE,
+    virtualQuote,
     virtualBase: VIRTUAL_BASE,
     tokenDecimals: CURVE_TOKEN_DECIMALS,
     paused: false,
