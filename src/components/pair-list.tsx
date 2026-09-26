@@ -9,6 +9,7 @@ import { curvePrice } from "@/lib/curve";
 import { COOK_DECIMALS, CURVE_TOKEN_DECIMALS } from "@/lib/config";
 import type { CoorwaPair, PairUniverse } from "@/lib/pairs";
 import type { LaunchpadPool } from "@/lib/launchpad";
+import type { CoorwaPair as CoorwaCurvePair } from "@/lib/coorwa-pairs";
 import { TokenMark } from "./token-mark";
 import { SearchGlyph } from "./ui/glyphs";
 import { PillSelect } from "./ui/pill-select";
@@ -21,10 +22,14 @@ type SortKey = "liquidity" | "volume" | "change" | "price";
 const ALL = "ALL";
 
 /**
- * Where a pair stands. New and Soon are Coorwa launches still on their MomoSwap curve, split at 60%
- * of the graduation target. Migrated is every pair whose token trades in a real pool. A curve that
- * has graduated stays in Soon, marked as migrating, until its pool shows up in Migrated, so a token
- * never drops out of the terminal between the two.
+ * Where a pair stands. New and Soon are launches still on a curve, split at 60% of the graduation
+ * target. Migrated is every pair whose token trades in a real pool. A curve that has graduated
+ * stays in Soon, marked as migrating, until its pool shows up in Migrated, so a token never drops
+ * out of the terminal between the two.
+ *
+ * Two kinds of curve land in those first two tabs: Coorwa's own, which is where every new launch
+ * goes, and the MomoSwap curves of tokens launched before that. They are listed side by side and
+ * read the same, because to whoever is buying they are the same thing.
  */
 type Stage = "new" | "soon" | "migrated";
 
@@ -38,6 +43,32 @@ const STAGES: [Stage, string][] = [
 const SOON_AT = 0.6;
 
 type CurvePool = LaunchpadPool & { progress: number; logo: string | null; ticker: string | null };
+
+/**
+ * One row of a curve tab, whichever program the curve belongs to.
+ *
+ * The two sources answer with quite different objects, so they are flattened to this before the
+ * table sees either: the table then has one shape to render and no idea which venue a row came
+ * from, apart from the label it prints.
+ */
+interface CurveListRow {
+  key: string;
+  href: string;
+  mint: string;
+  ticker: string;
+  symbol: string;
+  name: string;
+  logo: string | null;
+  /** Shares of the pair's stock one token is worth. */
+  ratio: number | null;
+  progress: number;
+  migrating: boolean;
+  raisedUsd: number | null;
+  holders: number | null;
+  /** Unix seconds the curve opened, for the age column. */
+  startedAt: number;
+  venue: "Coorwa" | "MomoSwap";
+}
 
 const SORTS: [SortKey, string][] = [
   ["liquidity", "Liquidity"],
@@ -73,6 +104,12 @@ export function PairList({
     { refreshInterval: 20_000, keepPreviousData: true },
   );
 
+  const coorwaCurves = useSWR<{ pairs: CoorwaCurvePair[] }>(
+    onCurve ? "/api/coorwa/curves" : null,
+    fetcher,
+    { refreshInterval: 20_000, keepPreviousData: true },
+  );
+
   const rows = useMemo(() => {
     const pairs = data?.pairs ?? [];
     const q = query.trim().toLowerCase();
@@ -100,35 +137,79 @@ export function PairList({
     return [...filtered].sort((a, b) => key(b) - key(a));
   }, [data, query, sort]);
 
-  const curveRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const pooled = new Set((data?.pairs ?? []).map((p) => p.base.mint));
-    const inStage = (p: CurvePool) => {
-      if (p.status === "graduated") return stage === "soon" && !pooled.has(p.tokenMint);
-      if (p.status !== "live") return false;
-      return stage === "soon" ? p.progress >= SOON_AT : p.progress < SOON_AT;
-    };
-    const pools = (curves.data?.pools ?? []).filter(
-      (p) =>
-        p.ticker != null &&
-        (ticker === ALL || p.ticker === ticker) &&
-        inStage(p) &&
-        (!q ||
-          p.symbol.toLowerCase().includes(q) ||
-          p.name.toLowerCase().includes(q) ||
-          p.tokenMint.toLowerCase().startsWith(q)),
-    );
-    // Newest first on New; on Soon, whichever is closest to its pool.
-    return stage === "soon"
-      ? pools.sort((a, b) => b.progress - a.progress)
-      : pools.sort((a, b) => b.launchTs - a.launchTs);
-  }, [curves.data, data, query, ticker, stage]);
-
-  const stockUsd = useMemo(
+  const stockPrices = useMemo(
     () => new Map((data?.rwa ?? []).map((r) => [r.ticker, r.priceUsd])),
     [data],
   );
   const cookUsd = curves.data?.cookPriceUsd ?? data?.cookPriceUsd ?? null;
+
+  const curveRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const pooled = new Set((data?.pairs ?? []).map((p) => p.base.mint));
+    const stockOf = (t: string) => stockPrices.get(t) ?? null;
+
+    const fromLaunchpad = (p: CurvePool): CurveListRow => ({
+      key: p.pubkey,
+      href: curveHref(p.tokenMint, p.ticker ?? ""),
+      mint: p.tokenMint,
+      ticker: p.ticker ?? "",
+      symbol: p.symbol,
+      name: p.name,
+      logo: p.logo,
+      ratio: curveRatio(p, stockOf(p.ticker ?? ""), cookUsd),
+      progress: p.progress,
+      migrating: p.status === "graduated",
+      raisedUsd: cookUsd ? (Number(p.paymentRaisedNet) / 10 ** COOK_DECIMALS) * cookUsd : null,
+      holders: Number(p.participantCount),
+      startedAt: p.launchTs,
+      venue: "MomoSwap",
+    });
+
+    const fromCoorwa = (p: CoorwaCurvePair): CurveListRow => ({
+      key: p.curve.address,
+      href: curveHref(p.base.mint, p.quote.ticker),
+      mint: p.base.mint,
+      ticker: p.quote.ticker,
+      symbol: p.base.symbol,
+      name: p.base.name,
+      logo: p.base.logo,
+      ratio: p.price,
+      progress: p.curve.progress,
+      migrating: p.curve.state !== "live",
+      raisedUsd: p.raisedUsd,
+      // Nothing counts a curve's holders yet, and a made-up number would be worse than none.
+      holders: null,
+      startedAt: p.curve.startedAt,
+      venue: "Coorwa",
+    });
+
+    const inStage = (row: CurveListRow) =>
+      row.migrating
+        ? stage === "soon" && !pooled.has(row.mint)
+        : stage === "soon"
+          ? row.progress >= SOON_AT
+          : row.progress < SOON_AT;
+
+    const rows: CurveListRow[] = [
+      ...(coorwaCurves.data?.pairs ?? []).map(fromCoorwa),
+      ...(curves.data?.pools ?? []).filter((p) => p.ticker != null && (p.status === "live" || p.status === "graduated")).map(fromLaunchpad),
+    ];
+
+    return rows
+      .filter(
+        (row) =>
+          row.ticker !== "" &&
+          (ticker === ALL || row.ticker === ticker) &&
+          inStage(row) &&
+          (!q ||
+            row.symbol.toLowerCase().includes(q) ||
+            row.name.toLowerCase().includes(q) ||
+            row.mint.toLowerCase().startsWith(q)),
+      )
+      // Newest first on New; on Soon, whichever is closest to its pool.
+      .sort((a, b) => (stage === "soon" ? b.progress - a.progress : b.startedAt - a.startedAt));
+  }, [coorwaCurves.data, curves.data, data, query, ticker, stage, stockPrices, cookUsd]);
+
   const loading = onCurve ? !curves.data || !data : isLoading && !data;
   const shown = onCurve ? curveRows.length : rows.length;
 
@@ -213,27 +294,14 @@ export function PairList({
                 </li>
               ))
             : onCurve
-              ? curveRows.map((p) => (
-                  <MobileCurveRow
-                    key={p.pubkey}
-                    pool={p}
-                    stockUsd={stockUsd.get(p.ticker ?? "") ?? null}
-                    cookUsd={cookUsd}
-                  />
-                ))
+              ? curveRows.map((row) => <MobileCurveRow key={row.key} row={row} />)
               : rows.map((p) => <MobileRow key={p.slug} pair={p} />)}
         </ul>
 
         <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[900px] text-[14px]">
             {onCurve ? (
-              <CurveTable
-                rows={curveRows}
-                loading={loading}
-                unit={unit}
-                stockUsd={stockUsd}
-                cookUsd={cookUsd}
-              />
+              <CurveTable rows={curveRows} loading={loading} unit={unit} />
             ) : (
               <PairTable rows={rows} loading={loading} unit={unit} />
             )}
@@ -267,9 +335,9 @@ export function PairList({
 
       {onCurve && curves.data && (
         <p className="mt-4 text-[12px] text-subtle">
-          {curveRows.length} {curveRows.length === 1 ? "launch" : "launches"} still on the MomoSwap
-          curve, priced from its reserves · a pair moves to Migrated once its token trades in a
-          real pool.
+          {curveRows.length} {curveRows.length === 1 ? "launch" : "launches"} still on a curve,
+          priced from its reserves · a pair moves to Migrated once its token trades in a real
+          pool.
         </p>
       )}
 
@@ -413,8 +481,8 @@ function age(launchTs: number): string {
 }
 
 /** Curve pairs are addressed by mint, never by symbol, so a copycat name cannot take the link. */
-function curveHref(pool: CurvePool) {
-  return `/terminal/${pool.tokenMint}-${(pool.ticker ?? "").toLowerCase()}`;
+function curveHref(mint: string, ticker: string) {
+  return `/terminal/${mint}-${ticker.toLowerCase()}`;
 }
 
 function Progress({ value, migrating }: { value: number; migrating: boolean }) {
@@ -476,14 +544,10 @@ function CurveTable({
   rows,
   loading,
   unit,
-  stockUsd,
-  cookUsd,
 }: {
-  rows: CurvePool[];
+  rows: CurveListRow[];
   loading: boolean;
   unit: string;
-  stockUsd: Map<string, number>;
-  cookUsd: number | null;
 }) {
   return (
     <>
@@ -496,91 +560,71 @@ function CurveTable({
           <Th align="right">Raised</Th>
           <Th align="right">Holders</Th>
           <Th align="right">Age</Th>
+          <Th>Curve</Th>
         </tr>
       </thead>
       <tbody>
         {loading
           ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-          : rows.map((p) => (
-              <CurveRow
-                key={p.pubkey}
-                pool={p}
-                stockUsd={stockUsd.get(p.ticker ?? "") ?? null}
-                cookUsd={cookUsd}
-              />
-            ))}
+          : rows.map((row) => <CurveRow key={row.key} row={row} />)}
       </tbody>
     </>
   );
 }
 
-function CurveRow({
-  pool,
-  stockUsd,
-  cookUsd,
-}: {
-  pool: CurvePool;
-  stockUsd: number | null;
-  cookUsd: number | null;
-}) {
-  const ratio = curveRatio(pool, stockUsd, cookUsd);
-  const raised = cookUsd ? (Number(pool.paymentRaisedNet) / 10 ** COOK_DECIMALS) * cookUsd : null;
+function CurveRow({ row }: { row: CurveListRow }) {
   return (
     <tr className="row-hover border-b border-hair last:border-0">
       <td className="px-4 py-3">
-        <Link href={curveHref(pool)} className="flex items-center gap-3">
-          <TokenMark logo={pool.logo} symbol={pool.symbol} />
+        <Link href={row.href} className="flex items-center gap-3">
+          <TokenMark logo={row.logo} symbol={row.symbol} />
           <span className="min-w-0">
             <span className="block truncate text-primary">
-              {pool.symbol}
-              <span className="text-subtle"> / {pool.ticker}</span>
+              {row.symbol}
+              <span className="text-subtle"> / {row.ticker}</span>
             </span>
-            <span className="block truncate text-[12px] text-subtle">{pool.name}</span>
+            <span className="block truncate text-[12px] text-subtle">{row.name}</span>
           </span>
         </Link>
       </td>
-      <td className="num px-4 py-3 text-right text-primary">{ratio ? rwaRatio(ratio) : "—"}</td>
-      <td className="num px-4 py-3 text-right text-muted">{ratio ? amount(1 / ratio) : "—"}</td>
+      <td className="num px-4 py-3 text-right text-primary">
+        {row.ratio ? rwaRatio(row.ratio) : "—"}
+      </td>
+      <td className="num px-4 py-3 text-right text-muted">
+        {row.ratio ? amount(1 / row.ratio) : "—"}
+      </td>
       <td className="px-4 py-3">
-        <Progress value={pool.progress} migrating={pool.status === "graduated"} />
+        <Progress value={row.progress} migrating={row.migrating} />
       </td>
       <td className="num px-4 py-3 text-right text-primary">
-        {raised == null ? "—" : usd(raised)}
+        {row.raisedUsd == null ? "—" : usd(row.raisedUsd)}
       </td>
-      <td className="num px-4 py-3 text-right text-muted">{pool.participantCount}</td>
-      <td className="num px-4 py-3 text-right text-muted">{age(pool.launchTs)}</td>
+      <td className="num px-4 py-3 text-right text-muted">{row.holders ?? "—"}</td>
+      <td className="num px-4 py-3 text-right text-muted">{age(row.startedAt)}</td>
+      <td className="px-4 py-3 text-[13px] text-muted">{row.venue}</td>
     </tr>
   );
 }
 
-function MobileCurveRow({
-  pool,
-  stockUsd,
-  cookUsd,
-}: {
-  pool: CurvePool;
-  stockUsd: number | null;
-  cookUsd: number | null;
-}) {
-  const ratio = curveRatio(pool, stockUsd, cookUsd);
+function MobileCurveRow({ row }: { row: CurveListRow }) {
   return (
     <li className="border-b border-hair last:border-0">
-      <Link href={curveHref(pool)} className="row-hover flex items-center gap-3 px-4 py-3.5">
-        <TokenMark logo={pool.logo} symbol={pool.symbol} />
+      <Link href={row.href} className="row-hover flex items-center gap-3 px-4 py-3.5">
+        <TokenMark logo={row.logo} symbol={row.symbol} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] text-primary">
-            {pool.symbol}
-            <span className="text-subtle"> / {pool.ticker}</span>
+            {row.symbol}
+            <span className="text-subtle"> / {row.ticker}</span>
           </span>
           <span className="mt-1.5 block">
-            <Progress value={pool.progress} migrating={pool.status === "graduated"} />
+            <Progress value={row.progress} migrating={row.migrating} />
           </span>
         </span>
         <span className="shrink-0 text-right">
           <span className="num block text-[15px] text-primary">
-            {ratio ? rwaRatio(ratio) : "—"}
+            {row.ratio ? rwaRatio(row.ratio) : "—"}
           </span>
-          <span className="num block text-[12px] text-subtle">{age(pool.launchTs)}</span>
+          <span className="num block text-[12px] text-subtle">{age(row.startedAt)}</span>
         </span>
       </Link>
     </li>

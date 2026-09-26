@@ -11,11 +11,19 @@
  * Server-side only.
  */
 import { PublicKey } from "@solana/web3.js";
-import { COOK_MINT, COOK_SOLANA_MINT, COOKIE_RPC_URL, PROGRAM_IDS } from "./config";
+import {
+  COOK_DECIMALS,
+  COOK_MINT,
+  COOK_SOLANA_MINT,
+  COOKIE_RPC_URL,
+  CURVE_TOKEN_DECIMALS,
+  PROGRAM_IDS,
+} from "./config";
 import { closeAt, fetchRwaCandles, fetchTrades, type Candle, type Trade } from "./candles";
 import { fetchCookPriceUsd, fetchMarkets, marketsByMint } from "./cookiescan";
 import { cachedStale, fetchJson } from "./http";
 import { fetchPools, fetchPoolTrades } from "./launchpad";
+import { curvePda, tradedEvents } from "./launch-program";
 
 /** How many of a pool's latest transactions are read. */
 const SIGNATURE_LIMIT = 200;
@@ -39,6 +47,7 @@ export interface RpcTransaction {
   blockTime: number | null;
   meta: {
     err: unknown;
+    logMessages?: string[];
     preTokenBalances?: TokenBalance[];
     postTokenBalances?: TokenBalance[];
   } | null;
@@ -82,10 +91,16 @@ function vaultDelta(tx: RpcTransaction, owner: string, mint: string): number {
  * Read one transaction as a swap between `mint` and COOK through a DAMM pool, or null when it is
  * anything else. A buy takes tokens out of the pool and puts COOK in; a sell does the opposite.
  */
-export function swapFromTransaction(tx: RpcTransaction, mint: string): PoolSwap | null {
+export function swapFromTransaction(
+  tx: RpcTransaction,
+  mint: string,
+  /** Whoever holds the two vaults. A DAMM pool's are all under one authority; a Coorwa curve's are
+   *  under its own, which is why this is a parameter rather than the constant it started as. */
+  owner: string = DAMM_POOL_AUTHORITY,
+): PoolSwap | null {
   if (!tx.meta || tx.meta.err || !tx.blockTime) return null;
-  const tokens = vaultDelta(tx, DAMM_POOL_AUTHORITY, mint);
-  const cook = vaultDelta(tx, DAMM_POOL_AUTHORITY, COOK_MINT);
+  const tokens = vaultDelta(tx, owner, mint);
+  const cook = vaultDelta(tx, owner, COOK_MINT);
   if (!tokens || !cook || Math.sign(tokens) === Math.sign(cook)) return null;
 
   const first = tx.transaction.message.accountKeys[0];
@@ -117,7 +132,7 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
 /** A transaction never changes once confirmed, so a read one is kept for the isolate's life. */
 const seen = new Map<string, PoolSwap | null>();
 
-async function readTransactions(sigs: string[], mint: string): Promise<void> {
+async function readTransactions(sigs: string[], mint: string, owner?: string): Promise<void> {
   if (seen.size > 20_000) seen.clear();
   const missing = sigs.filter((s) => !seen.has(`${mint}:${s}`));
   for (let i = 0; i < missing.length; i += BATCH) {
@@ -137,7 +152,7 @@ async function readTransactions(sigs: string[], mint: string): Promise<void> {
     for (const r of Array.isArray(replies) ? replies : []) {
       const sig = chunk[r.id];
       // An error or a null result may be a node that has not caught up yet; ask again next time.
-      if (sig && r.result) seen.set(`${mint}:${sig}`, swapFromTransaction(r.result, mint));
+      if (sig && r.result) seen.set(`${mint}:${sig}`, swapFromTransaction(r.result, mint, owner));
     }
   }
 }
@@ -156,6 +171,100 @@ export async function poolSwaps(pool: string, mint: string): Promise<PoolSwap[]>
       .filter((s): s is PoolSwap => !!s)
       .sort((a, b) => b.ts - a.ts);
   });
+}
+
+/**
+ * The fills of a curve on Coorwa's own launch program, newest first.
+ *
+ * Nothing indexes these: the program is ours and days old, so the curve's own transactions are the
+ * feed. Its two vaults sit under one authority derived from the mint, which is what tells a trade
+ * apart from anything else the transaction touched. A buy takes tokens out of the base vault and
+ * puts COOK into the quote vault; a sell does the opposite. The tokens counted are what the vault
+ * sent, before the transfer tax the mint withholds, which is exactly the price the curve charged.
+ */
+export async function coorwaFills(mint: string): Promise<Trade[]> {
+  const curve = curvePda(new PublicKey(mint)).toBase58();
+
+  const swaps = await cachedStale(`coorwa-fills:${mint}`, 15_000, async () => {
+    const sigs = await rpc<{ signature: string; err: unknown }[]>("getSignaturesForAddress", [
+      curve,
+      { limit: SIGNATURE_LIMIT },
+    ]);
+    const ok = sigs.filter((s) => !s.err).map((s) => s.signature);
+    await readEvents(ok, mint);
+    return ok
+      .flatMap((s) => events.get(`${mint}:${s}`) ?? [])
+      .sort((a, b) => b.ts - a.ts);
+  });
+
+  const cookUsd = await cookValuer();
+  return swaps.map((s, i) => ({
+    id: i,
+    mint,
+    ts: s.ts,
+    price: s.tokens > 0 ? s.cook / s.tokens : 0,
+    price_usd: s.tokens > 0 ? (s.cook / s.tokens) * cookUsd(s.ts) : 0,
+    base_amount: s.tokens,
+    quote_amount: s.cook,
+    side: s.side,
+    tx: s.sig,
+    maker: s.trader,
+    pool: curve,
+    venue: "Coorwa curve",
+    value_usd: s.cook * cookUsd(s.ts),
+  }));
+}
+
+/**
+ * Trades pulled out of the program's own log lines.
+ *
+ * Read as events rather than as balance movements because a launch with a buy in it moves the whole
+ * supply into the vault in the same transaction, which no balance-based reader can tell from the
+ * buy. The event says what the curve actually charged.
+ */
+const events = new Map<string, PoolSwap[]>();
+
+async function readEvents(sigs: string[], mint: string): Promise<void> {
+  if (events.size > 20_000) events.clear();
+  const missing = sigs.filter((s) => !events.has(`${mint}:${s}`));
+  for (let i = 0; i < missing.length; i += BATCH) {
+    const chunk = missing.slice(i, i + BATCH);
+    const replies = await fetchJson<RpcReply<RpcTransaction | null>[]>(COOKIE_RPC_URL, {
+      method: "POST",
+      timeoutMs: 20_000,
+      body: JSON.stringify(
+        chunk.map((sig, id) => ({
+          jsonrpc: "2.0",
+          id,
+          method: "getTransaction",
+          params: [sig, { encoding: "json", maxSupportedTransactionVersion: 0 }],
+        })),
+      ),
+    });
+    for (const r of Array.isArray(replies) ? replies : []) {
+      const sig = chunk[r.id];
+      const tx = r.result;
+      if (!sig || !tx) continue;
+      if (!tx.meta || tx.meta.err || !tx.blockTime) {
+        events.set(`${mint}:${sig}`, []);
+        continue;
+      }
+      const ts = tx.blockTime;
+      events.set(
+        `${mint}:${sig}`,
+        tradedEvents(tx.meta.logMessages)
+          .filter((e) => e.mint.toBase58() === mint)
+          .map((e) => ({
+            ts,
+            side: e.isBuy ? ("buy" as const) : ("sell" as const),
+            tokens: Number(e.baseAmount) / 10 ** CURVE_TOKEN_DECIMALS,
+            cook: Number(e.quoteAmount) / 10 ** COOK_DECIMALS,
+            sig,
+            trader: e.trader.toBase58(),
+          })),
+      );
+    }
+  }
 }
 
 /** Values COOK amounts at COOK's USD close in the hour they traded. */

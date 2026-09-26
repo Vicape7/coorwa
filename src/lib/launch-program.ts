@@ -60,6 +60,11 @@ export const LAUNCH_IX_HEX = Object.fromEntries(
   Object.entries(IX).map(([name, bytes]) => [name, Buffer.from(bytes).toString("hex")]),
 ) as Record<keyof typeof IX, string>;
 
+/** sha256("event:<Name>")[0..8], as Anchor writes it in front of a `Program data:` log line. */
+export const EVENT_DISCRIMINATOR = {
+  traded: [225, 202, 73, 175, 147, 43, 160, 150],
+} as const;
+
 /** sha256("account:<Struct>")[0..8]. */
 export const ACCOUNT_DISCRIMINATOR = {
   config: [155, 12, 170, 224, 30, 250, 204, 130],
@@ -334,6 +339,74 @@ export async function fetchCurve(
   const address = curvePda(mint);
   const info = await connection.getAccountInfo(address);
   return info ? decodeCurve(address, Buffer.from(info.data)) : null;
+}
+
+// --- events --------------------------------------------------------------------------------------
+
+export interface TradedEvent {
+  curve: PublicKey;
+  mint: PublicKey;
+  trader: PublicKey;
+  isBuy: boolean;
+  /** What the trader paid, or was paid, in quote units. Coorwa's fee is part of it. */
+  quoteAmount: bigint;
+  /** What the curve sent or received, before the mint's transfer tax. */
+  baseAmount: bigint;
+  fee: bigint;
+  quoteRaised: bigint;
+  baseSold: bigint;
+  graduated: boolean;
+}
+
+function fromBase64(value: string): Uint8Array {
+  if (typeof atob === "function") {
+    const binary = atob(value);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+    return out;
+  }
+  return Uint8Array.from(Buffer.from(value, "base64"));
+}
+
+function startsWith(data: Uint8Array, prefix: readonly number[]): boolean {
+  return prefix.every((b, i) => data[i] === b);
+}
+
+/**
+ * The trades a transaction's logs report.
+ *
+ * The program emits one `Traded` per fill with the amounts it actually moved, which is the only
+ * honest source for a chart: balances alone cannot tell a buy inside a launch from the mint that
+ * funded the vault in the same transaction, and instruction data says what was asked for rather
+ * than what happened.
+ */
+export function tradedEvents(logs: string[] | undefined | null): TradedEvent[] {
+  const out: TradedEvent[] = [];
+  for (const line of logs ?? []) {
+    const encoded = line.startsWith("Program data: ") ? line.slice(14) : null;
+    if (!encoded) continue;
+    let data: Uint8Array;
+    try {
+      data = fromBase64(encoded);
+    } catch {
+      continue;
+    }
+    if (data.length < 8 || !startsWith(data, EVENT_DISCRIMINATOR.traded)) continue;
+    const r = new Reader(data);
+    out.push({
+      curve: r.pubkey(),
+      mint: r.pubkey(),
+      trader: r.pubkey(),
+      isBuy: r.bool(),
+      quoteAmount: r.u64(),
+      baseAmount: r.u64(),
+      fee: r.u64(),
+      quoteRaised: r.u64(),
+      baseSold: r.u64(),
+      graduated: r.bool(),
+    });
+  }
+  return out;
 }
 
 export async function fetchLaunchConfig(

@@ -7,7 +7,7 @@ import {
   INTERVAL_SECONDS,
 } from "@/lib/candles";
 import { rwaByTicker } from "@/lib/rwa";
-import { curveFills, tokenFills } from "@/lib/chain-fills";
+import { coorwaFills, curveFills, tokenFills } from "@/lib/chain-fills";
 import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,8 @@ const Query = z.object({
   mode: z.enum(["ratio", "usd"]).default("ratio"),
   /** A bonding curve to chart instead of the pool feed, for a token that has not graduated. */
   pool: z.string().regex(ADDRESS_RE).optional(),
+  /** Whose curve: the launchpad indexes its own, Coorwa reads its program's events. */
+  venue: z.enum(["momoswap", "coorwa"]).default("momoswap"),
 });
 
 export async function GET(req: Request) {
@@ -31,13 +33,18 @@ export async function GET(req: Request) {
       { status: 400 },
     );
   }
-  const { mint, ticker, interval, mode, pool } = parsed.data;
+  const { mint, ticker, interval, mode, pool, venue } = parsed.data;
 
   const asset = rwaByTicker(ticker);
   if (!asset) return NextResponse.json({ error: `unknown RWA: ${ticker}` }, { status: 404 });
 
   try {
-    const trades = pool ? await curveFills(pool, mint) : await tokenFills(mint, 1000);
+    const trades =
+      venue === "coorwa"
+        ? await coorwaFills(mint)
+        : pool
+          ? await curveFills(pool, mint)
+          : await tokenFills(mint, 1000);
     const tokenCandles = tradesToCandles(trades, interval);
 
     if (mode === "usd") {

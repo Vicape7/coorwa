@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { curveFills, tokenFills } from "@/lib/chain-fills";
+import { coorwaFills, curveFills, tokenFills } from "@/lib/chain-fills";
 import { ADDRESS_RE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,8 @@ const Query = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(120),
   /** A bonding curve whose fills to list instead of the pool feed's. */
   pool: z.string().regex(ADDRESS_RE).optional(),
+  /** Whose curve: the launchpad indexes its own, Coorwa reads its program's events. */
+  venue: z.enum(["momoswap", "coorwa"]).default("momoswap"),
 });
 
 export async function GET(req: Request) {
@@ -20,8 +22,13 @@ export async function GET(req: Request) {
   }
 
   try {
-    const { mint, limit, pool } = parsed.data;
-    const trades = pool ? await curveFills(pool, mint) : await tokenFills(mint, limit);
+    const { mint, limit, pool, venue } = parsed.data;
+    const trades =
+      venue === "coorwa"
+        ? await coorwaFills(mint)
+        : pool
+          ? await curveFills(pool, mint)
+          : await tokenFills(mint, limit);
     return NextResponse.json(
       { trades: trades.slice(0, limit) },
       { headers: { "cache-control": "public, s-maxage=10, stale-while-revalidate=30" } },

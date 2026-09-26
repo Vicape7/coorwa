@@ -27,7 +27,14 @@ import {
   createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { buyIx, launchIx, quoteBuy, type CurveState, type LaunchConfigState } from "./launch-program";
+import {
+  buyIx,
+  launchIx,
+  quoteBuy,
+  sellIx,
+  type CurveState,
+  type LaunchConfigState,
+} from "./launch-program";
 
 /** A legacy transaction's hard limit, signatures included. */
 const PACKET_SIZE = 1232;
@@ -84,6 +91,120 @@ export function openingCurve(
     createdAt: 0,
     positionNftMint: PublicKey.default,
   };
+}
+
+/**
+ * A curve as the page received it, turned back into the shape the quote functions take.
+ *
+ * The server sends u64s as strings, because JSON has no integers that wide. Everything else on a
+ * curve either prices a trade or names an account, so this is the one place that conversion lives.
+ */
+export function curveFromSerialised(input: {
+  address: string;
+  creator: string;
+  taxBps: number;
+  curveFeeBps: number;
+  creatorLpShareBps: number;
+  state: "live" | "graduated" | "pooled";
+  virtualBase: string;
+  virtualQuote: string;
+  baseSold: string;
+  quoteRaised: string;
+  graduationQuote: string;
+  saleBase: string;
+  migrationBase: string;
+  feesQuote: string;
+}, mint: string): CurveState {
+  return {
+    address: new PublicKey(input.address),
+    config: PublicKey.default,
+    creator: new PublicKey(input.creator),
+    mint: new PublicKey(mint),
+    baseVault: PublicKey.default,
+    quoteVault: PublicKey.default,
+    virtualBase: BigInt(input.virtualBase),
+    virtualQuote: BigInt(input.virtualQuote),
+    saleBase: BigInt(input.saleBase),
+    migrationBase: BigInt(input.migrationBase),
+    graduationQuote: BigInt(input.graduationQuote),
+    baseSold: BigInt(input.baseSold),
+    quoteRaised: BigInt(input.quoteRaised),
+    feesQuote: BigInt(input.feesQuote),
+    taxBps: input.taxBps,
+    curveFeeBps: input.curveFeeBps,
+    creatorLpShareBps: input.creatorLpShareBps,
+    state: input.state,
+    createdAt: 0,
+    positionNftMint: PublicKey.default,
+  };
+}
+
+/**
+ * The instructions for a trade on a live curve, wrapping and unwrapping COOK around it.
+ *
+ * The quote side is wrapped COOK, so both directions need that account to exist; a buy funds it
+ * from the wallet's own lamports first. It is closed again at the end only when this trade opened
+ * it, which is also what pays a seller out in plain COOK rather than leaving it wrapped.
+ */
+export function tradeInstructions(input: {
+  trader: PublicKey;
+  mint: PublicKey;
+  side: "buy" | "sell";
+  /** Quote in for a buy, base in for a sell, in raw units. */
+  amount: bigint;
+  /** The least the trade may deliver, in raw units of the other side. */
+  minOut: bigint;
+  closeWrapped: boolean;
+}): TransactionInstruction[] {
+  const wrapped = getAssociatedTokenAddressSync(NATIVE_MINT, input.trader);
+  const base = getAssociatedTokenAddressSync(
+    input.mint,
+    input.trader,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+  );
+  const accounts = {
+    trader: input.trader,
+    mint: input.mint,
+    quoteMint: NATIVE_MINT,
+    traderBase: base,
+    traderQuote: wrapped,
+  };
+
+  const instructions: TransactionInstruction[] = [
+    createAssociatedTokenAccountIdempotentInstruction(
+      input.trader,
+      wrapped,
+      input.trader,
+      NATIVE_MINT,
+    ),
+  ];
+
+  if (input.side === "buy") {
+    instructions.push(
+      SystemProgram.transfer({
+        fromPubkey: input.trader,
+        toPubkey: wrapped,
+        lamports: input.amount,
+      }),
+      createSyncNativeInstruction(wrapped),
+      createAssociatedTokenAccountIdempotentInstruction(
+        input.trader,
+        base,
+        input.trader,
+        input.mint,
+        TOKEN_2022_PROGRAM_ID,
+      ),
+      buyIx(accounts, input.amount, input.minOut),
+    );
+  } else {
+    instructions.push(sellIx(accounts, input.amount, input.minOut));
+  }
+
+  if (input.closeWrapped) {
+    instructions.push(createCloseAccountInstruction(wrapped, input.trader, input.trader));
+  }
+  return instructions;
 }
 
 /** What a dev buy of this size delivers on a curve that has not traded yet. */

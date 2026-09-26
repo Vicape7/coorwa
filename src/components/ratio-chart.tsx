@@ -53,12 +53,15 @@ export function RatioChart({
   ticker,
   baseSymbol,
   pool,
+  venue,
 }: {
   mint: string;
   ticker: string;
   baseSymbol: string;
-  /** A launchpad curve to chart, for a token whose fills are not in the pool feed yet. */
+  /** A curve to chart, for a token whose fills are not in the pool feed yet. */
   pool?: string;
+  /** Which curve that is: the launchpad indexes its own, Coorwa reads its program's events. */
+  venue?: "momoswap" | "coorwa";
 }) {
   const theme = useTheme();
   const holder = useRef<HTMLDivElement>(null);
@@ -160,7 +163,8 @@ export function RatioChart({
       try {
         const res = await fetch(
           `/api/candles?mint=${mint}&ticker=${ticker}&interval=${interval}&mode=ratio` +
-            (pool ? `&pool=${pool}` : ""),
+            (pool ? `&pool=${pool}` : "") +
+            (venue ? `&venue=${venue}` : ""),
         );
         const json = (await res.json()) as {
           candles?: Candle[];
@@ -219,7 +223,7 @@ export function RatioChart({
       alive = false;
       window.clearInterval(id);
     };
-  }, [mint, ticker, interval, key, pool]);
+  }, [mint, ticker, interval, key, pool, venue]);
 
   return (
     <div className="card flex h-full min-h-[420px] flex-col overflow-hidden">

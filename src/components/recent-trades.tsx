@@ -13,16 +13,18 @@ export function RecentTrades({
   rwaPriceUsd,
   ticker,
   pool,
+  venue,
 }: {
   mint: string;
   baseSymbol: string;
   rwaPriceUsd: number;
   ticker: string;
-  /** A launchpad curve, for a token whose fills are not in the pool feed yet. */
+  /** A curve, for a token whose fills are not in the pool feed yet. */
   pool?: string;
+  venue?: "momoswap" | "coorwa";
 }) {
   const { data, isLoading } = useSWR<{ trades: Trade[] }>(
-    `/api/trades?mint=${mint}${pool ? `&pool=${pool}` : ""}`,
+    `/api/trades?mint=${mint}${pool ? `&pool=${pool}` : ""}${venue ? `&venue=${venue}` : ""}`,
     fetcher,
     { refreshInterval: 15_000, keepPreviousData: true },
   );
