@@ -39,7 +39,7 @@ import { fetchPools } from "./launchpad";
 import { logosByMint } from "./token-logos";
 import { cachedStale } from "./http";
 import { coorwaPairs, type CoorwaPair as CoorwaCurvePair } from "./coorwa-pairs";
-import { coorwaVolume24h } from "./chain-fills";
+import { coorwaDayStats } from "./chain-fills";
 
 export interface CoorwaPair {
   /** URL slug, e.g. "cookhouse-nvda". */
@@ -274,9 +274,9 @@ export async function buildUniverse(opts?: {
       (p.pool.liquidityUsd ?? 0) >= minLiq
     );
   });
-  // Read from the chain, since no feed indexes these pools; a failed read shows as no volume.
-  const volumes = await Promise.all(
-    listedHere.map((p) => coorwaVolume24h(p.base.mint).catch(() => null)),
+  // Read from the chain, since no feed indexes these pools; a failed read shows as no figures.
+  const days = await Promise.all(
+    listedHere.map((p) => coorwaDayStats(p.base.mint).catch(() => null)),
   );
   for (const [i, p] of listedHere.entries()) {
     // Every one of these was checked by the filter above.
@@ -284,6 +284,8 @@ export async function buildUniverse(opts?: {
     const pool = p.pool!;
     const priceUsd = p.priceUsd!;
     const liquidityUsd = pool.liquidityUsd ?? 0;
+    const day = days[i];
+    const tokenChange = day?.openUsd ? (priceUsd / day.openUsd - 1) * 100 : null;
     pairs.push({
       slug: p.slug,
       base: {
@@ -294,9 +296,9 @@ export async function buildUniverse(opts?: {
         decimals: p.base.decimals,
         priceUsd,
         priceCook: cookUsd ? priceUsd / cookUsd : null,
-        change24h: null,
+        change24h: tokenChange,
         liquidityUsd,
-        volume24h: volumes[i],
+        volume24h: day?.volumeUsd ?? null,
         marketCap: null,
         holders: null,
         stale: false,
@@ -313,7 +315,7 @@ export async function buildUniverse(opts?: {
       pinned: true,
       price: p.price!,
       inverse: p.inverse ?? 0,
-      change24h: null,
+      change24h: ratioChange(tokenChange, p.quote.change24h),
       venue: "Coorwa pool",
       poolId: pool.address,
     });

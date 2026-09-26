@@ -226,21 +226,43 @@ export async function coorwaFills(mint: string): Promise<Trade[]> {
     .map((f, id) => ({ id, ...f }));
 }
 
-/** Dollars traded in the day before `nowSec`, each fill counted once at its own value. */
-export function volume24h(fills: readonly Pick<Trade, "ts" | "value_usd">[], nowSec: number): number {
+export interface DayStats {
+  /** Dollars traded in the day, each fill counted once at its own value. */
+  volumeUsd: number;
+  /**
+   * The token's dollar price a day ago: the last fill before the day began, or for a token younger
+   * than that, its first fill. Null when it never traded.
+   */
+  openUsd: number | null;
+}
+
+/** Volume and opening price over the day before `nowSec`. */
+export function dayStats(
+  fills: readonly Pick<Trade, "ts" | "value_usd" | "price_usd">[],
+  nowSec: number,
+): DayStats {
   const since = nowSec - 24 * 60 * 60;
-  return fills.reduce((sum, f) => (f.ts > since ? sum + (f.value_usd ?? 0) : sum), 0);
+  let volumeUsd = 0;
+  let before: { ts: number; price: number } | null = null;
+  let first: { ts: number; price: number } | null = null;
+  for (const f of fills) {
+    if (f.ts > since) volumeUsd += f.value_usd ?? 0;
+    if (!(f.price_usd > 0)) continue;
+    if (f.ts <= since && (!before || f.ts > before.ts)) before = { ts: f.ts, price: f.price_usd };
+    if (!first || f.ts < first.ts) first = { ts: f.ts, price: f.price_usd };
+  }
+  return { volumeUsd, openUsd: (before ?? first)?.price ?? null };
 }
 
 /**
- * A Coorwa token's 24h volume, on its curve and in its pool together, read from the same fills its
- * page shows. Nothing indexes the program's pools, so this is the only source there is. It reads at
- * most the last `SIGNATURE_LIMIT` transactions of each, which undercounts only a token busier than
- * that in a day.
+ * A Coorwa token's day, on its curve and in its pool together, read from the same fills its page
+ * shows. Nothing indexes the program's pools, so this is the only source there is. It reads at most
+ * the last `SIGNATURE_LIMIT` transactions of each, which undercounts only a token busier than that
+ * in a day.
  */
-export async function coorwaVolume24h(mint: string): Promise<number> {
-  return cachedStale(`coorwa-volume:${mint}`, 60_000, async () =>
-    volume24h(await coorwaFills(mint), Math.floor(Date.now() / 1000)),
+export async function coorwaDayStats(mint: string): Promise<DayStats> {
+  return cachedStale(`coorwa-day:${mint}`, 60_000, async () =>
+    dayStats(await coorwaFills(mint), Math.floor(Date.now() / 1000)),
   );
 }
 
