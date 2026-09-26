@@ -85,6 +85,13 @@
       "when": 1789678728843,
       "tag": "0011_payout_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790440535324,
+      "tag": "0012_tax_sweeps",
+      "breakpoints": true
     }
   ]
 }

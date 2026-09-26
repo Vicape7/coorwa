@@ -25,9 +25,12 @@ import {
   COOKIE_RPC_URL,
   COORWA_OPERATOR,
   COORWA_REFERRER,
+  COOK_DECIMALS,
+  CURVE_TOKEN_DECIMALS,
   HOLDER_MIN_USD,
   VAULT_AUTHORITY,
 } from "./config";
+import { curvePrice, fetchCurve } from "./launch-program";
 import { db, dbEnabled, schema } from "./db";
 import { fetchCookPriceUsd, fetchTokens } from "./cookiescan";
 import { fetchPoolTrades } from "./launchpad";
@@ -138,7 +141,7 @@ async function launchPool(mint: string): Promise<string | null> {
   return row?.pool ?? null;
 }
 
-async function pricesByMint(): Promise<Map<string, number>> {
+async function pricesByMint(): Promise<{ prices: Map<string, number>; cookUsd: number | null }> {
   const [tokens, cookUsd] = await Promise.all([fetchTokens(), fetchCookPriceUsd()]);
   const out = new Map<string, number>();
   for (const t of tokens) {
@@ -152,7 +155,23 @@ async function pricesByMint(): Promise<Map<string, number>> {
           : null;
     if (usd) out.set(t.mint, usd);
   }
-  return out;
+  return { prices: out, cookUsd };
+}
+
+/**
+ * A token on Coorwa's own curve, priced off the curve itself. The registry does not list those, and
+ * without a price the holder floor would not apply to them and every dust wallet would take a share.
+ */
+async function curvePriceUsd(
+  connection: Connection,
+  mint: string,
+  cookUsd: number | null,
+): Promise<number | null> {
+  if (!cookUsd) return null;
+  const curve = await fetchCurve(connection, new PublicKey(mint)).catch(() => null);
+  if (!curve) return null;
+  const usd = (curvePrice(curve, CURVE_TOKEN_DECIMALS) / 10 ** COOK_DECIMALS) * cookUsd;
+  return usd > 0 ? usd : null;
 }
 
 export interface HolderSnapshot {
@@ -169,7 +188,10 @@ export interface HolderSnapshot {
  */
 export async function snapshotHolders(mints: readonly string[]): Promise<HolderSnapshot[]> {
   const connection = new Connection(COOKIE_RPC_URL, "confirmed");
-  const prices = await pricesByMint().catch(() => new Map<string, number>());
+  const { prices, cookUsd } = await pricesByMint().catch(() => ({
+    prices: new Map<string, number>(),
+    cookUsd: null,
+  }));
   const excluded = excludedOwners();
   const out: HolderSnapshot[] = [];
 
@@ -178,7 +200,7 @@ export async function snapshotHolders(mints: readonly string[]): Promise<HolderS
       const { accounts, decimals } = await tokenAccounts(connection, mint);
       const common = {
         decimals: decimals ?? 6,
-        priceUsd: prices.get(mint) ?? null,
+        priceUsd: prices.get(mint) ?? (await curvePriceUsd(connection, mint, cookUsd)),
         minUsd: HOLDER_MIN_USD,
         excluded,
         isWallet,

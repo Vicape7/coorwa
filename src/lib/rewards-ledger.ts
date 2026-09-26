@@ -2,7 +2,8 @@
  * Who is owed what, in which asset, and what has been paid.
  *
  * Every fee Coorwa collects on a token belongs to that token's holders, all of it, and so does a
- * pair payment. A token's creator is one of those holders and nothing else: they are paid for what
+ * pair payment and, for a token launched on Coorwa's curve, its transfer tax once the sweep has sold
+ * it (`tax-sweep.ts`). A token's creator is one of those holders and nothing else: they are paid for what
  * they hold, like anyone else, and take no separate share. The money itself sits in the operator
  * wallet. This file is the ledger that says whose it is, and `payout-cycle.ts` is what moves it.
  *
@@ -191,9 +192,9 @@ export interface RewardPool {
 /** Every token's pool as of a cutoff. */
 export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
   const conn = requireDb();
-  const { fills, listings, payoutLines } = schema;
+  const { fills, listings, payoutLines, taxSweeps, launches } = schema;
 
-  const [holderFees, listingRows, allocated, pins, listed] = await Promise.all([
+  const [holderFees, listingRows, taxRows, allocated, pins, listed] = await Promise.all([
     conn
       .select({
         mint: fills.mint,
@@ -209,6 +210,17 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
       .from(listings)
       .where(lte(listings.createdAt, asOf))
       .groupBy(listings.mint),
+    // The transfer tax of a token launched on Coorwa's curve, once the sweep has sold it for COOK.
+    conn
+      .select({
+        mint: taxSweeps.mint,
+        symbol: sql<string | null>`max(${launches.symbol})`,
+        usd: sql<number>`coalesce(sum(${taxSweeps.valueUsd}), 0)`,
+      })
+      .from(taxSweeps)
+      .leftJoin(launches, eq(launches.mint, taxSweeps.mint))
+      .where(and(eq(taxSweeps.status, "sold"), lte(taxSweeps.settledAt, asOf)))
+      .groupBy(taxSweeps.mint),
     conn
       .select({
         mint: payoutLines.mint,
@@ -247,6 +259,11 @@ export async function rewardPools(asOf = new Date()): Promise<RewardPool[]> {
     p.creator = f.creator ?? p.creator;
   }
   for (const l of listingRows) pool(l.mint).holdersAccruedUsd += Number(l.usd ?? 0);
+  for (const t of taxRows) {
+    const p = pool(t.mint);
+    p.holdersAccruedUsd += Number(t.usd ?? 0);
+    p.symbol ??= t.symbol;
+  }
   // Every line a run ever wrote came out of this pool, the creator lines written while creators
   // still took a share of their own included, so all of them count against what is left to share.
   for (const a of allocated) {

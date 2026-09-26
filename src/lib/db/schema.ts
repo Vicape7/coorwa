@@ -9,6 +9,7 @@ import {
   serial,
   bigint,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /**
  * Fills Coorwa routed.
@@ -353,6 +354,47 @@ export const payoutLines = pgTable(
     index("payout_lines_mint_idx").on(t.mint),
     index("payout_lines_paid_in_idx").on(t.paidIn),
     index("payout_lines_status_idx").on(t.status),
+  ],
+);
+
+/**
+ * One sale of a token's swept transfer tax, and what it earned the token's holders.
+ *
+ * A token launched on Coorwa's curve withholds its tax in every account it lands in. The sweep
+ * (`tax-sweep.ts`) gathers that into the operator's account, sells it on the curve for COOK, and
+ * writes the COOK it got here; `rewardPools` counts every sold row as money owed to that token's
+ * holders, which is what the daily run then pays out in the pair's stock.
+ *
+ * The row is written before the sale is sent and settled once it confirms, so a call that dies in
+ * between leaves enough behind for the next one to check what landed. A row under no mint marks a
+ * finished pass over every curve, which is what spaces the passes out.
+ */
+export const taxSweeps = pgTable(
+  "tax_sweeps",
+  {
+    id: serial("id").primaryKey(),
+    /** The taxed token, or "" for the marker a finished pass leaves. */
+    mint: text("mint").notNull(),
+    /** pending until the sale confirms, then sold; failed when it never landed; pass for a marker. */
+    status: text("status").notNull(),
+    /** The sale's transaction on Cookie Chain. */
+    signature: text("signature"),
+    /** Tokens sent to the curve, before the curve's own tax on them. */
+    tokenRaw: bigint("token_raw", { mode: "bigint" }),
+    /** COOK the sale paid out, read from the program's own event. */
+    cookRaw: bigint("cook_raw", { mode: "bigint" }),
+    cookPriceUsd: doublePrecision("cook_price_usd"),
+    /** What the holders are owed for it, the COOK valued at the moment it was settled. */
+    valueUsd: doublePrecision("value_usd"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("tax_sweeps_signature_idx").on(t.signature),
+    // One sale in flight per token: a second caller's insert fails here, so it never sends.
+    uniqueIndex("tax_sweeps_one_pending_idx").on(t.mint).where(sql`${t.status} = 'pending'`),
+    index("tax_sweeps_mint_idx").on(t.mint, t.createdAt),
   ],
 );
 
