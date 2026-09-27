@@ -10,8 +10,6 @@
  * as referrer. With no referrer the programme keeps that share itself - so naming Coorwa costs the
  * trader nothing and is where the launchpad part of holder rewards comes from.
  */
-import { createPublicKey, verify } from "node:crypto";
-import bs58 from "bs58";
 import { MOMOSWAP_API, COORWA_REFERRER } from "./config";
 import { fetchJson, cachedStale, CoorwaError } from "./http";
 import { uiToRaw } from "./format";
@@ -219,104 +217,7 @@ export async function fetchCurvePosition(
   };
 }
 
-// --- Session (the launch path is signature-gated) -----------------------------------------------
-
-/**
- * The login message the launchpad verifies. Line order and the domain string are part of the
- * contract - the server re-derives this exact string, so any drift reads as a forged signature.
- */
-export function loginMessage(wallet: string, ts: number, nonce: string): string {
-  return `MOMO Login\ndomain: momoswap.fun\nnonce: ${nonce}\nwallet: ${wallet}\nts: ${ts}`;
-}
-
-export async function fetchLoginNonce(): Promise<{ nonce: string; ttlSecs?: number }> {
-  return get<{ nonce: string; ttlSecs?: number }>("/session/nonce", "login nonce");
-}
-
-/** A raw ed25519 key wrapped as DER, which is the only shape node's verifier accepts. */
-const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-
-/**
- * Check the wallet signed the message Coorwa handed it, before spending an upstream call on it.
- *
- * MomoSwap answers anything it does not like with a flat `401 Invalid signature`, which covers at
- * least three different mistakes: a wallet that signed with a different account than the one it
- * reports, a wallet that altered the message before signing, and a message rebuilt from mismatched
- * parts. Re-deriving the message here and verifying against the wallet address separates the first
- * two from the rest, so the page can say which one happened instead of forwarding a shrug.
- */
-export function verifyLoginSignature(args: {
-  wallet: string;
-  ts: number;
-  nonce: string;
-  signature: string;
-}): boolean {
-  try {
-    const key = createPublicKey({
-      key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(bs58.decode(args.wallet))]),
-      format: "der",
-      type: "spki",
-    });
-    return verify(
-      null,
-      Buffer.from(loginMessage(args.wallet, args.ts, args.nonce), "utf8"),
-      key,
-      Buffer.from(bs58.decode(args.signature)),
-    );
-  } catch {
-    // A malformed address or signature is not a verified one, which is all the caller needs.
-    return false;
-  }
-}
-
-export async function createSession(body: {
-  wallet: string;
-  ts: number;
-  nonce: string;
-  signature: string;
-}): Promise<{ token: string; wallet: string; expiresAt: number }> {
-  return post("/session", body, "launchpad session");
-}
-
 // --- Builds --------------------------------------------------------------------------------------
-
-export interface CreatePoolParams {
-  name: string;
-  symbol: string;
-  launch_ts: number;
-  duration_secs: number;
-  expiry_mode: ExpiryMode;
-  migratable: boolean;
-  anti_snipe: boolean;
-  min_buy: string;
-  max_buy_per_wallet: string;
-  max_payment_raise: string;
-}
-
-export async function uploadImage(imageBase64: string, contentType: string): Promise<string> {
-  const res = await post<{ url?: string }>(
-    "/image",
-    { imageBase64, contentType },
-    "token image upload",
-  );
-  if (!res.url) {
-    throw new CoorwaError(
-      "the launchpad did not return an image URL",
-      "retry, or supply an already-hosted image URL instead",
-    );
-  }
-  return res.url;
-}
-
-export async function buildCreatePoolTx(body: {
-  creator: string;
-  params: CreatePoolParams;
-  metadata: { name: string; symbol: string; description?: string; image?: string };
-  devBuyCook?: string;
-  session: string;
-}): Promise<BuiltTx> {
-  return post("/tx/create-pool", body, "launch build", 60_000);
-}
 
 export async function buildBuyTx(body: {
   buyer: string;

@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-198%20passing-3fb950?style=flat-square" alt="198 tests passing">
+  <img src="https://img.shields.io/badge/tests-193%20passing-3fb950?style=flat-square" alt="193 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -340,7 +340,7 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, 198 offline unit tests that run in a few seconds, and integration tests that run
+sampler Worker, 193 offline unit tests that run in a few seconds, and integration tests that run
 both programs against a real validator.
 
 **Coorwa's launch program on Cookie Chain.** `programs/corwa-launch` is the Anchor program every
@@ -437,7 +437,7 @@ these in `.env.local`:
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 198 offline unit tests
+npm run test        # 193 offline unit tests
 npm run typecheck
 npm run build
 ```
