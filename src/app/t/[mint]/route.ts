@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAddress, metadataKey } from "@/lib/launch-metadata";
-import { metadataStore } from "@/lib/launch-store";
+import { isLaunched, metadataStore } from "@/lib/launch-store";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ mint: string }
   const object = await store.get(metadataKey(mint));
   if (!object) {
     return NextResponse.json({ error: `no metadata for ${mint}` }, { status: 404 });
+  }
+  // Stored before its launch, but served only after it: see `isLaunched`.
+  if (!(await isLaunched(mint))) {
+    return NextResponse.json({ error: `${mint} has not been launched` }, { status: 404 });
   }
 
   return new NextResponse(new Uint8Array(object.body), {

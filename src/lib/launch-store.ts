@@ -165,3 +165,46 @@ export function metadataStore(): MetadataStore | null {
   if (process.env.NODE_ENV === "production") return null;
   return fileStore();
 }
+
+/** Mints whose curve has been seen on chain. A curve is never closed, so a yes is kept for good. */
+const launched = new Set<string>();
+/** Mints seen without a curve, and until when that answer stands. */
+const notLaunched = new Map<string, number>();
+/** Short, so a launch that lands a moment after its metadata was first asked for is not hidden. */
+const NOT_LAUNCHED_TTL_MS = 15_000;
+
+/**
+ * Whether a token was launched on Coorwa's program, which is what makes its stored metadata
+ * worth serving.
+ *
+ * Metadata is written before the launch transaction exists, so anyone with a throwaway wallet can
+ * store a document and an image for a mint that will never be created. Serving those would make
+ * coorwa.fun a free host for any picture at all. Only a mint with a curve gets its files served;
+ * the curve is a PDA of the program and nothing else can create it.
+ *
+ * Fails open when the chain does not answer: a real token's logo going blank during an RPC outage
+ * is the worse of the two, and nobody can choose when the RPC is down.
+ */
+export async function isLaunched(mint: string): Promise<boolean> {
+  if (launched.has(mint)) return true;
+  const until = notLaunched.get(mint);
+  if (until && until > Date.now()) return false;
+
+  const [{ Connection, PublicKey }, { fetchCurve }, { COOKIE_RPC_URL }] = await Promise.all([
+    import("@solana/web3.js"),
+    import("./launch-program"),
+    import("./config"),
+  ]);
+  try {
+    const curve = await fetchCurve(new Connection(COOKIE_RPC_URL, "confirmed"), new PublicKey(mint));
+    if (curve) {
+      launched.add(mint);
+      notLaunched.delete(mint);
+      return true;
+    }
+    notLaunched.set(mint, Date.now() + NOT_LAUNCHED_TTL_MS);
+    return false;
+  } catch {
+    return true;
+  }
+}

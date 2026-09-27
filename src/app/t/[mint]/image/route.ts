@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAddress, imageKey } from "@/lib/launch-metadata";
-import { metadataStore } from "@/lib/launch-store";
+import { isLaunched, metadataStore } from "@/lib/launch-store";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ mint: string }
   const object = await store.get(imageKey(mint));
   if (!object) {
     return NextResponse.json({ error: `no image for ${mint}` }, { status: 404 });
+  }
+  if (!(await isLaunched(mint))) {
+    return NextResponse.json({ error: `${mint} has not been launched` }, { status: 404 });
   }
 
   return new NextResponse(new Uint8Array(object.body), {
