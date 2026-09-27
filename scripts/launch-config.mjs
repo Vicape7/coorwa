@@ -36,7 +36,7 @@ const walletPath = (
 ).trim();
 
 if (!operator) {
-  console.error("NEXT_PUBLIC_COORWA_OPERATOR is not set, and it is where every fee lands.");
+  console.error("NEXT_PUBLIC_COORWA_OPERATOR is not set, and it is the key that sweeps the tax.");
   process.exit(1);
 }
 // Reading needs no key at all, so the dry run works before anyone has one to hand.

@@ -13,6 +13,7 @@ import { PublicKey } from "@solana/web3.js";
 import {
   CREATOR_LP_SHARE_BPS,
   CURVE_FEE_BPS,
+  FEE_RECIPIENT,
   GRADUATION_QUOTE,
   MIGRATION_BASE,
   SALE_BASE,
@@ -109,9 +110,10 @@ test("fees and the pool split are the ones Coorwa states in public", () => {
   assert.equal(CREATOR_LP_SHARE_BPS, 4000, "40% of the locked pool's fees to the creator");
 });
 
-test("the operator is both where fees land and who sweeps the tax", () => {
+test("the operator sweeps the tax and Coorwa's fees land in a wallet of their own", () => {
   const params = launchConfigParams("3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R");
-  assert.equal(params.feeRecipient, "3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R");
-  assert.equal(params.withholdAuthority, params.feeRecipient);
+  assert.equal(params.withholdAuthority, "3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R");
+  assert.equal(params.feeRecipient, FEE_RECIPIENT);
+  assert.notEqual(params.feeRecipient, params.withholdAuthority);
   assert.equal(params.paused, false);
 });

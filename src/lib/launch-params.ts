@@ -42,10 +42,19 @@ export const CURVE_FEE_BPS = 100;
 export const CREATOR_LP_SHARE_BPS = 4000;
 
 /**
+ * Where Coorwa's own revenue lands: its 1% of a curve trade and its share of the locked pool's fees.
+ *
+ * A wallet of its own rather than the operator, whose key sits on the Worker because it signs the
+ * sweep and the payout every hour. Nothing has to sign as this address: the program checks every
+ * fee claim against the config, and the operator pays for the claim and opens the token accounts.
+ */
+export const FEE_RECIPIENT = "BV5AxpYBztiWbW6k3owit2TFsUKDbpknENm4cEY1jUob";
+
+/**
  * The parameters `initializeConfig` is called with.
  *
- * `feeRecipient` and `withholdAuthority` are both the operator wallet: curve fees land where every
- * other fee lands, and the tax is swept by the same key that runs the daily payout.
+ * `withholdAuthority` is the operator wallet, so the tax is swept by the same key that runs the
+ * daily payout. Coorwa's fees go to `FEE_RECIPIENT` instead.
  *
  * `graduationQuote` is there for a test raise on a smaller target. The virtual quote follows it so
  * the curve keeps its shape. Rounding decides which targets work: at some (10,000 COOK is one) a
@@ -55,13 +64,14 @@ export const CREATOR_LP_SHARE_BPS = 4000;
 export function launchConfigParams(
   operator: string = COORWA_OPERATOR,
   graduationQuote: bigint = GRADUATION_QUOTE,
+  feeRecipient: string = FEE_RECIPIENT,
 ) {
   const virtualQuote = graduationQuote / 3n;
   if (virtualQuote <= 0n || (VIRTUAL_BASE * graduationQuote) / (virtualQuote + graduationQuote) > SALE_BASE) {
     throw new Error(`a graduation target of ${graduationQuote} units would sell more than the curve holds`);
   }
   return {
-    feeRecipient: operator,
+    feeRecipient,
     withholdAuthority: operator,
     curveFeeBps: CURVE_FEE_BPS,
     creatorLpShareBps: CREATOR_LP_SHARE_BPS,
