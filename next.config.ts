@@ -23,14 +23,21 @@ const nextConfig: NextConfig = {
    * The scheme comes from the `cf-visitor` header Cloudflare puts on every request it forwards.
    * Nothing matches without that header, so a local dev server on http://localhost is untouched.
    */
+  /*
+   * The root has a rule of its own because `/:path*` matches it with an empty path, and on the
+   * Worker that left the parameter unfilled: http://coorwa.fun/ was sent to a literal
+   * https://coorwa.fun/:path*, which is a 404.
+   */
   async redirects() {
+    const plainHttp = [
+      { type: "header" as const, key: "cf-visitor", value: '.*"scheme":"http".*' },
+      { type: "host" as const, value: "(www\\.)?coorwa\\.fun" },
+    ];
     return [
+      { source: "/", has: plainHttp, destination: "https://coorwa.fun/", permanent: true },
       {
         source: "/:path*",
-        has: [
-          { type: "header" as const, key: "cf-visitor", value: '.*"scheme":"http".*' },
-          { type: "host" as const, value: "(www\\.)?coorwa\\.fun" },
-        ],
+        has: plainHttp,
         destination: "https://coorwa.fun/:path*",
         permanent: true,
       },
