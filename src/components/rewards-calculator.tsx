@@ -2,46 +2,32 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import {
-  PAYOUT_MIN_USD,
-  COORWA_SWAP_FEE_BPS,
-  MOMOSWAP_REFERRAL_SHARE,
-  MOMOSWAP_TRADE_FEE_BPS,
-  HOLDER_MIN_USD,
-} from "@/lib/config";
+import { PAYOUT_MIN_USD, HOLDER_MIN_USD } from "@/lib/config";
+import { TAX_TIERS } from "@/lib/launch-params";
 import { RWA_ASSETS } from "@/lib/rwa";
 import { PillSelect } from "./ui/pill-select";
 import { GlassEffect } from "./ui/liquid-glass";
 import { SlidingNumber } from "./ui/sliding-number";
 
 /**
- * "What would I get?" on the landing page: sliders for how much a token trades through Coorwa, how
- * many wallets clear the $5 floor and how much of what they hold is yours, and the split that
- * follows, in dollars and in the stock you would take.
+ * "What would I get?" on the landing page: the transfer tax the creator picked, how much the token
+ * trades, how many wallets clear the $5 floor and how much of what they hold is yours, and what
+ * that pays, in dollars and in the stock you would take.
  *
- * Every rate comes from config, the same constants the daily payout runs on, so the page cannot
- * drift from what is actually paid. It is an estimate by construction: a real run pays on the
+ * The tax is withheld by the mint on every transfer, wherever the token trades, and all of it goes
+ * to the token's holders. Coorwa's own fees (1% of a curve trade, 60% of the locked pool's fees)
+ * are not part of it and are left out. The tiers come from the launch program's parameters, so the
+ * page cannot offer a rate a creator cannot pick. It is an estimate by construction: a real run pays on the
  * volume that happened and on sampled balances, not on a flat share.
  */
 
-const VENUES = {
-  terminal: {
-    label: "Terminal swap",
-    bps: COORWA_SWAP_FEE_BPS,
-  },
-  launchpad: {
-    label: "Launchpad curve",
-    // MomoSwap's referral share of its own curve fee. Costs the trader nothing extra.
-    bps: MOMOSWAP_TRADE_FEE_BPS * MOMOSWAP_REFERRAL_SHARE,
-  },
-} as const;
-
-type Venue = keyof typeof VENUES;
+/** The rates a creator can pick at launch; the program's unused fourth slot is zero. */
+const TIERS = TAX_TIERS.filter((bps) => bps > 0);
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 export function RewardsCalculator() {
-  const [venue, setVenue] = useState<Venue>("terminal");
+  const [taxBps, setTaxBps] = useState(200);
   const [volume, setVolume] = useState(10_000);
   const [days, setDays] = useState(30);
   const [wallets, setWallets] = useState(10);
@@ -89,9 +75,10 @@ export function RewardsCalculator() {
   );
   const price = data?.prices?.[ticker];
 
-  const fees = (volume * days * VENUES[venue].bps) / 10_000;
-  // All of it goes back to the token's holders, its creator among them, by what each one holds.
-  const holders = fees;
+  // A buy or a sell moves the token once, so the tax is the rate on the volume. All of it goes to
+  // the token's holders, its creator among them, by what each one holds.
+  const tax = (volume * days * taxBps) / 10_000;
+  const holders = tax;
   const you = (holders * share) / 100;
   const eachOther = wallets > 1 ? (holders - you) / (wallets - 1) : 0;
 
@@ -105,15 +92,15 @@ export function RewardsCalculator() {
               Hold a token, get paid in its stock.
             </h2>
           </div>
-          <div className="segmented" role="group" aria-label="Where the token trades">
-            {(Object.keys(VENUES) as Venue[]).map((v) => (
+          <div className="segmented" role="group" aria-label="Transfer tax picked by the creator">
+            {TIERS.map((bps) => (
               <button
-                key={v}
+                key={bps}
                 type="button"
-                data-active={venue === v}
-                onClick={() => setVenue(v)}
+                data-active={taxBps === bps}
+                onClick={() => setTaxBps(bps)}
               >
-                {VENUES[v].label}
+                {bps / 100}% tax
               </button>
             ))}
           </div>
@@ -123,7 +110,7 @@ export function RewardsCalculator() {
           <div className="flex flex-col gap-7">
             <Slider
               id="calc-volume"
-              label="Traded through Coorwa, per day"
+              label="Traded per day, anywhere"
               display={`$${volume.toLocaleString("en-US")}`}
               scale={logScale(100, 250_000, niceRound)}
               value={volume}
@@ -192,8 +179,8 @@ export function RewardsCalculator() {
             <Tile who="All holders, the creator among them" usd={holders} price={price} ticker={ticker} />
 
             <p className="num px-1 pt-1 text-[13px] leading-[1.6] text-subtle">
-              {money(fees)} in fees over {days} {days === 1 ? "day" : "days"} at{" "}
-              {(VENUES[venue].bps / 100).toFixed(2)}%. A wallet under ${HOLDER_MIN_USD} at the
+              {money(tax)} of tax over {days} {days === 1 ? "day" : "days"} at {taxBps / 100}%,
+              before it is sold for COOK and bridged. A wallet under ${HOLDER_MIN_USD} at the
               snapshot does not share the pool.
             </p>
           </div>

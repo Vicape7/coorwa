@@ -76,7 +76,7 @@ export default function Home() {
             href="/launch"
             title="Launchpad"
             image={launchpadArt}
-            body="Mint on a COOK bonding curve through MomoSwap and pick its stock at launch. MomoSwap's fee split is read live."
+            body="Mint on a COOK bonding curve and pick its stock and its 1 to 3% holder tax at launch. At 1M COOK it graduates into a pool locked for good."
           />
         </div>
       </Section>
@@ -118,11 +118,11 @@ export default function Home() {
       <Section>
         <RewardsCalculator />
         <p className="mt-6 max-w-[70ch] text-[14px] leading-[1.7] text-muted">
-          Every fee Coorwa earns on a token goes to the wallets holding it, by how much they hold,
-          and the wallet that created it is one of them. It comes from Coorwa&apos;s own 1% on a
-          swap and from MomoSwap&apos;s referral share of the curve fee, which costs a trader
-          nothing. Once a day it is paid out in the token&apos;s stock, straight to holders&apos;
-          wallets on Solana, with nothing to claim.{" "}
+          Every token launched on Coorwa carries a transfer tax of 1, 2 or 3%, picked by its creator
+          and fixed for good. The mint withholds it on every transfer, on the curve, in the pool
+          or anywhere else the token trades, and all of it goes to the wallets holding the token,
+          by how much they hold, the creator among them. Once a day it is paid out in the
+          token&apos;s stock, straight to holders&apos; wallets on Solana, with nothing to claim.{" "}
           <Link href="/rewards" className="text-primary underline underline-offset-4">
             See your rewards
           </Link>
