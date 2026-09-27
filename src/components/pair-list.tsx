@@ -14,7 +14,6 @@ import { TokenMark } from "./token-mark";
 import { CountUp, GraduationBar } from "./graduation";
 import { SearchGlyph } from "./ui/glyphs";
 import { PillSelect } from "./ui/pill-select";
-import { Announcement } from "./announcement";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
@@ -237,11 +236,7 @@ export function PairList({
         )}
       </div>
 
-      <div className="mt-6">
-        <Announcement compact />
-      </div>
-
-      <div className="segmented mt-4 w-full sm:w-auto">
+      <div className="segmented mt-6 w-full sm:w-auto">
         {STAGES.map(([value, label]) => (
           <button key={value} onClick={() => setStage(value)} data-active={stage === value}>
             {label}
