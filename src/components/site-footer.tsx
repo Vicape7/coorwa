@@ -7,6 +7,7 @@ const LINKS: { label: string; href: string }[] = [
   { label: "Launch", href: "/launch" },
   { label: "Rewards", href: "/rewards" },
   { label: "Roadmap", href: "/roadmap" },
+  { label: "Docs", href: "https://github.com/Vicape7/coorwa#readme" },
   { label: "Status", href: "/status" },
   { label: "Explorer", href: "https://cookiescan.io" },
   { label: "Terms", href: "/terms" },

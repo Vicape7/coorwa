@@ -78,6 +78,21 @@ const SORTS: [SortKey, string][] = [
   ["price", "Price"],
 ];
 
+type CurveSortKey = "newest" | "progress" | "raised" | "price";
+
+const CURVE_SORTS: [CurveSortKey, string][] = [
+  ["newest", "Newest"],
+  ["progress", "Graduation"],
+  ["raised", "Raised"],
+  ["price", "Price"],
+];
+
+/** What a curve tab is sorted by until someone picks: newest first on New, closest to its pool on Soon. */
+const CURVE_SORT_DEFAULT: Record<Exclude<Stage, "migrated">, CurveSortKey> = {
+  new: "newest",
+  soon: "progress",
+};
+
 export function PairList({
   initialQuery = "",
   initialQuote,
@@ -92,6 +107,9 @@ export function PairList({
   const [sort, setSort] = useState<SortKey>("liquidity");
   const [stage, setStage] = useState<Stage>("migrated");
   const onCurve = stage !== "migrated";
+  // Null follows the tab's own default, so switching tabs goes back to what each tab is for.
+  const [pickedCurveSort, setCurveSort] = useState<CurveSortKey | null>(null);
+  const curveSort = pickedCurveSort ?? (stage === "migrated" ? "newest" : CURVE_SORT_DEFAULT[stage]);
 
   const { data, error, isLoading } = useSWR<PairUniverse>(
     ticker === ALL ? "/api/pairs" : `/api/pairs?quote=${ticker}`,
@@ -208,9 +226,8 @@ export function PairList({
             row.name.toLowerCase().includes(q) ||
             row.mint.toLowerCase().startsWith(q)),
       )
-      // Newest first on New; on Soon, whichever is closest to its pool.
-      .sort((a, b) => (stage === "soon" ? b.progress - a.progress : b.startedAt - a.startedAt));
-  }, [coorwaCurves.data, curves.data, data, query, ticker, stage, stockPrices, cookUsd]);
+      .sort((a, b) => curveKey(b, curveSort) - curveKey(a, curveSort));
+  }, [coorwaCurves.data, curves.data, data, query, ticker, stage, stockPrices, cookUsd, curveSort]);
 
   const loading = onCurve ? !curves.data || !data : isLoading && !data;
   const shown = onCurve ? curveRows.length : rows.length;
@@ -238,7 +255,14 @@ export function PairList({
 
       <div className="segmented mt-6 w-full sm:w-auto">
         {STAGES.map(([value, label]) => (
-          <button key={value} onClick={() => setStage(value)} data-active={stage === value}>
+          <button
+            key={value}
+            onClick={() => {
+              setStage(value);
+              setCurveSort(null);
+            }}
+            data-active={stage === value}
+          >
             {label}
           </button>
         ))}
@@ -268,7 +292,16 @@ export function PairList({
             ...RWA_ASSETS.map((a) => ({ value: a.ticker, label: a.ticker })),
           ]}
         />
-        {!onCurve && (
+        {onCurve ? (
+          <PillSelect
+            id="terminal-curve-sort"
+            label="Sort by"
+            prefix="Sort"
+            value={curveSort}
+            onChange={(v) => setCurveSort(v as CurveSortKey)}
+            options={CURVE_SORTS.map(([value, label]) => ({ value, label }))}
+          />
+        ) : (
           <PillSelect
             id="terminal-sort"
             label="Sort by"
@@ -480,6 +513,21 @@ function age(launchTs: number): string {
   if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`;
   if (s < 86_400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86_400)}d`;
+}
+
+/** A curve row's value for a sort. Rows missing the figure go last. */
+function curveKey(row: CurveListRow, sort: CurveSortKey): number {
+  switch (sort) {
+    case "progress":
+      // A graduated curve waiting for its pool is past every live one.
+      return row.migrating ? 2 : row.progress;
+    case "raised":
+      return row.raisedUsd ?? -1;
+    case "price":
+      return row.ratio ?? -1;
+    default:
+      return row.startedAt;
+  }
 }
 
 /** Curve pairs are addressed by mint, never by symbol, so a copycat name cannot take the link. */
