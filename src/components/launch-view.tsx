@@ -20,7 +20,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { signSendConfirm, explainError } from "@/lib/tx";
-import { cookieTxUrl, COOK_DECIMALS, LAUNCH_OPEN } from "@/lib/config";
+import { cookieTxUrl, COOK_DECIMALS } from "@/lib/config";
 import { shortAddr, amount, uiToRaw } from "@/lib/format";
 import { RWA_ASSETS, DEFAULT_RWA } from "@/lib/rwa";
 import {
@@ -43,7 +43,6 @@ import { Notice } from "./notice";
 import { TokenMark } from "./token-mark";
 import { CountUp, GraduationBar } from "./graduation";
 import { CreatorLaunches } from "./creator-launches";
-import { Announcement } from "./announcement";
 import type { LaunchpadPool } from "@/lib/launchpad";
 
 /** What POST /api/launchpad/launches takes for a launch on Coorwa's own program. */
@@ -85,19 +84,19 @@ export function LaunchView() {
         </p>
       </div>
 
-      {LAUNCH_OPEN && config === null && (
+      {config === null && (
         <Notice tone="down">
           The launch program is not configured on this chain yet, so launching is closed. Nothing
           else in the app is affected.
         </Notice>
       )}
-      {LAUNCH_OPEN && error && (
+      {error && (
         <Notice tone="down">Could not read the launch program: {explainError(error)}</Notice>
       )}
 
       <div className="mt-10 grid gap-4 lg:grid-cols-[1fr_400px]">
         <div className="space-y-4">
-          {LAUNCH_OPEN ? <CreateForm config={config ?? null} /> : <Announcement />}
+          <CreateForm config={config ?? null} />
           <YourLaunches config={config ?? null} />
           <OlderLaunches />
         </div>
