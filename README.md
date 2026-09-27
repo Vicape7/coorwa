@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/built%20on-Cookie%20Chain-b0743a?style=flat-square" alt="Built on Cookie Chain">
   <img src="https://img.shields.io/badge/stocks-16%20xStocks%20on%20Solana-9945FF?style=flat-square&logo=solana&logoColor=white" alt="16 xStocks on Solana">
   <img src="https://img.shields.io/badge/deployed%20on-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers">
-  <img src="https://img.shields.io/badge/tests-145%20passing-3fb950?style=flat-square" alt="145 tests passing">
+  <img src="https://img.shields.io/badge/tests-198%20passing-3fb950?style=flat-square" alt="198 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license"></a>
 </p>
 
@@ -35,13 +35,15 @@ Cookie Chain has tokens, bonding curves and pools. **Coorwa gives it real-world 
 
 Every token on Coorwa has one of 16 tokenized stocks as its pair: NVDA, TSLA, AAPL, MSFT, GOOGL,
 AMZN, META, NFLX, AMD, PLTR, COIN, HOOD, MSTR, CRCL, SPY or QQQ. The token is quoted in that stock,
-charted against it, and its holders are paid in it. Once a day Coorwa takes the fees the token
-earned, buys the stock and sends it to every holder's own wallet. Nothing to claim.
+charted against it, and its holders are paid in it. Every token launched on Coorwa carries a
+transfer tax of 1, 2 or 3%, and once a day Coorwa turns that tax into the stock and sends it to
+every holder's own wallet. Nothing to claim.
 
-- **Launch a token with a stock attached.** Pick NVDA at launch and your token is TOKEN/NVDA from
-  its first trade.
-- **Hold it and get paid in shares.** Every fee goes to the token's holders, the wallet that
-  created it among them, by how much each one holds. Coorwa keeps none of it.
+- **Launch a token with a stock attached.** Pick NVDA and a tax at launch and your token is
+  TOKEN/NVDA from its first trade. Neither can ever change.
+- **Hold it and get paid in shares.** The tax is charged on every transfer, wherever the token
+  trades, and all of it goes to the token's holders, the wallet that created it among them, by how
+  much each one holds. Coorwa keeps none of it.
 
 <p align="center">
   <img src="docs/readme/terminal.png" alt="The COTE/NVDA pair on the Coorwa terminal" width="100%">
@@ -109,18 +111,19 @@ are.
         <li>Candles built from executed fills, not standing quotes, so the chart is genuine performance against the stock.</li>
         <li>Swaps quoted on both Cookie Chain routers, Cookiebox and Candy Shop. The better fill wins.</li>
         <li>A pair that has not traded in 24 hours shows no return, never a fake one from a flat price against a moving stock.</li>
-        <li>New, Soon and Migrated: launches still on their curve, those past 60% of graduation, and pairs trading in a real pool. A curve pair has its own page too, priced from the curve's reserves and traded on the curve. A graduated curve shows as migrating until its pool is live.</li>
-        <li>After graduation, whatever a wallet bought on the curve is claimed on the pair's own page, with one button, checked before signing like every launchpad transaction.</li>
+        <li>New, Soon and Migrated: launches still on their curve, those past 60% of graduation, and pairs trading in a real pool, each tab with its own sort. A curve pair has its own page too, priced from the curve's reserves and traded on the curve. A graduated curve shows as migrating until its pool is live, and its page switches to trading the pool by itself.</li>
+        <li>Coorwa curves and pools are charted from the program's own events, one per fill, with the amounts it actually moved.</li>
       </ul>
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/art-launchpad.png" width="96" align="right" alt="">
       <h3>Launchpad</h3>
       <ul>
-        <li>Launch on a COOK bonding curve through MomoSwap and pick your token's stock at launch, for free.</li>
-        <li>The pair is recorded only after the launch transaction is read back from the chain and found to be the launch itself: the launchpad's own create instruction over that mint and pool, signed by the mint. A trade that merely names the token is not enough, so nobody can pin a token they did not create.</li>
-        <li>Buy and sell on any curve, priced before you sign. Coorwa rebuilds the curve from the pool's own reserves and matches settled fills to the raw unit.</li>
-        <li>Creators claim their curve fees in COOK, or take them as their token's stock on Solana.</li>
+        <li>Launch on Coorwa's own program: pick the token's stock and a transfer tax of 1, 2 or 3%, with an optional first buy in the same transaction. Both choices are fixed for good.</li>
+        <li>One billion tokens, 800 million sold on a COOK bonding curve. At 1,000,000 COOK raised the program opens a Cookiebox pool with the other 200 million, locks the liquidity forever and burns what the curve did not sell. An automated job starts graduation within seconds of the curve filling.</li>
+        <li>Buy and sell on the curve, priced before you sign by the same arithmetic the program runs, matched to the unit on real fills.</li>
+        <li>The creator earns 40% of what the locked pool earns in fees, paid by the program straight to their wallet, for as long as the pool exists.</li>
+        <li>Tokens launched on MomoSwap before Coorwa had its own program keep trading here, and their creators still claim their curve fees on the launch page.</li>
       </ul>
     </td>
   </tr>
@@ -130,7 +133,7 @@ are.
       <h3>Holder rewards</h3>
       <ul>
         <li>Hold a token and get paid in its stock, every day, with nothing to claim.</li>
-        <li>Every fee on a token goes to that token's holders, all of it, shared by what each wallet holds. A creator takes no separate share: they are paid for what they hold, like anyone else.</li>
+        <li>A token's whole transfer tax goes to that token's holders, shared by what each wallet holds. A creator takes no separate share of it: they are paid for what they hold, like anyone else.</li>
         <li>Holders are sampled at random moments through the day, so a snapshot cannot be timed.</li>
         <li>The rewards page shows every token's waiting pool and the next run, and a connected wallet sees what is coming to it.</li>
       </ul>
@@ -169,29 +172,53 @@ also lives on Solana, and Cookie Chain's own bridge moves it between the two.
 
 ## How holders get paid
 
-Every fee Coorwa earns on a token forms that token's pool. Fees on CHAT go to CHAT's holders and
-CHAT's creator, and to nobody else.
+A token launched on Coorwa pays its holders from its own transfer tax. The mint withholds it on
+every transfer, on the curve, in the pool, in another app or between two wallets, so the token
+earns for its holders wherever it trades, not only here. The tax on TOKEN goes to TOKEN's holders
+and to nobody else.
 
-| Source | Rate | Who pays |
+| Source | Rate | Goes to |
 | --- | --- | --- |
-| Launchpad curve buy | 0.2% of the trade | Nobody extra. It is MomoSwap's referral share of its 1% curve fee, which MomoSwap keeps when no referrer is named |
-| Terminal swap | 1% of the COOK leg | The trader, shown on the panel before signing |
-| Setting a token's pair | $1, once | The token's creator. All of it goes to holders |
+| Transfer tax on a Coorwa token | 1, 2 or 3% of every transfer, picked at launch | The token's holders, all of it |
+| Buy or sell on a Coorwa curve | 1% of the trade | Coorwa |
+| The locked pool after graduation | The pool's own trading fee | 40% the creator, 60% Coorwa |
+
+Tokens launched on MomoSwap before Coorwa had its own program have no tax, so they keep the older
+rule: Coorwa's 1% on a terminal swap and MomoSwap's referral share of its curve fee go to their
+holders instead.
 
 ```mermaid
 flowchart LR
   subgraph CC["Cookie Chain"]
-    F["Fees on a paired token<br/>curve referral · swap fee"]
+    T["Transfer tax<br/>withheld by the mint"]
+    S["Hourly sweep<br/>sold for COOK"]
     O["Operator wallet<br/>public address"]
   end
   subgraph SOL["Solana"]
     J["Jupiter<br/>COOK to the stock"]
     H["Holders<br/>same address as on Cookie Chain"]
   end
-  F --> O
+  T --> S --> O
   O -- "Hyperlane warp route" --> J
-  J -- "every fee, by what each wallet holds" --> H
+  J -- "all of it, by what each wallet holds" --> H
 ```
+
+### The hourly sweep
+
+Token-2022 does not pay a transfer fee to anyone when it is charged: it is held back inside the
+account the tokens landed in, and only the mint's withdraw authority can take it out. Coorwa's
+operator wallet is that authority for every token launched here, so once an hour it
+(`src/lib/tax-sweep.ts`):
+
+1. **Harvests** the withheld tax out of every holder's account into the mint, which anyone may do.
+2. **Withdraws** it from the mint and **sells** all of it for COOK, to the curve or, after
+   graduation, to the token's pool, in the same transaction.
+3. **Writes** the COOK the sale paid, valued in dollars, as owed to that token's holders.
+
+The sale is written down before it is sent and settled from the chain afterwards, and only one
+unsettled sale per token fits in the table, so a pass that dies halfway cannot sell twice. The same
+pass then claims Coorwa's curve and pool fees for the token (`src/lib/fee-claims.ts`) into a wallet
+of their own, apart from the operator.
 
 ### The daily run
 
@@ -219,12 +246,13 @@ checked against the chain on the next call instead of paying twice.
   two samples within 30 minutes, always one within two hours, otherwise a 15% chance. That lands a
   sample about once an hour at a minute nobody can predict. A wallet that buys before one sample and
   sells after it weighs one sample against a holder's whole day.
-- **Real holders only.** Balances are read from the chain under both token programs, and for a
-  token still on its curve, from curve shares. Program-owned accounts (pool vaults, curves,
-  escrows) and Coorwa's own wallet are dropped, and a wallet needs at least $5 of the token.
+- **Real holders only.** Balances are read from the chain under both token programs. A Coorwa curve
+  delivers the token to the buyer's own wallet on every buy, so its holders are real from the first
+  trade. Program-owned accounts (pool vaults, curves, escrows) and Coorwa's own wallets are dropped,
+  and a wallet needs at least $5 of the token.
 - **No dust payouts.** A wallet is paid once it is owed $1 in a stock, since the first payout opens
   a token account on Solana. Anything smaller carries over to the next run.
-- **Open books.** Fees wait in one operator wallet,
+- **Open books.** The tax and fees owed to holders wait in one operator wallet,
   [`3y5zHNgQ…Pt8R`](https://cookiescan.io/address/3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R),
   between collection and the daily run, because buying a stock on
   Solana needs a key to sign it. Every run, with its total, its costs, how many wallets it paid and
@@ -239,9 +267,29 @@ checked against the chain on the next call instead of paying twice.
 built by an upstream service or by Coorwa's own instruction builders, simulated, then signed in the
 user's own wallet.
 
-- **The wallet signs what the user asked for.** Every MomoSwap build (launch, buy, sell, creator fee
-  claim) is checked in the browser on the exact bytes about to be signed (`src/lib/expectation.ts`).
-  First against MomoSwap's own declaration of what it built, then against the user's request: only
+- **The launch program keeps its promises on chain, not on a web page.** Each one is something a
+  buyer can check on the mint or the program rather than take on trust
+  (`programs/corwa-launch`):
+  - *The tax can never change.* The mint's transfer fee authority is set to none the moment the
+    mint is created, not renounced later, so there is no window in which anyone could raise it.
+  - *The supply is fixed and the mint is sealed.* The whole supply is minted once, in the launch
+    instruction, and the mint authority is dropped before it returns. There is no freeze authority
+    and no permanent delegate, so nobody can mint, freeze or seize.
+  - *The curve cannot be drained.* COOK only leaves a curve through a sell, priced by the same
+    invariant that let it in, and the program's fees are counted apart from the reserve, so
+    claiming them can never eat into what sellers are owed.
+  - *The pool is locked for good.* Graduation opens the Cookiebox pool itself, locks the whole
+    position and burns the tokens the curve did not sell. If someone opened the token's pool first,
+    the program swaps it back to the curve's closing price, refuses anything more than 1% off, and
+    requires at least 99.5% of one side to go into the pool.
+
+  What Coorwa still holds is the program's upgrade authority and the right to pause new launches.
+  The upgrade authority will be given up once the program has run quietly for a while.
+- **The wallet signs what the user asked for.** Coorwa curve trades are built in the browser from the
+  program's own instruction builders and quoted by the same arithmetic the program runs. For tokens
+  launched on MomoSwap, every MomoSwap build (buy, sell, creator fee claim) is checked in the
+  browser on the exact bytes about to be signed (`src/lib/expectation.ts`). First against
+  MomoSwap's own declaration of what it built, then against the user's request: only
   five programs allowed, COOK may only move into the wallet's own wrapped COOK account and never
   more than the trade spends, no token transfers or approvals, the amount, pool, referrer, name and
   symbol must match, and no priority fee above 0.001 COOK. Anything else stops with a sentence
@@ -261,8 +309,9 @@ user's own wallet.
   written: it has to exist, to have succeeded, and to be signed by the wallet reporting it. Which
   token it traded is read from the transaction too, from the balance that moved for a swap and from
   the launchpad's own instruction for a curve fill, so a fill cannot be pointed at a token it never
-  touched. Every fee is measured rather than worked out: a swap fee is the COOK that reached the
-  operator, a referral is the wrapped COOK that reached it, and a transaction that merely names
+  touched. A Coorwa curve fill is read from the program's own `Traded` event, which carries the
+  amounts it actually moved. Every fee is measured rather than worked out: a swap fee is the COOK
+  that reached the operator, a referral is the wrapped COOK that reached it, and a transaction that merely names
   Coorwa has paid it nothing (`src/lib/onchain.ts`, `src/app/api/rewards/record/route.ts`).
 - **The swap fee is in plain sight.** Neither Cookie Chain router pays a referrer, so Coorwa appends
   one COOK transfer to the router's own transaction, server side, and shows it on the panel before
@@ -291,15 +340,25 @@ user's own wallet.
 
 **Stack.** Next.js 16 and React 19 on Cloudflare Workers through OpenNext, Postgres (Neon) through
 Hyperdrive with drizzle, `@solana/web3.js` and Anchor, TradingView lightweight-charts, a holder
-sampler Worker, and 145 offline unit tests that run in a few seconds.
+sampler Worker, 198 offline unit tests that run in a few seconds, and integration tests that run
+both programs against a real validator.
 
-**Coorwa's own program on Cookie Chain.** `programs/corwa-vault` is an Anchor merkle distributor
-Coorwa wrote and deployed on Cookie Chain at
-[`83cPao5i…ywdYg`](https://cookiescan.io/address/83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg). Its
-toolchain is pinned in a container, and `npm run program:test` exercises it against a real
-validator: claims, double claims, claiming someone else's line, forged proofs, epochs the vault
-cannot back, and publishing from the wrong key. It was Coorwa's claim-based payout path before
-daily payouts replaced claims.
+**Coorwa's launch program on Cookie Chain.** `programs/corwa-launch` is the Anchor program every
+token on Coorwa launches from, deployed at
+[`DT7Jds9L…zxuvZq`](https://cookiescan.io/address/DT7Jds9LADV82pdKyDBcYPDfb7vaKvHcbyEG48zxuvZq). It
+mints the taxed Token-2022 token, runs the curve, graduates into a locked Cookiebox pool and splits
+that pool's fees. Its toolchain is pinned in a container, and `npm run program:test` runs it against
+a real validator with the real Cookiebox pool program loaded: launches, buys and sells with the tax
+live, graduation, fee claims, and a pool opened early by somebody else
+(`tests/integration/launch.test.ts`, `squat.test.ts`). Its config (curve shape, target, tax tiers,
+where fees go) is written by `npm run launch:config` from `src/lib/launch-params.ts`, so the app and
+the chain read the same numbers.
+
+**The older vault program.** `programs/corwa-vault` is an Anchor merkle distributor Coorwa deployed
+at [`83cPao5i…ywdYg`](https://cookiescan.io/address/83cPao5iemCJ6dj9ni7KXGo7JCVHtQu2jfMVuD7ywdYg),
+Coorwa's claim-based payout path before daily payouts replaced claims. Its tests cover claims,
+double claims, claiming someone else's line, forged proofs, epochs the vault cannot back, and
+publishing from the wrong key.
 
 Nothing in the app calls it today. The deployed vault still holds 15,895 COOK, about a dollar: one
 early pair payment from before payouts moved to the operator wallet, and a 10 COOK test deposit. It
@@ -315,10 +374,19 @@ src/
     candles.ts        Candles from executed fills, the stock series and the ratio series
     swap.ts           Both Cookie Chain routers, quoted head to head
     swap-fee.ts       Coorwa's fee, appended to the router's transaction or dropped if it will not fit
-    launchpad.ts      MomoSwap client
-    curve.ts          Bonding-curve pricing, free of the network so the browser can quote a fill
-    curve-pairs.ts    Pairs still on their curve, priced from its reserves, with fills valued in USD
-    expectation.ts    A launchpad transaction checked against what was asked for, before signing
+    launch-program.ts Client for Coorwa's launch program: instructions, quotes, curves, Traded events
+    launch-params.ts  What the program's config is written with
+    launch-flow.ts    What the browser builds: a launch, its first buy, curve and pool trades
+    launch-metadata.ts A token's name, symbol and image, signed by its creator and hosted on R2
+    coorwa-pairs.ts   A Coorwa curve or pool as a pair, priced in its stock
+    chain-fills.ts    Fills read from the chain: the program's events and DAMM pool swaps
+    tax-sweep.ts      The hourly sweep: withheld tax harvested, sold for COOK, owed to holders
+    fee-claims.ts     Coorwa's curve and pool fees, claimed in the same pass
+    graduation-crank.ts Starts graduation the moment a curve fills
+    launchpad.ts      MomoSwap client, for tokens launched there before
+    curve.ts          MomoSwap bonding-curve pricing, free of the network so the browser can quote a fill
+    curve-pairs.ts    MomoSwap pairs still on their curve, priced from its reserves
+    expectation.ts    A MomoSwap transaction checked against what was asked for, before signing
     swap-check.ts     A swap build judged by what simulating it does to the wallet, before signing
     launches.ts       Tokens launched here and the stock each creator picked
     listings.ts       The two pairs bought before pairing a token from outside was closed
@@ -336,7 +404,8 @@ src/
   app/api/            Server routes: every rate-limited upstream call is proxied and cached here
   components/         UI
 
-programs/corwa-vault/ The Anchor program, with its committed IDL checked against the client in tests
+programs/corwa-launch/ The launch program, with its committed IDL
+programs/corwa-vault/ The older vault program, with its committed IDL checked against the client in tests
 workers/holder-sampler/ Worker that asks the app for a holder sample every five minutes
 tests/                Unit tests, offline; integration/ runs the program against a real validator
 ```
@@ -359,15 +428,16 @@ these in `.env.local`:
 | `DATABASE_URL` | Pairs, fills and rewards. Create the tables with `npm run db:push` |
 | `SOLANA_SERVER_RPC_URL` | Solana RPC for every Solana call: payouts, payment checks, and the browser's own reads through `/api/solana-rpc`. Server only, never `NEXT_PUBLIC`. Use a provider such as Helius; without it the public endpoint is used, which is heavily throttled |
 | `SOLANA_BROWSER_RPC_URL` | Optional second Solana key for the browser relay, so traffic from the site cannot eat the rate limit the payout run needs. Defaults to the one above |
-| `NEXT_PUBLIC_COORWA_OPERATOR` | The operator wallet's public address, which receives fees and pays holders |
-| `COORWA_OPERATOR_KEY` | The operator keypair (base58 or JSON array). Server only; without it payout runs stay off |
+| `NEXT_PUBLIC_COORWA_OPERATOR` | The operator wallet's public address, which sweeps the tax, holds what holders are owed and pays them |
+| `COORWA_OPERATOR_KEY` | The operator keypair (base58 or JSON array). Server only; without it the sweep and payout runs stay off |
+| `GRADUATION_CRANK` | `on` lets the scheduler graduate a curve the moment it fills. Off otherwise |
 | `HOLDER_SAMPLE_SECRET` | Bearer secret for `POST /api/cashback/sample`, the holder sampler's endpoint |
 | `COORWA_REFERRER` | Launchpad referrer, defaults to the operator |
 | `NEXT_PUBLIC_COOKIE_RPC_URL` | Cookie Chain RPC, defaults to `https://rpc.cookiescan.io` |
 | `JUPITER_API_KEY` | Optional, raises Jupiter rate limits |
 
 ```bash
-npm run test        # 145 offline unit tests
+npm run test        # 198 offline unit tests
 npm run typecheck
 npm run build
 ```
@@ -389,7 +459,8 @@ npm run deploy                                 # builds, then uploads
 ```
 
 `NEXT_PUBLIC_*` values are baked into the bundle at build time, so they come from `.env.local` on the
-machine that builds. `npm run preview` runs the built Worker locally.
+machine that builds. `npm run preview` runs the built Worker locally. Token metadata is stored in an
+R2 bucket bound as `METADATA`; under `next dev` it falls back to files in `.coorwa-metadata`.
 
 Holder samples need something to `POST /api/cashback/sample` every five minutes with
 `authorization: Bearer <HOLDER_SAMPLE_SECRET>`. `workers/holder-sampler` does it from a cron trigger
@@ -401,8 +472,17 @@ The program needs a specific Rust, Agave and Anchor, so all three are pinned in 
 The only requirement is Docker:
 
 ```bash
-npm run program:build    # compile, and copy the IDL to programs/corwa-vault/idl.json
+npm run program:build    # compile both programs, and copy each IDL next to its source
 npm run program:test     # integration tests against a throwaway validator
+```
+
+Three scripts drive the launch program by hand. Each prints what it would do and sends nothing
+without `--send`:
+
+```bash
+npm run launch:config              # write the program's config from src/lib/launch-params.ts
+npm run launch:graduate -- <mint>  # graduate a filled curve, as the scheduled crank does
+npm run launch:claim -- <mint>     # claim a token's curve and pool fees
 ```
 
 ---
@@ -426,7 +506,7 @@ under the [MIT license](LICENSE)
 
 ---
 
-<sub>Coorwa never holds your tokens and never signs for you. Fees wait in its operator wallet until
-the daily run pays them out. Tokens on Cookie Chain are volatile and can lose all their value,
+<sub>Coorwa never holds your tokens and never signs for you. The tax and fees owed to holders wait in
+its operator wallet until the daily run pays them out. Tokens on Cookie Chain are volatile and can lose all their value,
 tokenized stocks carry issuer risk of their own, and rewards are not guaranteed. Nothing here is
 investment advice.</sub>
