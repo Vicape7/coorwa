@@ -18,6 +18,7 @@ import {
   sniffImageType,
 } from "@/lib/launch-metadata";
 import { metadataStore, verifyMetadataSignature } from "@/lib/launch-store";
+import { tooManyRequests, withinLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -66,6 +67,8 @@ async function mintExists(mint: string): Promise<boolean> {
  * creator signs a message naming their mint, and that signature is the whole authorisation.
  */
 export async function POST(req: Request) {
+  if (!(await withinLimit("METADATA_LIMITER", req))) return tooManyRequests();
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(

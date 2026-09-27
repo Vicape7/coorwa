@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { browserSolanaRpcUrl } from "@/lib/config";
+import { tooManyRequests, withinLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,8 @@ interface Call {
  * secret and the browser talks to this instead, which passes on the calls above and nothing else.
  */
 export async function POST(req: Request) {
+  if (!(await withinLimit("RPC_LIMITER", req))) return tooManyRequests();
+
   const body = await req.text();
   if (body.length > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "that request is too large" }, { status: 413 });

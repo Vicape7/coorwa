@@ -47,6 +47,13 @@
       "id": "49a82f9d72ea4da7acc4784ba0470a41"
     }
   ],
+  // Per-IP limits on the Solana relay (a paid RPC key) and on metadata writes (R2), read by
+  // src/lib/rate-limit.ts. Far above what the site sends, low enough to stop a script. A namespace
+  // id is any number unique on the account.
+  "ratelimits": [
+    { "name": "RPC_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 10 } },
+    { "name": "METADATA_LIMITER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
+  ],
   "vars": {
     // The operator wallet, named as referrer on launchpad buys. A public address, not a secret.
     "COORWA_REFERRER": "3y5zHNgQRSqnjxGSP8TpPoRdixQLEfes7qSqRDejPt8R"
