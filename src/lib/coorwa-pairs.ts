@@ -30,28 +30,9 @@ import {
 import { metadataKey } from "./launch-metadata";
 import { metadataStore } from "./launch-store";
 import { curveSlug } from "./pair-slug";
+import { serialiseCurve, type CoorwaCurve } from "./launch-flow";
 
-export interface CoorwaCurve {
-  address: string;
-  creator: string;
-  taxBps: number;
-  curveFeeBps: number;
-  creatorLpShareBps: number;
-  state: "live" | "graduated" | "pooled";
-  /** Raw u64s, as strings: the page turns them back into bigints to quote a trade. */
-  virtualBase: string;
-  virtualQuote: string;
-  baseSold: string;
-  quoteRaised: string;
-  graduationQuote: string;
-  saleBase: string;
-  migrationBase: string;
-  feesQuote: string;
-  /** How far the raise has come, 0 to 1. */
-  progress: number;
-  /** Unix seconds the curve opened. */
-  startedAt: number;
-}
+export type { CoorwaCurve };
 
 export interface CoorwaPair {
   slug: string;
@@ -121,30 +102,6 @@ async function graduatedPool(
   };
 }
 
-export function serialiseCurve(curve: CurveState): CoorwaCurve {
-  return {
-    address: curve.address.toBase58(),
-    creator: curve.creator.toBase58(),
-    taxBps: curve.taxBps,
-    curveFeeBps: curve.curveFeeBps,
-    creatorLpShareBps: curve.creatorLpShareBps,
-    state: curve.state,
-    virtualBase: curve.virtualBase.toString(),
-    virtualQuote: curve.virtualQuote.toString(),
-    baseSold: curve.baseSold.toString(),
-    quoteRaised: curve.quoteRaised.toString(),
-    graduationQuote: curve.graduationQuote.toString(),
-    saleBase: curve.saleBase.toString(),
-    migrationBase: curve.migrationBase.toString(),
-    feesQuote: curve.feesQuote.toString(),
-    startedAt: curve.createdAt,
-    progress:
-      curve.graduationQuote > 0n
-        ? Math.min(1, Number((curve.quoteRaised * 10_000n) / curve.graduationQuote) / 10_000)
-        : 0,
-  };
-}
-
 /** COOK per whole token at the curve's current reserves. */
 export function coorwaPriceCook(curve: CoorwaCurve): number {
   const base = BigInt(curve.virtualBase) - BigInt(curve.baseSold);
@@ -183,6 +140,18 @@ async function hostedMetadata(
   }
 }
 
+/**
+ * Which stock each mint is paired with. A curve the cached maps do not know is nearly always a
+ * launch from the last few seconds, so they are read again once rather than hiding the token until
+ * the cache runs out.
+ */
+async function pairings(mints: string[]): Promise<(mint: string) => string | undefined> {
+  const [pinned, listed] = await Promise.all([benchmarks(), listedByMint()]);
+  const known = (map: Map<string, string>) => (m: string) => map.get(m) ?? listed.get(m);
+  if (mints.every((m) => known(pinned)(m))) return known(pinned);
+  return known(await benchmarks({ fresh: true }));
+}
+
 /** Resolve `<mint>-<ticker>` to a Coorwa curve pair, when that mint was launched in that asset. */
 export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
   const idx = slug.lastIndexOf("-");
@@ -200,8 +169,8 @@ export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
   }
   if (!curve) return null;
 
-  const [pinned, listed] = await Promise.all([benchmarks(), listedByMint()]);
-  if ((pinned.get(mint) ?? listed.get(mint)) !== asset.ticker) return null;
+  const tickerOf = await pairings([mint]);
+  if (tickerOf(mint) !== asset.ticker) return null;
 
   const [cookPriceUsd, prices, meta, day] = await Promise.all([
     fetchCookPriceUsd(),
@@ -256,14 +225,14 @@ export async function findCoorwaPair(slug: string): Promise<CoorwaPair | null> {
 
 /** Every Coorwa curve, graduated or not, as pairs, for the terminal's own list. */
 export async function coorwaPairs(): Promise<CoorwaPair[]> {
-  const [pinned, listed] = await Promise.all([benchmarks(), listedByMint()]);
   const { fetchCurves } = await import("./launch-program");
   const curves = await fetchCurves(new Connection(COOKIE_RPC_URL, "confirmed")).catch(() => []);
+  const tickerOf = await pairings(curves.map((c) => c.mint.toBase58()));
 
   const out: CoorwaPair[] = [];
   for (const curve of curves) {
     const mint = curve.mint.toBase58();
-    const ticker = pinned.get(mint) ?? listed.get(mint);
+    const ticker = tickerOf(mint);
     if (!ticker) continue;
     const pair = await findCoorwaPair(curveSlug(mint, ticker));
     if (pair) out.push(pair);

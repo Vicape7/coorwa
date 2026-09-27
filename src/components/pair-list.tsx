@@ -11,6 +11,7 @@ import type { CoorwaPair, PairUniverse } from "@/lib/pairs";
 import type { LaunchpadPool } from "@/lib/launchpad";
 import type { CoorwaPair as CoorwaCurvePair } from "@/lib/coorwa-pairs";
 import { TokenMark } from "./token-mark";
+import { CountUp, GraduationBar } from "./graduation";
 import { SearchGlyph } from "./ui/glyphs";
 import { PillSelect } from "./ui/pill-select";
 import { Announcement } from "./announcement";
@@ -108,7 +109,8 @@ export function PairList({
   const coorwaCurves = useSWR<{ pairs: CoorwaCurvePair[] }>(
     onCurve ? "/api/coorwa/curves" : null,
     fetcher,
-    { refreshInterval: 20_000, keepPreviousData: true },
+    // Faster than the other lists: a launch a moment ago should show up here while its creator looks.
+    { refreshInterval: 10_000, keepPreviousData: true },
   );
 
   const rows = useMemo(() => {
@@ -503,13 +505,10 @@ function Progress({ value, migrating }: { value: number; migrating: boolean }) {
   }
   return (
     <span className="flex items-center gap-2.5">
-      <span className="h-1 flex-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-        <span
-          className="block h-full rounded-full bg-[var(--color-cookie)]"
-          style={{ width: `${Math.round(value * 100)}%` }}
-        />
+      <GraduationBar progress={value} className="flex-1" />
+      <span className="num w-9 text-right text-[12px] text-muted">
+        <CountUp value={value * 100} format={(n) => `${Math.floor(n)}%`} />
       </span>
-      <span className="num w-9 text-right text-[12px] text-muted">{Math.floor(value * 100)}%</span>
     </span>
   );
 }

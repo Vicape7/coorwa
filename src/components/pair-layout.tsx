@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
 import { TokenMark } from "./token-mark";
+import { CountUp, GraduationBar } from "./graduation";
 import type { RewardPool } from "@/lib/rewards-ledger";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -19,6 +20,8 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 export interface AboutStat {
   label: string;
   value: string;
+  /** A number the value is drawn from, when it should count up to each new figure instead of jumping. */
+  count?: { to: number; format: (n: number) => string };
   /** 0 to 1, drawn as a thin bar under the value. */
   progress?: number;
 }
@@ -64,17 +67,15 @@ export function PairLayout({
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 lg:justify-end">
           {stats.map((s) => (
-            <div key={s.label} className="min-w-[112px] lg:text-right">
+            <div
+              key={s.label}
+              className={`${s.progress != null ? "min-w-[200px]" : "min-w-[112px]"} lg:text-right`}
+            >
               <div className="text-[12px] text-subtle">{s.label}</div>
-              <div className="num mt-0.5 text-[14px] text-primary">{s.value}</div>
-              {s.progress != null && (
-                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-cookie)]"
-                    style={{ width: `${Math.min(100, Math.round(s.progress * 100))}%` }}
-                  />
-                </div>
-              )}
+              <div className="num mt-0.5 text-[14px] text-primary">
+                {s.count ? <CountUp value={s.count.to} format={s.count.format} /> : s.value}
+              </div>
+              {s.progress != null && <GraduationBar progress={s.progress} className="mt-2 [--grad-h:6px]" />}
             </div>
           ))}
           <div className="flex flex-wrap gap-2">

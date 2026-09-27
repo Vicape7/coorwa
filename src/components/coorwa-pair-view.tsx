@@ -8,27 +8,71 @@
  * panel builds its trades in this page. What the token pays its holders is its transfer tax, so
  * that is what the About strip leads with.
  */
+import { useCallback, useState } from "react";
 import useSWR from "swr";
+import { PublicKey } from "@solana/web3.js";
+import { useConnection } from "@solana/wallet-adapter-react";
 import { RatioChart } from "./ratio-chart";
 import { RecentTrades } from "./recent-trades";
 import { CoorwaPanel } from "./coorwa-panel";
+import { GraduationNotice, type GraduationEvent } from "./graduation";
 import { HolderRewards, Fact, ExtLink } from "./pair-view";
 import { ActivityCard, PairLayout, PanelIdentity, useRewardPool } from "./pair-layout";
 import { usd, amount, rwaRatio, shortAddr } from "@/lib/format";
 import { COOK_DECIMALS, CURVE_TOKEN_DECIMALS, cookieAccountUrl } from "@/lib/config";
 import { TOTAL_SUPPLY } from "@/lib/launch-params";
+import { fetchCurve } from "@/lib/launch-program";
+import { serialiseCurve } from "@/lib/launch-flow";
 import type { CoorwaPair } from "@/lib/coorwa-pairs";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
-  const { data } = useSWR<CoorwaPair>(`/api/pair/${initial.slug}/coorwa`, fetcher, {
-    refreshInterval: 15_000,
+  const { connection } = useConnection();
+  const { data, mutate } = useSWR<CoorwaPair>(`/api/pair/${initial.slug}/coorwa`, fetcher, {
+    // Quicker while the pool is being opened, so the page moves on to it as soon as it exists.
+    refreshInterval: (latest) => (latest?.curve?.state === "graduated" ? 3_000 : 15_000),
     fallbackData: initial,
     keepPreviousData: true,
   });
   const pair = data && "curve" in data ? data : initial;
   const { curve } = pair;
+
+  // A graduation seen while the page is open, raised once per step: the curve filling, then the
+  // pool opening. Derived during render from the state the page last drew.
+  const [seenState, setSeenState] = useState(curve.state);
+  const [event, setEvent] = useState<GraduationEvent | null>(null);
+  if (curve.state !== seenState) {
+    setSeenState(curve.state);
+    if (seenState === "live" && event?.kind !== "graduated") {
+      setEvent({ kind: "graduated", mine: false, id: (event?.id ?? 0) + 1 });
+    } else if (seenState === "graduated" && curve.state === "pooled" && !event) {
+      setEvent({ kind: "pooled", mine: false, id: 1 });
+    }
+  }
+  const closeEvent = useCallback(() => setEvent(null), []);
+
+  /**
+   * After a trade: the curve read straight off the chain and drawn at once, then the whole pair from
+   * the server for the price and the rest. The chain read is one account and lands in well under a
+   * second; the server's answer carries prices and the day's fills and takes longer.
+   */
+  const onTraded = useCallback(
+    ({ graduates }: { graduates: boolean }) => {
+      if (graduates) setEvent((e) => ({ kind: "graduated", mine: true, id: (e?.id ?? 0) + 1 }));
+      void (async () => {
+        const fresh = await fetchCurve(connection, new PublicKey(initial.base.mint)).catch(() => null);
+        if (fresh) {
+          await mutate(
+            (current) => (current && "curve" in current ? { ...current, curve: serialiseCurve(fresh) } : current),
+            { revalidate: false },
+          );
+        }
+        await mutate();
+      })();
+    },
+    [connection, initial.base.mint, mutate],
+  );
   const { pool: rewards } = useRewardPool(pair.base.mint);
   const targetCook = Number(curve.graduationQuote) / 10 ** COOK_DECIMALS;
   const raisedCook = Number(curve.quoteRaised) / 10 ** COOK_DECIMALS;
@@ -57,6 +101,7 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
           : {
               label: "Graduation",
               value: `${amount(raisedCook, 0)} / ${amount(targetCook, 0)} COOK`,
+              count: { to: raisedCook, format: (n) => `${amount(Math.round(n), 0)} / ${amount(targetCook, 0)} COOK` },
               progress: curve.progress,
             },
       ]}
@@ -73,17 +118,32 @@ export function CoorwaPairView({ initial }: { initial: CoorwaPair }) {
         },
       ]}
       panel={
-        <CoorwaPanel
-          pair={pair}
-          header={
-            <PanelIdentity
-              logo={pair.base.logo}
-              name={pair.base.name}
+        <>
+          <CoorwaPanel
+            pair={pair}
+            onTraded={onTraded}
+            header={
+              <PanelIdentity
+                logo={pair.base.logo}
+                name={pair.base.name}
+                symbol={pair.base.symbol}
+                sub={`priced in ${pair.quote.ticker}`}
+              />
+            }
+          />
+          {/* Drawn over the page through a portal; it sits here only to belong to the panel. */}
+          {event && (
+            <GraduationNotice
+              event={event}
+              state={curve.state}
               symbol={pair.base.symbol}
-              sub={`priced in ${pair.quote.ticker}`}
+              logo={pair.base.logo}
+              raisedCook={raisedCook}
+              poolHref={pair.pool ? cookieAccountUrl(pair.pool.address) : null}
+              onClose={closeEvent}
             />
-          }
-        />
+          )}
+        </>
       }
       chart={
         <RatioChart

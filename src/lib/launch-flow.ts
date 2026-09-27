@@ -147,6 +147,57 @@ export function openingCurve(
   };
 }
 
+/** A curve as it crosses from the server to the page, or as the page reads it for itself. */
+export interface CoorwaCurve {
+  address: string;
+  creator: string;
+  taxBps: number;
+  curveFeeBps: number;
+  creatorLpShareBps: number;
+  state: "live" | "graduated" | "pooled";
+  /** Raw u64s, as strings: the page turns them back into bigints to quote a trade. */
+  virtualBase: string;
+  virtualQuote: string;
+  baseSold: string;
+  quoteRaised: string;
+  graduationQuote: string;
+  saleBase: string;
+  migrationBase: string;
+  feesQuote: string;
+  /** How far the raise has come, 0 to 1. */
+  progress: number;
+  /** Unix seconds the curve opened. */
+  startedAt: number;
+}
+
+/**
+ * A curve account in the shape the page is sent. Lives here rather than beside the server's pair
+ * code so the page can read a curve straight after a trade and show it without waiting on a poll.
+ */
+export function serialiseCurve(curve: CurveState): CoorwaCurve {
+  return {
+    address: curve.address.toBase58(),
+    creator: curve.creator.toBase58(),
+    taxBps: curve.taxBps,
+    curveFeeBps: curve.curveFeeBps,
+    creatorLpShareBps: curve.creatorLpShareBps,
+    state: curve.state,
+    virtualBase: curve.virtualBase.toString(),
+    virtualQuote: curve.virtualQuote.toString(),
+    baseSold: curve.baseSold.toString(),
+    quoteRaised: curve.quoteRaised.toString(),
+    graduationQuote: curve.graduationQuote.toString(),
+    saleBase: curve.saleBase.toString(),
+    migrationBase: curve.migrationBase.toString(),
+    feesQuote: curve.feesQuote.toString(),
+    startedAt: curve.createdAt,
+    progress:
+      curve.graduationQuote > 0n
+        ? Math.min(1, Number((curve.quoteRaised * 10_000n) / curve.graduationQuote) / 10_000)
+        : 0,
+  };
+}
+
 /**
  * A curve as the page received it, turned back into the shape the quote functions take.
  *

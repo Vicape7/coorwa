@@ -79,6 +79,11 @@ export async function cached<T>(key: string, ttlMs: number, load: () => Promise<
   return p;
 }
 
+/** Drop one cached value, so the next read goes upstream. Only this isolate's copy is dropped. */
+export function forget(key: string): void {
+  cache.delete(key);
+}
+
 /** Serve a stale value rather than an error when the upstream is briefly down. */
 export async function cachedStale<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
   try {

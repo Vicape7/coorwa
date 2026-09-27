@@ -167,7 +167,7 @@ export async function buildUniverse(opts?: {
     benchmarks(),
     listedByMint(),
     // The same cache the terminal's curve tabs read, so the two lists never disagree.
-    cachedStale("coorwa-curves", 10_000, coorwaPairs).catch(() => [] as CoorwaCurvePair[]),
+    cachedStale("coorwa-curves", 5_000, coorwaPairs).catch(() => [] as CoorwaCurvePair[]),
   ]);
   const onCoorwa = new Set(launchedHere.map((p) => p.base.mint));
 

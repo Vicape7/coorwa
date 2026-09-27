@@ -13,7 +13,8 @@
  * launch lands. The copy says so at every step rather than once at the bottom.
  */
 import { useCallback, useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
+import Link from "next/link";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/launch-program";
 import { cookHoldings, planLaunch, quoteDevBuy, spendableCook } from "@/lib/launch-flow";
 import { metadataMessage } from "@/lib/launch-metadata";
+import { curveSlug } from "@/lib/pair-slug";
 import {
   clearUnrecorded,
   postRecord,
@@ -39,6 +41,7 @@ import {
 } from "@/lib/unrecorded";
 import { Notice } from "./notice";
 import { TokenMark } from "./token-mark";
+import { CountUp, GraduationBar } from "./graduation";
 import { CreatorLaunches } from "./creator-launches";
 import { Announcement } from "./announcement";
 import type { LaunchpadPool } from "@/lib/launchpad";
@@ -113,6 +116,7 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
   const { connection } = useConnection();
   const { publicKey, signTransaction, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
+  const { mutate } = useSWRConfig();
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -318,6 +322,9 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
       });
 
       setDone({ signature: sent.signature, mint: mintAddress, ticker: benchmark, pinned });
+      // Shown in this page's own list and in the terminal's New tab now, not on their next poll.
+      void mutate(["launch/curves", publicKey.toBase58()]);
+      void mutate("/api/coorwa/curves");
       if (buyFailed) setError(`The token is live, but your buy at launch did not: ${buyFailed}`);
       setName("");
       setSymbol("");
@@ -345,6 +352,7 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
     tax,
     devBuyRaw,
     report,
+    mutate,
   ]);
 
   const ready = name.trim().length > 0 && /^[A-Za-z0-9]{1,10}$/.test(symbol);
@@ -469,6 +477,17 @@ function CreateForm({ config }: { config: LaunchConfigState | null }) {
             >
               {shortAddr(done.signature, 6)}
             </a>
+            {done.pinned && (
+              <>
+                {" · "}
+                <Link
+                  href={`/terminal/${curveSlug(done.mint, done.ticker)}`}
+                  className="underline underline-offset-4"
+                >
+                  Open its page
+                </Link>
+              </>
+            )}
           </Notice>
         )}
 
@@ -569,7 +588,7 @@ function YourLaunches({ config }: { config: LaunchConfigState | null }) {
  * in it, so a token launched against a development server still shows itself.
  */
 function useTokenMetadata(mint: string) {
-  const { data } = useSWR<{ name?: string; symbol?: string; image?: string }>(
+  const { data } = useSWR<{ name?: string; symbol?: string; image?: string; external_url?: string }>(
     `/t/${mint}`,
     (u: string) => fetch(u).then((r) => (r.ok ? r.json() : {})),
     { revalidateOnFocus: false },
@@ -579,7 +598,23 @@ function useTokenMetadata(mint: string) {
     symbol: data?.symbol ?? null,
     // Ours is served from this origin whatever the document says; a creator's own url is used as it is.
     image: data?.image ? (data.image.includes(`/t/${mint}/image`) ? `/t/${mint}/image` : data.image) : null,
+    pairPath: pairPath(data?.external_url, mint),
   };
+}
+
+/**
+ * The token's pair page, from the link its metadata was written with. That link names the stock
+ * the creator picked, which the curve account does not hold; only its path is kept, so the page
+ * opens on this origin whichever one wrote it.
+ */
+function pairPath(externalUrl: string | undefined, mint: string): string | null {
+  if (!externalUrl) return null;
+  try {
+    const path = new URL(externalUrl).pathname;
+    return path.startsWith(`/terminal/${mint}-`) ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 function CurveRow({ curve, decimals }: { curve: CurveState; decimals: number }) {
@@ -590,8 +625,9 @@ function CurveRow({ curve, decimals }: { curve: CurveState; decimals: number }) 
   const mint = curve.mint.toBase58();
   const token = useTokenMetadata(mint);
 
-  return (
-    <li className="panel p-4">
+  const target = Number(curve.graduationQuote) / 10 ** COOK_DECIMALS;
+  const body = (
+    <>
       <div className="flex items-center gap-3">
         <TokenMark logo={token.image} symbol={token.symbol ?? mint.slice(0, 4)} size={36} />
         <div className="min-w-0 flex-1">
@@ -600,22 +636,39 @@ function CurveRow({ curve, decimals }: { curve: CurveState; decimals: number }) 
             {token.symbol && <span className="text-subtle">{token.symbol}</span>}
           </div>
           <div className="num mt-0.5 text-[12px] text-muted">
-            {amount(Number(curve.quoteRaised) / 10 ** COOK_DECIMALS, 0)} of{" "}
-            {amount(Number(curve.graduationQuote) / 10 ** COOK_DECIMALS, 0)} COOK ·{" "}
-            {curve.taxBps / 100}% tax
+            <CountUp
+              value={Number(curve.quoteRaised) / 10 ** COOK_DECIMALS}
+              format={(n) => `${amount(Math.round(n), 0)} of ${amount(target, 0)} COOK`}
+            />{" "}
+            · {curve.taxBps / 100}% tax
           </div>
         </div>
         <span className="pill pill-quiet shrink-0">{curve.state}</span>
+        {token.pairPath && (
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden className="shrink-0 text-subtle">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </div>
-      <div className="mt-3 h-1 overflow-hidden rounded-full bg-[color:var(--surface-sunken)]">
-        <div
-          className="h-full rounded-full bg-[var(--color-cookie)]"
-          style={{ width: `${Math.min(100, Math.round(progress * 100))}%` }}
-        />
-      </div>
+      <GraduationBar progress={progress} className="mt-3" />
       <div className="num mt-2 text-[12px] text-subtle">
         {amount(Number(curve.baseSold) / 10 ** decimals, 0)} tokens sold
       </div>
+    </>
+  );
+
+  return (
+    <li>
+      {token.pairPath ? (
+        <Link
+          href={token.pairPath}
+          className="panel block p-4 transition-colors hover:bg-[color:var(--surface-raised)]"
+        >
+          {body}
+        </Link>
+      ) : (
+        <div className="panel p-4">{body}</div>
+      )}
     </li>
   );
 }

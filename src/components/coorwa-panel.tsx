@@ -55,7 +55,16 @@ interface Quote {
   graduates: boolean;
 }
 
-export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React.ReactNode }) {
+export function CoorwaPanel({
+  pair,
+  header,
+  onTraded,
+}: {
+  pair: CoorwaPair;
+  header?: React.ReactNode;
+  /** Called once a trade has confirmed, so the page can show its effect without waiting to poll. */
+  onTraded?: (trade: { side: Side; graduates: boolean }) => void;
+}) {
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -197,6 +206,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
       setInput("");
       void refreshBalance();
       void refreshHoldings();
+      onTraded?.({ side, graduates: quote.graduates });
     } catch (e) {
       setError(explainError(e));
     } finally {
@@ -214,6 +224,7 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
     pool,
     refreshBalance,
     refreshHoldings,
+    onTraded,
   ]);
 
   // Refused here rather than by the chain, whose answer is a failed transfer in the logs.
@@ -374,8 +385,13 @@ export function CoorwaPanel({ pair, header }: { pair: CoorwaPair; header?: React
 
       {!tradable && (
         <Notice tone="note">
-          This curve has filled. Its pool is being opened and locked, and trading continues there
-          within minutes.
+          <span className="flex items-start gap-2.5">
+            <span className="live-dot mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-cookie)]" />
+            <span>
+              This curve has filled. Its pool is being opened and locked, and this panel trades
+              there as soon as it is.
+            </span>
+          </span>
         </Notice>
       )}
       {error && <Notice tone="down">{error}</Notice>}

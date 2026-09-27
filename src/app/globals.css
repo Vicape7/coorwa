@@ -1017,11 +1017,206 @@ body {
   animation: coorwa-rise 0.55s var(--ease-out) both;
 }
 
+/* --- Graduation -------------------------------------------------------------------------------- */
+
+/* The raise toward graduation. The fill grows in when the page opens and grows between values
+ * after that: a rise lights the stretch it added, the fill grows into it with a light running
+ * along it, and the whole bar glows for a moment. */
+.grad-bar {
+  position: relative;
+}
+.grad-bar-track {
+  position: relative;
+  height: var(--grad-h, 4px);
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+}
+.grad-bar-fill {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-cookie-deep), var(--color-cookie) 70%, var(--color-cookie-lit));
+  transform-origin: left center;
+  transition: width 1.6s var(--ease-out);
+  animation: grad-grow 1.6s var(--ease-out) both;
+}
+@keyframes grad-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+/* The bright end of the fill, which flares as it moves. */
+.grad-bar-head {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #fff8e8);
+  animation: grad-head 1.8s var(--ease-out) both;
+}
+@keyframes grad-head {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+.grad-bar-gain {
+  position: absolute;
+  inset-block: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-cookie-lit) 70%, transparent);
+  animation: grad-gain 2.2s var(--ease-out) both;
+}
+@keyframes grad-gain {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.grad-bar-sweep {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  animation: grad-sweep 1.4s var(--ease-out) 0.2s both;
+}
+@keyframes grad-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(240%);
+  }
+}
+.grad-bar-halo {
+  position: absolute;
+  inset: 0;
+  height: var(--grad-h, 4px);
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-cookie) 75%, transparent);
+  animation: grad-halo 1.8s var(--ease-out) both;
+}
+@keyframes grad-halo {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+}
+/* Full: it breathes until the pool opens. */
+.grad-bar.is-full .grad-bar-track {
+  animation: grad-full 2.2s ease-in-out infinite;
+}
+@keyframes grad-full {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-cookie) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--color-cookie) 70%, transparent);
+  }
+}
+
+/* The notice a graduation raises. Clear of the phone's bottom nav, in the corner on a desktop. */
+.grad-notice {
+  position: fixed;
+  z-index: 60;
+  left: 12px;
+  right: 12px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+}
+@media (min-width: 640px) {
+  .grad-notice {
+    left: auto;
+    width: 380px;
+  }
+}
+@media (min-width: 1024px) {
+  .grad-notice {
+    right: 24px;
+    bottom: 24px;
+  }
+}
+.grad-notice-mark {
+  flex-shrink: 0;
+  border-radius: 999px;
+  animation: grad-mark 1.4s var(--ease-out) 0.2s both;
+}
+@keyframes grad-mark {
+  0% {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-cookie) 70%, transparent);
+  }
+  45% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: none;
+    box-shadow: 0 0 0 14px color-mix(in srgb, var(--color-cookie) 0%, transparent);
+  }
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti i {
+  position: absolute;
+  top: -20px;
+  width: var(--s);
+  height: calc(var(--s) * 0.5);
+  background: var(--c);
+  opacity: 0;
+  animation: confetti-fall var(--t) cubic-bezier(0.25, 0.6, 0.45, 1) var(--d) forwards;
+}
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--x), 105vh, 0) rotate(var(--r));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot,
   .skeleton,
-  .rise {
+  .rise,
+  .grad-bar-fill,
+  .grad-bar-halo,
+  .grad-bar-head,
+  .grad-bar.is-full .grad-bar-track,
+  .grad-notice-mark {
     animation: none;
+  }
+  .confetti,
+  .grad-bar-sweep,
+  .grad-bar-gain {
+    display: none;
   }
   /* The orbit is turned from JavaScript, so it reads the same query itself and simply holds. */
   * {

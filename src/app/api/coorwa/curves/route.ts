@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const pairs = await cachedStale("coorwa-curves", 10_000, coorwaPairs);
+    const pairs = await cachedStale("coorwa-curves", 5_000, coorwaPairs);
     return NextResponse.json(
       { pairs },
-      { headers: { "cache-control": "public, s-maxage=10, stale-while-revalidate=30" } },
+      { headers: { "cache-control": "public, s-maxage=5, stale-while-revalidate=15" } },
     );
   } catch (e) {
     return NextResponse.json(

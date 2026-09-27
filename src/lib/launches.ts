@@ -10,7 +10,7 @@
  */
 import { desc, eq } from "drizzle-orm";
 import { db, dbEnabled, schema } from "./db";
-import { cached } from "./http";
+import { cached, forget } from "./http";
 import { rwaByTicker } from "./rwa";
 
 export interface LaunchRecord {
@@ -51,7 +51,12 @@ export async function recordLaunch(row: {
     .onConflictDoNothing({ target: schema.launches.mint })
     .returning({ mint: schema.launches.mint });
 
-  if (rows.length > 0) return { recorded: true };
+  if (rows.length > 0) {
+    // So the token is listed and its page opens on the next request, not once the caches run out.
+    forget("launches:benchmarks");
+    forget("coorwa-curves");
+    return { recorded: true };
+  }
 
   // Nothing written means the mint already had its launch recorded, and that one stands. Its pair
   // is returned so a repeated report of the same launch can be told apart from a different pick.
@@ -67,10 +72,12 @@ export async function recordLaunch(row: {
  * Every pinned mint, as mint -> ticker.
  *
  * Read on every universe build, so it is cached briefly. The map is small by construction: it only
- * ever holds tokens launched through Coorwa.
+ * ever holds tokens launched through Coorwa. `fresh` reads past the cache, for a caller that has
+ * just met a mint the cached map does not know.
  */
-export async function benchmarks(): Promise<Map<string, string>> {
+export async function benchmarks(opts: { fresh?: boolean } = {}): Promise<Map<string, string>> {
   if (!dbEnabled || !db) return new Map();
+  if (opts.fresh) forget("launches:benchmarks");
 
   return cached("launches:benchmarks", 30_000, async () => {
     const rows = await db!
