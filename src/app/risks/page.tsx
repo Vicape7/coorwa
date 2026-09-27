@@ -12,7 +12,7 @@ export default function RisksPage() {
       <LegalPage
         label="Legal"
         title="Risks"
-        updated="17 September 2026"
+        updated="27 September 2026"
         intro={
           <p>
             Only use money you can afford to lose completely. Nothing on Coorwa is investment, tax
@@ -40,6 +40,37 @@ export default function RisksPage() {
             ),
           },
           {
+            title: "Curves and graduation",
+            body: (
+              <>
+                <p>
+                  A token on a curve may never reach its graduation target. The COOK in the curve
+                  stays there, and you can only get it back by selling into the curve at the
+                  curve&apos;s price, which falls as others sell.
+                </p>
+                <p>
+                  Graduation is run by an automated job at Coorwa. Anyone can run it, but if that job
+                  stops, a filled curve waits until somebody does. If someone opens the token&apos;s
+                  pool before the curve fills, trading in the pool can be delayed by up to 31 days
+                  after graduation. The liquidity in a graduated pool is locked forever and cannot be
+                  taken out by anyone, which also means it can never be returned.
+                </p>
+              </>
+            ),
+          },
+          {
+            title: "The transfer tax",
+            body: (
+              <p>
+                A token launched on Coorwa charges its tax on every transfer, so you pay it when you
+                buy, when you sell and when you move tokens between your own wallets. Coorwa sells
+                the collected tax into the token&apos;s own curve or pool about once an hour, which
+                pushes the price down a little each time. The tax can never be changed, not even to
+                zero.
+              </p>
+            ),
+          },
+          {
             title: "xStocks are not shares",
             body: (
               <>
@@ -59,10 +90,12 @@ export default function RisksPage() {
             title: "Rewards are not guaranteed",
             body: (
               <p>
-                Rewards depend on trading fees, which may be tiny or none. Fees wait in
-                Coorwa&apos;s operator wallet until the daily payout, so for that time they depend
-                on that wallet being safe. A payout can fail or be delayed if the bridge, Jupiter or
-                a network does not work, and costs are deducted first.
+                Rewards depend on how much a token trades, which may be tiny or nothing. A wallet
+                holding less than the minimum gets nothing, and a small amount can wait a long time
+                before it is large enough to send. The tax and fees wait in Coorwa&apos;s operator
+                wallet until the daily payout, so for that time they depend on that wallet being
+                safe. A payout can fail or be delayed if the bridge, Jupiter or a network does not
+                work, and costs are deducted first.
               </p>
             ),
           },
@@ -70,9 +103,12 @@ export default function RisksPage() {
             title: "Smart contracts and bridges",
             body: (
               <p>
-                Coorwa uses programs it did not write, and a bridge between Cookie Chain and Solana.
-                Bugs, exploits or outages in any of them can lose funds. Cookie Chain is a young
-                network and can halt or change.
+                Coorwa&apos;s launch program is new and has not been audited by an outside firm.
+                Coorwa still holds its upgrade authority, so until that is given up the program can
+                be changed, and a mistake or a stolen key could put the COOK in every curve at risk.
+                Coorwa also uses programs it did not write, and a bridge between Cookie Chain and
+                Solana. Bugs, exploits or outages in any of them can lose funds. Cookie Chain is a
+                young network and can halt or change.
               </p>
             ),
           },
