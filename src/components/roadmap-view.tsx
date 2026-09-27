@@ -138,6 +138,23 @@ const BUILT: Milestone[] = [
     ),
     note: "measured by simulation before anything is sent",
   },
+  {
+    sha: "1cadbc2",
+    date: "27 September 2026",
+    title: "Launching open to everyone",
+    body: (
+      <>
+        The form on{" "}
+        <Link href="/launch" className="underline underline-offset-4">
+          Launch
+        </Link>{" "}
+        was shut until the sweep, the fee claims and graduation ran without anyone watching. They
+        have run that way for a day, so anyone can launch now. What stays in Coorwa&apos;s hands is
+        the program&apos;s pause, which stops new launches and nothing else.
+      </>
+    ),
+    note: "the sweep has run every hour since 26 September",
+  },
 ];
 
 /** Still to do, in the order it will be done. */
