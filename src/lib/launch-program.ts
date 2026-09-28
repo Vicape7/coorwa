@@ -364,6 +364,9 @@ export interface TradedEvent {
   graduated: boolean;
 }
 
+/** Discriminator, three keys, a flag, five amounts and a flag: the `Traded` event on the wire. */
+const TRADED_EVENT_BYTES = 8 + 32 * 3 + 1 + 8 * 5 + 1;
+
 function fromBase64(value: string): Uint8Array {
   if (typeof atob === "function") {
     const binary = atob(value);
@@ -385,19 +388,35 @@ function startsWith(data: Uint8Array, prefix: readonly number[]): boolean {
  * honest source for a chart: balances alone cannot tell a buy inside a launch from the mint that
  * funded the vault in the same transaction, and instruction data says what was asked for rather
  * than what happened.
+ *
+ * Only lines this program wrote count. A `Program data:` line belongs to whichever program is
+ * running when it is logged, and another program can name an event `Traded` too: Cookiebox's CLMM
+ * does, so its swap event carries the very same discriminator. A router that buys through a CLMM
+ * pool and then through a curve logs both, and reading the CLMM's shorter event as ours threw on the
+ * first field past its end, which emptied the token's whole chart.
  */
 export function tradedEvents(logs: string[] | undefined | null): TradedEvent[] {
   const out: TradedEvent[] = [];
+  const running: string[] = [];
   for (const line of logs ?? []) {
+    const invoked = line.match(/^Program (\w+) invoke \[\d+\]$/);
+    if (invoked) {
+      running.push(invoked[1]);
+      continue;
+    }
+    if (/^Program \w+ (success|failed)/.test(line)) {
+      running.pop();
+      continue;
+    }
     const encoded = line.startsWith("Program data: ") ? line.slice(14) : null;
-    if (!encoded) continue;
+    if (!encoded || running.at(-1) !== LAUNCH_PROGRAM_ADDRESS) continue;
     let data: Uint8Array;
     try {
       data = fromBase64(encoded);
     } catch {
       continue;
     }
-    if (data.length < 8 || !startsWith(data, EVENT_DISCRIMINATOR.traded)) continue;
+    if (data.length < TRADED_EVENT_BYTES || !startsWith(data, EVENT_DISCRIMINATOR.traded)) continue;
     const r = new Reader(data);
     out.push({
       curve: r.pubkey(),

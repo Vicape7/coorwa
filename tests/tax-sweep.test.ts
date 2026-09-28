@@ -15,8 +15,10 @@ import {
   EVENT_DISCRIMINATOR,
   quotePoolSwap,
   quoteSell,
+  tradedEvents,
   type LaunchConfigState,
 } from "../src/lib/launch-program";
+import { LAUNCH_PROGRAM_ADDRESS } from "../src/lib/config";
 import {
   HARVEST_BATCH,
   SWEEP_MIN_COOK,
@@ -93,6 +95,11 @@ function tradedLog(e: { mint: PublicKey; trader: PublicKey; isBuy: boolean; quot
   return `Program data: ${Buffer.from(bytes).toString("base64")}`;
 }
 
+/** Log lines as a program writes them: framed by its own invoke and success. */
+function ranIn(program: string, lines: string[], depth = 1): string[] {
+  return [`Program ${program} invoke [${depth}]`, ...lines, `Program ${program} success`];
+}
+
 test("only accounts that withhold something are harvested, and their tax is summed", () => {
   const a = Keypair.generate().publicKey;
   const b = Keypair.generate().publicKey;
@@ -142,7 +149,7 @@ test("a curve that is not trading is never sold into", () => {
 
 test("the proceeds are the operator's own sale of this token, and nothing else in the logs", () => {
   const other = Keypair.generate().publicKey;
-  const logs = [
+  const logs = ranIn(LAUNCH_PROGRAM_ADDRESS, [
     "Program log: Instruction: Sell",
     tradedLog({ mint, trader: operator, isBuy: false, quote: 55n * COOK }),
     // Someone else's sale in the same block is not the operator's money.
@@ -151,9 +158,29 @@ test("the proceeds are the operator's own sale of this token, and nothing else i
     tradedLog({ mint, trader: operator, isBuy: true, quote: 3n * COOK }),
     tradedLog({ mint: other, trader: operator, isBuy: false, quote: 2n * COOK }),
     "Program data: not-an-event",
-  ];
+  ]);
   assert.equal(saleProceeds(logs, mint.toBase58(), operator.toBase58()), 55n * COOK);
   assert.equal(saleProceeds(null, mint.toBase58(), operator.toBase58()), 0n);
+});
+
+test("another program's event with the same name is not read as a trade", () => {
+  // A router buying through a CLMM pool and then the curve: the CLMM logs its own `Traded`, which
+  // shares the discriminator and is shorter than ours. It used to throw and empty the whole chart.
+  const clmm = "CLMMmWqTtyNSomqXP3kETJy2SGKPdr31USsm4GfbLyKs";
+  const theirs = `Program data: ${Buffer.from([...EVENT_DISCRIMINATOR.traded, ...new Uint8Array(113)]).toString("base64")}`;
+  const logs = [
+    ...ranIn(clmm, [theirs, "Program data: not-an-event"]),
+    ...ranIn(LAUNCH_PROGRAM_ADDRESS, [
+      ...ranIn("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", [], 2),
+      tradedLog({ mint, trader: operator, isBuy: false, quote: 55n * COOK }),
+    ]),
+    // A full-length event from another program is not ours either.
+    ...ranIn(clmm, [tradedLog({ mint, trader: operator, isBuy: false, quote: 9n * COOK })]),
+  ];
+  const events = tradedEvents(logs);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].quoteAmount, 55n * COOK);
+  assert.equal(saleProceeds(logs, mint.toBase58(), operator.toBase58()), 55n * COOK);
 });
 
 test("after graduation the tax is priced as the pool will price it", () => {
@@ -184,6 +211,8 @@ test("a pool sale's proceeds are what the operator's wrapped COOK gained", () =>
   };
   assert.equal(saleProceeds([], mint.toBase58(), op, balances), 57_000n);
   // A curve sale still reads its own event, whatever the balances say.
-  const logs = [tradedLog({ mint, trader: operator, isBuy: false, quote: 55n * COOK })];
+  const logs = ranIn(LAUNCH_PROGRAM_ADDRESS, [
+    tradedLog({ mint, trader: operator, isBuy: false, quote: 55n * COOK }),
+  ]);
   assert.equal(saleProceeds(logs, mint.toBase58(), op, balances), 55n * COOK);
 });
